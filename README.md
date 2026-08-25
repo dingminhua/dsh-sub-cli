@@ -4,7 +4,8 @@ DSH（DeepSeek Harness）的外部 Agent CLI 管理器项目。
 
 本项目计划让用户在 DSH 中统一管理和调用 Codex、Claude Code、OpenCode、Kimi CLI、Qwen Code 等外部 Agent CLI：
 
-- 将 CLI 二进制集中到用户选择的统一目录（默认 `~/dsh-clis/`）；
+- 将 CLI 二进制集中到用户选择的统一目录（Windows 默认 `C:\dsh-clis`，macOS 默认 `~/dsh-clis/`）；
+- 用户修改统一目录后，经确认将插件托管的二进制、配置和元数据安全迁移到新目录；
 - 为不同 CLI 使用相互隔离的配置目录，不影响用户现有系统配置；
 - 在 DSH Web 插件配置页展示安装、配置和可用状态；
 - 提供清晰的安装引导；
@@ -15,18 +16,29 @@ DSH（DeepSeek Harness）的外部 Agent CLI 管理器项目。
 
 项目处于**资料迁移与实现起步阶段**。
 
-`plugin/` 当前保存的是原项目 `dsh-subagent-default-model` 的可运行参考实现，用于继承 DSH 插件设置、Web 卡片、Cordis 生命周期、测试和发布模式。它尚未改造成 `dsh-sub-cli`，请勿以新包名发布。
+`reference/dsh-subagent-default-model/plugin/` 保存的是原项目 `dsh-subagent-default-model` 的可运行参考实现，用于继承 DSH 插件设置、Web 卡片、Cordis 生命周期、测试和发布模式。它尚未改造成 `dsh-sub-cli`，请勿以新包名发布。
 
 ## 文档入口
 
 1. `CLI-MANAGER-HANDOFF.md`：完整需求、调研结论、参考实现和建议开发路径；
 2. `CLI-MANAGER-DESIGN.md`：精简设计说明；
 3. `MIGRATION-INVENTORY.md`：从旧项目迁入的资料、保留原因、待改造项和清理前核对清单；
-4. `DEVELOPMENT.md`：旧插件开发经验；
-5. `PLUGIN_REQUIREMENTS.md`：DSH 插件依赖与运行要求；
-6. `RELEASING.md`：发布流程参考。
+4. `DEVELOPMENT.md`：新项目开发原则和建议布局；
+5. `RELEASING.md`：新项目发布条件与流程；
+6. `reference/dsh-subagent-default-model/`：旧插件完整参考资料。
+
+## 默认目录与迁移
+
+| 系统 | 默认目录 |
+|---|---|
+| Windows | `C:\dsh-clis` |
+| macOS | `~/dsh-clis` |
+
+用户可以在 Web 面板选择其他目录。修改目录时，插件先展示迁移内容并请求确认，然后将旧目录中的 `bin/`、各 CLI 配置目录和托管元数据移动过去。只有迁移及校验全部成功后才切换当前目录；发生权限、空间或文件冲突时继续保留旧目录，不静默覆盖目标文件。
 
 ## 目标目录结构
+
+以下以 macOS 默认值为例：
 
 ```text
 ~/dsh-clis/
@@ -67,4 +79,4 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 
 ## License
 
-新项目最终许可证待正式实现和发布前确认。迁入的 `plugin/LICENSE` 及 `vendor/` 内许可证继续约束对应旧代码和参考快照。
+新项目最终许可证待正式实现和发布前确认。迁入的 `reference/dsh-subagent-default-model/plugin/LICENSE` 及其 `vendor/` 内许可证继续约束对应旧代码和参考快照。
