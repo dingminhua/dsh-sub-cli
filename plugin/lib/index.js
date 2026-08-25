@@ -14,6 +14,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { CLI_REGISTRY, cliById } from "./registry.js";
 import { resolveDir } from "./paths.js";
 import { dispatch } from "./dispatch.js";
+import { detectInstalled } from "./status.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess"];
@@ -74,6 +75,37 @@ export function apply(ctx) {
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
 			const dir = currentDir();
 			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined), model });
+		}
+	}));
+
+	// `cli_check`: report whether each / one installed external CLI is ready.
+	ctx.tools.register(defineTool({
+		name: "cli_check",
+		description: "检测外部 Agent CLI 是否已安装到统一目录，并报告版本。指定 cli 时只检查一个；省略时检查全部。",
+		parameters: {
+			cli: { type: "string", description: "可选：要检查的 CLI 标识 codex / claude / opencode / gemini" }
+		},
+		output: {
+			schema: { type: "json" },
+			render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }]
+		},
+		async execute(args) {
+			const dir = currentDir();
+			const runCmd = async (argv) => {
+				const handle = ctx.subprocess.spawn({ argv, cwd: ".", stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 20000 });
+				const outcome = await handle.done;
+				const o = handle.collected && handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : "";
+				const e = handle.collected && handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : "";
+				return { exitCode: outcome.exitCode, stdout: o, stderr: e };
+			};
+			const only = args && typeof args.cli === "string" && args.cli ? args.cli : null;
+			const target = only ? CLI_REGISTRY.filter((e) => e.id === only) : CLI_REGISTRY;
+			const results = [];
+			for (const entry of target) {
+				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
+				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message });
+			}
+			return { dir, results };
 		}
 	}));
 }
