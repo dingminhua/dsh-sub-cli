@@ -15,6 +15,7 @@
   ],
   "author": "dingminhua",
   "license": "MIT",
+  "icon": "icons/dsh-sub-cli-icon-128.png",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dingminhua/dsh-sub-cli.git",
@@ -37,6 +38,7 @@
   },
   "files": [
     "lib",
+    "icons",
     "cordis.patch.yml",
     "LICENSE",
     "README.md",
