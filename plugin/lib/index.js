@@ -21,14 +21,14 @@ export const inject = ["tools", "subprocess"];
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
 const MODEL_ENTRY = z.object({
-	provider: z.string().optional(),
-	model: z.string().optional(),
-	reasoningEffort: z.string().optional()
+	provider: z.string(),
+	model: z.string(),
+	reasoningEffort: z.string()
 });
 
 const SCHEMA = z.object({
 	cliDir: z.string(),
-	models: z.record(MODEL_ENTRY).default({})
+	models: z.dict(MODEL_ENTRY).default({})
 }).default({});
 
 /** Current settings value read from the live settings scope. */
