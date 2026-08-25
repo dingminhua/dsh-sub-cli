@@ -21,10 +21,10 @@ export const inject = ["tools", "subprocess"];
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
 const MODEL_ENTRY = z.object({
-	provider: z.string(),
-	model: z.string(),
-	reasoningEffort: z.string()
-}).partial();
+	provider: z.string().optional(),
+	model: z.string().optional(),
+	reasoningEffort: z.string().optional()
+});
 
 const SCHEMA = z.object({
 	cliDir: z.string(),
