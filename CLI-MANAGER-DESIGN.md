@@ -27,8 +27,10 @@
 
 | 系统 | 默认根目录 |
 |---|---|
-| Windows | `C:\dsh-clis` |
+| Windows | `%USERPROFILE%\dsh-clis` |
 | macOS | `~/dsh-clis` |
+
+两个平台统一使用当前用户主目录下的 `dsh-clis`。实现时使用系统用户主目录 API（例如 Node.js `os.homedir()`），不写死 Windows 盘符、用户名或 macOS `/Users/...` 路径。
 
 - 用户可在 Web 面板自由选择其他目录；
 - 默认值只用于尚未保存自定义目录的情况；
@@ -53,7 +55,7 @@
 
 ### 内部结构
 
-以下以 macOS 默认目录为例，Windows 使用同样结构且根目录为 `C:\dsh-clis`。
+以下以 macOS 默认目录为例，Windows 使用同样结构且根目录为 `%USERPROFILE%\dsh-clis`。
 
 ```
 ~/dsh-clis/                      ← Web 面板可选的根目录
