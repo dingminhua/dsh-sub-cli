@@ -16,7 +16,7 @@
 
 用户明确强调的四个关键点：
 
-1. **支持设置模型的 CLI**——优先纳入那些能**独立配置模型**的 CLI（Codex、Claude Code、OpenCode、Kimi、Qwen），而不是只能用它内置模型的 CLI（Trae、Copilot 等）。
+1. **首批范围已确认**——核心支持 Codex、Claude Code，并纳入兼容性较好的 OpenCode、Gemini CLI，共四种。Kimi、Qwen 暂缓；Trae 与 WorkBuddy/CodeBuddy 需进一步验证无头调用、模型控制、认证和配置目录隔离，不属于首批。
 2. **调用模型策略与 subagent 一致**——CLI 管理器**复用** `subagent-default-model` 已有的模型策略（single/multi-model + round-robin/random），**不需要为 CLI 再单独设置一套策略**。
 3. **下载做好提示**——用**简单语言**引导用户把 CLI 下载到一个**统一目录**（不装到系统目录，避免混用）。
 4. **统一目录在插件 Web 里选择**——用户在 Web 面板里选择这个统一目录；Web 同时呈现**已准备好的 CLI**（状态可见），这样 **Skill 就可以调用**它们。
@@ -63,13 +63,14 @@
 │   ├── codex → ~/.codex/plugins/.plugin-appserver/codex
 │   ├── claude
 │   ├── opencode
-│   └── kimi
-├── config-codex/                 ← 各 CLI 的独立配置（通过环境变量隔离）
+│   └── gemini
+├── config-codex/                 ← 各 CLI 的独立配置（通过环境变量或参数隔离）
 │   └── config.toml
 ├── config-claude/
 │   └── settings.json
-└── config-opencode/
-    └── opencode.json
+├── config-opencode/
+│   └── opencode.json
+└── config-gemini/
 ```
 
 **两层隔离**（对话中确认的关键设计）：
@@ -115,12 +116,13 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 | **Codex** | `CODEX_HOME` 环境变量（Cindy 已证实，二进制确认） | `-m, --model`；还支持 `-c key=value` 运行时覆盖任何 config、`--profile` | ✅ | 首批 |
 | **Claude Code** | `CLAUDE_CONFIG_DIR` 环境变量 | `ANTHROPIC_MODEL` 或 `--model` | ✅ | 首批 |
 | **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅ | 首批 |
-| **Kimi CLI** | `--config-file <PATH>` 参数 | `-m, --model`；`KIMI_MODEL_NAME` 环境变量 | ✅ | 首批 |
-| **Qwen Code** | 环境变量 + CLI 参数 | `--model`；`QWEN_MODEL` | ✅ | 首批 |
-| **Gemini CLI** | 待确认 | 待确认 | ❓ | 暂不 |
-| Trae / Cursor / Copilot / WorkBuddy / Grok | 通常无自定义目录 | 内置模型为主 | ❌ | 暂不纳入 |
+| **Gemini CLI** | 首批实现前依据官方配置文档确认并实测隔离路径 | 运行时模型选择，参数需按具体版本锁定 | ⚠️ 待实测 | 首批 |
+| **Kimi CLI / Qwen Code** | 已有候选隔离方案 | 有模型参数或环境变量 | ✅/待复核 | 暂缓 |
+| **Trae CLI** | 官方 CLI 存在，但独立配置根隔离需验证 | 模型控制能力需实测 | ⚠️ | 暂缓调研 |
+| **WorkBuddy / CodeBuddy** | 名称和产品边界需澄清；CodeBuddy 有无头模式文档 | 需按确切产品验证 | ⚠️ | 暂缓调研 |
+| Cursor / Copilot / Grok | 通常无满足要求的独立配置目录 | 内置模型为主 | ❌/待确认 | 暂不纳入 |
 
-**本机现状**：`Codex` 已安装（二进制在 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0，但**不在 PATH**，需 `ln -s ~/.codex/plugins/.plugin-appserver/codex ~/.local/bin/codex`）；Claude Code / OpenCode / Kimi / Qwen 未装（多为 `npm i -g` 一行命令）。
+**本机现状**：`Codex` 已安装（二进制在 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0，但**不在 PATH**）；Claude Code、OpenCode 和 Gemini CLI 的安装与隔离方式需在首批实现前按具体版本实测。插件本身不依赖系统 PATH。
 
 ## 模型方案讨论
 
@@ -196,7 +198,7 @@ Web 面板里只提供两个选项（GPT / Claude），插件自动处理 base U
 
 ## 待确认事项
 
-- [ ] 首批纳入哪些 CLI？（Codex ✅ 已装，Claude Code/OpenCode/Kimi/Qwen 待装）
+- [x] 首批纳入 Codex、Claude Code、OpenCode、Gemini CLI；前两者为核心支持。
 - [ ] 模型策略：确认走「方向 2（只调度 CLI，模型留给各 CLI 配）」，还是「方向 1（写入 CLI 配置，跨 CLI 轮换同一批模型）」
 - [ ] 测试功能做到什么程度？（建议先只做连通性）
 - [ ] 派发工具注册为 DSH Tool 还是 Skill？（用户提到"Skill 可以调用"，倾向 Skill）

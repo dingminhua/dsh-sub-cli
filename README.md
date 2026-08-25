@@ -2,7 +2,7 @@
 
 DSH（DeepSeek Harness）的外部 Agent CLI 管理器项目。
 
-本项目计划让用户在 DSH 中统一管理和调用 Codex、Claude Code、OpenCode、Kimi CLI、Qwen Code 等外部 Agent CLI：
+本项目计划让用户在 DSH 中统一管理和调用首批四种外部 Agent CLI：Codex、Claude Code、OpenCode 和 Gemini CLI。
 
 - 将 CLI 二进制集中到用户选择的统一目录（Windows 默认 `%USERPROFILE%\dsh-clis`，macOS 默认 `~/dsh-clis/`）；
 - 用户修改统一目录后，经确认将插件托管的二进制、配置和元数据安全迁移到新目录；
@@ -48,13 +48,11 @@ DSH（DeepSeek Harness）的外部 Agent CLI 管理器项目。
 │   ├── codex
 │   ├── claude
 │   ├── opencode
-│   ├── kimi
-│   └── qwen
+│   └── gemini
 ├── config-codex/
 ├── config-claude/
 ├── config-opencode/
-├── config-kimi/
-└── config-qwen/
+└── config-gemini/
 ```
 
 运行目标 CLI 时，由插件显式设置其配置目录环境变量或参数，例如：

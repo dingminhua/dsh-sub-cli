@@ -8,7 +8,7 @@
 
 ## 0. 一句话概述
 
-在 DSH（DeepSeek Harness）中做一个**独立的「外部 Agent CLI 管理器」插件**，让用户把 Codex、Claude Code、OpenCode、Kimi、Qwen 等 Agent CLI 下载/安装到**统一的指定目录**（不与系统 PATH 混用），在 Web 面板里**呈现已装/未装状态**、**选择统一目录**、**为每个 CLI 独立配置模型**，并注册**派发工具/技能**让模型调用，复用 `subagent-default-model` 的模型轮换策略。
+在 DSH（DeepSeek Harness）中做一个**独立的「外部 Agent CLI 管理器」插件**，首批支持 Codex、Claude Code、OpenCode 和 Gemini CLI，把它们下载/安装到**统一的指定目录**（不与系统 PATH 混用），在 Web 面板里**呈现已装/未装状态**、**选择统一目录**、**为每个 CLI 独立配置模型**，并注册**派发工具/技能**让模型调用，复用 `subagent-default-model` 的模型轮换策略。
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## 2. 用户核心意图（必须满足）
 
-1. **优先支持能独立配置模型的 CLI**：Codex、Claude Code、OpenCode、Kimi、Qwen（它们支持环境变量/参数指定配置目录和模型）。不纳入只能用内置模型的 CLI（Trae、Cursor、Copilot、WorkBuddy、Grok 等）。
+1. **首批范围已确认**：Codex、Claude Code 是核心支持；另外纳入 OpenCode 和 Gemini CLI，共四种。选择标准是无头调用、模型选择和配置隔离能力及其公开文档较成熟。Trae 与 WorkBuddy/CodeBuddy 暂不纳入首批：Trae 虽有官方 CLI 文档，但仍需验证独立配置目录和模型控制是否满足本项目隔离要求；“WorkBuddy”产品命名与可调用 CLI 边界不够清晰，而公开无头模式资料主要指向 CodeBuddy CLI，后续应单独调研，不以名称相似直接视为兼容。
 2. **模型策略复用 subagent 的**：不单独设一套策略，复用 `dsh-subagent-default-model` 已有的 single/multi-model + round-robin/random。
 3. **下载做好提示**：用**简单语言**引导用户下载到统一目录，不装到系统目录。
 4. **统一目录在 Web 面板选择** + **呈现已装 CLI**，这样 **Skill 可调用**。
@@ -71,13 +71,14 @@
 │   ├── codex → ~/.codex/plugins/.plugin-appserver/codex
 │   ├── claude
 │   ├── opencode
-│   └── kimi
-├── config-codex/                 ← 各 CLI 独立配置（通过环境变量隔离）
+│   └── gemini
+├── config-codex/                 ← 各 CLI 独立配置（通过环境变量或启动参数隔离）
 │   └── config.toml
 ├── config-claude/
 │   └── settings.json
-└── config-opencode/
-    └── opencode.json
+├── config-opencode/
+│   └── opencode.json
+└── config-gemini/
 ```
 
 **两层各自独立**：
@@ -112,10 +113,11 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 | **Codex** | `CODEX_HOME` 环境变量（二进制确认；Cindy 实证） | `-m, --model`；`-c key=value` 运行时覆盖任意 config；`--profile` | ✅ | 首批 |
 | **Claude Code** | `CLAUDE_CONFIG_DIR` 环境变量 | `ANTHROPIC_MODEL` 或 `--model` | ✅ | 首批 |
 | **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅ | 首批 |
-| **Kimi CLI** | `--config-file <PATH>` 参数 | `-m, --model`；`KIMI_MODEL_NAME` 环境变量 | ✅ | 首批 |
-| **Qwen Code** | 环境变量 + CLI 参数 | `--model`；`QWEN_MODEL` | ✅ | 首批 |
-| **Gemini CLI** | 待确认 | 待确认 | ❓ | 暂不纳入 |
-| Trae / Cursor / Copilot / WorkBuddy / Grok | 通常无自定义配置目录 | 内置模型为主 | ❌ | 暂不纳入 |
+| **Gemini CLI** | 首批实现前按官方配置文档确认并固化隔离路径 | 支持运行时模型选择（具体参数需实现前实测锁定） | ⚠️ 待实测 | 首批 |
+| **Kimi CLI / Qwen Code** | 已有候选隔离方式 | 支持模型参数/环境变量 | ✅/待复核 | 暂缓，不属于首批 |
+| **Trae CLI** | 官方 CLI 文档存在，但独立配置根隔离仍需实测 | 有模型相关设置，是否满足完整外部控制待验证 | ⚠️ | 暂缓调研 |
+| **WorkBuddy / CodeBuddy** | 产品命名和 CLI 边界需先澄清；CodeBuddy 有无头模式文档 | 能力需按确切产品重新验证 | ⚠️ | 暂缓调研 |
+| Cursor / Copilot / Grok | 通常无满足本项目要求的独立配置目录 | 内置模型为主 | ❌/待确认 | 暂不纳入 |
 
 ---
 
@@ -171,7 +173,7 @@ Cindy 是一个 DSH 类桌面应用，**已经实现了「给 Codex 指定模型
 ## 7. 本机现状（开发环境实测）
 
 - **已装**：Codex（二进制 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0），但**不在 PATH**，需 `ln -s ~/.codex/plugins/.plugin-appserver/codex ~/.local/bin/codex`。
-- **未装**：Claude Code、OpenCode、Kimi、Qwen（多为 `npm i -g <pkg>` 一行命令）。
+- **待准备并实测**：Claude Code、OpenCode、Gemini CLI；实现时按各自官方安装方式放入统一目录，不依赖系统 PATH。
 - **Cindy 已装**，其 `codex-home/` 配置可作为隔离参考（见 6.2）。
 - npm 登录账号：`dmh2002`（发布用，账号开启 2FA，交互式发布需浏览器确认）。
 - 代理：本机有 `http://127.0.0.1:7897`（Clash），已配置 npm/git 走代理（访问 GitHub/npm 更稳）。
@@ -258,7 +260,7 @@ CLI 管理器放**插件配置区域**（`settings.plugin.item` 或独立 `setti
 
 ## 11. 待确认事项（开发决策点）
 
-- [ ] 首批纳入哪些 CLI？（Codex 已装；Claude Code/OpenCode/Kimi/Qwen 待装）
+- [x] 首批纳入 Codex、Claude Code、OpenCode、Gemini CLI；Codex 与 Claude Code 为核心支持，OpenCode 与 Gemini CLI 为兼容性扩展。
 - [ ] 模型策略：确认走「方向 2（只调度 CLI）」还是「方向 1（写入 CLI 配置，跨 CLI 轮换同一批模型）」
 - [ ] 测试功能做到什么程度？（建议先只做连通性）
 - [ ] 派发注册为 DSH Tool 还是 Skill？（用户提到「Skill 可调用」，倾向 Skill）
@@ -275,3 +277,10 @@ CLI 管理器放**插件配置区域**（`settings.plugin.item` 或独立 `setti
   - dsh-agent-conductor（外部 CLI 派发，仓库 `MJorgin/dsh-agent-conductor`）
   - Cindy（本机 `/Applications/Cindy.app`，配置隔离参考）
 - DSH 内置市场插件目录：`/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins`（卡片/插槽实现参考）。
+- 兼容性调研入口（访问于 2026-08-25）：
+  - TRAE CLI 命令行参数：<https://docs.trae.cn/cli_command-line-parameters>
+  - TRAE CLI 全局设置：<https://docs.trae.cn/cli_global-settings>
+  - CodeBuddy CLI 无头模式：<https://www.codebuddy.ai/docs/cli/headless>
+  - CodeBuddy CLI 参考：<https://www.codebuddy.ai/docs/cli/cli-reference>
+
+> 上述链接只能证明存在相应公开入口；在实现中声明“完整兼容”前，仍须对具体版本实测无头调用、模型参数、认证隔离和配置目录隔离。
