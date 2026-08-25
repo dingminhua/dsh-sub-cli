@@ -1,0 +1,7 @@
+# dsh-sub-cli marketplace submission metadata
+catalog: dingminhua/dsh-sub-cli
+name: dsh-sub-cli
+title: 外部 Agent CLI 管理器
+description: 在 DSH 中统一管理外部 Agent CLI：统一目录、配置隔离、三层模型路由与无头派发。
+category: cli
+repository: https://github.com/dingminhua/dsh-sub-cli

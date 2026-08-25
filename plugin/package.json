@@ -1,0 +1,75 @@
+{
+  "name": "dsh-sub-cli",
+  "version": "0.1.0",
+  "description": "Manage external Agent CLIs in DSH: a unified install dir, per-CLI isolated config, install/test status, three-layer model routing (provider → model → reasoning effort), and a headless cli_dispatch tool. Each CLI can be opened into its own conversation.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cli",
+    "codex",
+    "claude-code",
+    "opencode",
+    "gemini",
+    "headless"
+  ],
+  "author": "dingminhua",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dingminhua/dsh-sub-cli.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/dingminhua/dsh-sub-cli#readme",
+  "bugs": {
+    "url": "https://github.com/dingminhua/dsh-sub-cli/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-settings": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-ui-primitives": { "optional": true }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-settings": "0.1.0-rc.6"
+  }
+}

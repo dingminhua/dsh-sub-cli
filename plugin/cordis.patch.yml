@@ -1,0 +1,9 @@
+# dsh-sub-cli bundle patch: one host plugin row that registers the `dsh-sub-cli`
+# settings section (unified dir + per-CLI model route) and provides:
+#   - a `cli_dispatch` model tool that runs an installed external Agent CLI headless
+#   - Host handlers: get-directory / set-directory (migrate) / check-cli (install+version)
+#   - a `subcli-status` read that reflects real installed state per CLI
+# so the Web panel (settings section + session header catalog) stays in sync.
+- insert:
+    - id: dsh-sub-cli
+      name: 'dsh-sub-cli'

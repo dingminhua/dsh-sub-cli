@@ -1,82 +1,68 @@
 # dsh-sub-cli
 
-DSH（DeepSeek Harness）的外部 Agent CLI 管理器项目。
+在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的开源插件。
 
-本项目计划让用户在 DSH 中统一管理和调用首批四种外部 Agent CLI：Codex、Claude Code、OpenCode 和 Gemini CLI。
+- 把 Codex、Claude Code、OpenCode、Gemini CLI 放到**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
+- 每个 CLI 用**相互隔离的配置目录**，通过该 CLI 自身环境变量指向，完全不碰系统里已装的 CLI 配置；
+- Web 插件配置卡片配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
+- 注册 **`cli_dispatch`** 模型工具让 DSH 模型无头调用外部 CLI 并回传输出。
 
-- 将 CLI 二进制集中到用户选择的统一目录（Windows 默认 `%USERPROFILE%\dsh-clis`，macOS 默认 `~/dsh-clis/`）；
-- 用户修改统一目录后，经确认将插件托管的二进制、配置和元数据安全迁移到新目录；
-- 为不同 CLI 使用相互隔离的配置目录，不影响用户现有系统配置；
-- 在 DSH Web 插件配置页展示安装、配置和可用状态；
-- 提供清晰的安装引导；
-- 注册派发工具或 Skill，以无头方式运行目标 CLI 并回传结果；
-- 后续支持每个 CLI 的独立模型配置和可选调度策略。
+## 产品目标
 
-## 当前状态
+本产品解决的核心问题是：**DSH 本身用 DeepSeek 模型，但很多用户已经装了 Codex、Claude Code 等其它 Agent CLI，想让 DSH 也能用它们来处理任务**（例如“用 Claude Code 看这个项目”）。
 
-项目处于**资料迁移与实现起步阶段**。
+问题在于这些 CLI 各有各的安装位置、配置目录和模型设置，很乱，而且容易与用户系统里自己装的那份混在一起。
 
-`reference/dsh-subagent-default-model/plugin/` 保存的是原项目 `dsh-subagent-default-model` 的可运行参考实现，用于继承 DSH 插件设置、Web 卡片、Cordis 生命周期、测试和发布模式。它尚未改造成 `dsh-sub-cli`，请勿以新包名发布。
+因此本插件要实现五点：
+
+1. **统一管理**：把这些 CLI 集中放到一个目录（默认 `~/dsh-clis` 或 `%USERPROFILE%\dsh-clis`），不与系统里原有的混用；
+2. **配置隔离**：每个 CLI 用独立配置目录，**不破坏**用户系统里已经配好的那份；
+3. **能在 DSH 里用**：DSH 模型通过 `cli_dispatch` 工具无头调用这些 CLI 干活，把结果回传进对话；
+4. **像点子代理**：在会话头能看到这些 CLI 的状态，点进去进入它自己的对话；
+5. **跨平台**：同时支持 macOS 和 Windows，在路径、系统命令、默认目录上分别适配。
+
+## 项目结构
+
+```
+├── .github/workflows/ci.yml      # CI：测试 + npm pack --dry-run
+├── integration.mjs / prove.mjs   # 顶层验证脚本
+├── awesome-dsh-plugin-submission/ # 市场提交元数据
+├── reference/                    # 旧项目归档（不作为发布入口）
+└── plugin/                       # npm 包根
+    ├── package.json
+    ├── cordis.patch.yml
+    ├── lib/
+    │   ├── index.js              # Host 入口
+    │   ├── registry.js           # CLI 注册表 + argv 模板
+    │   ├── paths.js              # 统一目录 + 配置隔离
+    │   ├── status.js             # 安装/版本检测
+    │   ├── dispatch.js           # 无头派发
+    │   └── client.js             # Web 设置卡片
+    ├── test/                     # 单元测试（node --test）
+    ├── README.md / README.en.md
+    ├── CHANGELOG.md
+    └── LICENSE                   # MIT
+```
 
 ## 文档入口
 
-1. `CLI-MANAGER-HANDOFF.md`：完整需求、调研结论、参考实现和建议开发路径；
-2. `CLI-MANAGER-DESIGN.md`：精简设计说明；
-3. `MIGRATION-INVENTORY.md`：从旧项目迁入的资料、保留原因、待改造项和清理前核对清单；
-4. `DEVELOPMENT.md`：新项目开发原则和建议布局；
-5. `RELEASING.md`：新项目发布条件与流程；
-6. `reference/dsh-subagent-default-model/`：旧插件完整参考资料。
+1. `plugin/README.md` / `plugin/README.en.md`：包的用户文档；
+2. `plugin/PLUGIN_REQUIREMENTS.md`：开发红线与结构要求；
+3. `DEVELOPMENT.md`：本地开发原则与建议布局；
+4. `RELEASING.md`：发布流程；
+5. `CLI-MANAGER-HANDOFF.md` / `CLI-MANAGER-DESIGN.md`：需求与技术调研（历史）；
+6. `MIGRATION-INVENTORY.md`：旧项目资料迁移清单；
+7. `reference/dsh-subagent-default-model/`：旧项目参考实现，不作为发布入口。
 
-## 默认目录与迁移
-
-| 系统 | 默认目录 |
-|---|---|
-| Windows | `%USERPROFILE%\dsh-clis` |
-| macOS | `~/dsh-clis` |
-
-两者都表示当前用户主目录下的 `dsh-clis`；实现时通过系统用户主目录 API 获取，不写死盘符或用户名。
-
-用户可以在 Web 面板选择其他目录。修改目录时，插件先展示迁移内容并请求确认，然后将旧目录中的 `bin/`、各 CLI 配置目录和托管元数据移动过去。只有迁移及校验全部成功后才切换当前目录；发生权限、空间或文件冲突时继续保留旧目录，不静默覆盖目标文件。
-
-## 目标目录结构
-
-以下以 macOS 默认值为例：
-
-```text
-~/dsh-clis/
-├── bin/
-│   ├── codex
-│   ├── claude
-│   ├── opencode
-│   └── gemini
-├── config-codex/
-├── config-claude/
-├── config-opencode/
-└── config-gemini/
-```
-
-运行目标 CLI 时，由插件显式设置其配置目录环境变量或参数，例如：
+## 开发与验证
 
 ```bash
-CODEX_HOME=~/dsh-clis/config-codex ~/dsh-clis/bin/codex exec "任务"
-CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
+node integration.mjs   # 运行 registry/paths 测试
+node prove.mjs         # 运行 dispatch/status 测试
+cd plugin && npm test  # 运行全部单元测试
+cd plugin && npm pack --dry-run
 ```
-
-第一阶段不做协议代理或跨供应商模型转换，优先使用各 CLI 的原生认证和原生模型。
-
-## 建议实施顺序
-
-1. 定义 CLI 注册表及统一目录设置；
-2. 实现 CLI 状态检测和安装提示；
-3. 实现安全的无头派发服务与工具；
-4. 将参考 Web 卡片改造成 CLI 管理面板；
-5. 增加配置隔离、超时、退出码、stdout/stderr 和取消处理测试；
-6. 再增加每个 CLI 的模型配置及可选调度策略。
-
-## 迁移说明
-
-本仓库已复制旧项目 Git `HEAD` 中的全部跟踪文件，以便旧项目后续清理。没有复制依赖目录、Git 元数据、临时协作状态或本机认证配置。详见 `MIGRATION-INVENTORY.md`。
 
 ## License
 
-新项目最终许可证待正式实现和发布前确认。迁入的 `reference/dsh-subagent-default-model/plugin/LICENSE` 及其 `vendor/` 内许可证继续约束对应旧代码和参考快照。
+[MIT](plugin/LICENSE)
