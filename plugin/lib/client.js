@@ -89,11 +89,36 @@ window.__ModuleLoader__.load({
     };
 
     var CLIS = [
-      { id: "codex", name: "Codex" },
-      { id: "claude", name: "Claude Code" },
-      { id: "qwen", name: "Qwen Code" }
+      { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex" },
+      { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude" },
+      { id: "qwen", name: "Qwen Code", npm: "@qwen-code/qwen-code", bin: "qwen" }
     ];
     var SETTINGS_NS = "dsh-sub-cli";
+
+    /** Build a copyable install/update command for one CLI (client-side, no host RPC). */
+    function installCommandFor(cli, dir) {
+      var base = JSON.stringify(dir || "~/dsh-clis");
+      var vendor = "$DIR/vendor/" + cli.id;
+      if (navigator.platform && /Win/.test(navigator.platform)) {
+        var d = dir || "~/dsh-clis";
+        return [
+          "# 安装/更新 " + cli.name + " 到 " + d,
+          "$DIR = '" + d + "'",
+          "New-Item -ItemType Directory -Force -Path \"$DIR\\vendor\\" + cli.id + "\" | Out-Null",
+          "npm install --prefix \"$DIR\\vendor\\" + cli.id + "\" --no-save --no-audit --no-fund " + cli.npm,
+          "New-Item -ItemType Directory -Force -Path \"$DIR\\bin\" | Out-Null",
+          "Remove-Item -Force \"$DIR\\bin\\" + cli.bin + ".cmd\" -ErrorAction SilentlyContinue",
+          "Copy-Item \"$DIR\\vendor\\" + cli.id + "\\node_modules\\.bin\\" + cli.bin + ".cmd\" \"$DIR\\bin\\" + cli.bin + ".cmd\""
+        ].join("\n");
+      }
+      return [
+        "# 安装/更新 " + cli.name + " 到 " + (dir || "~/dsh-clis"),
+        "DIR=" + base,
+        "mkdir -p \"$DIR/vendor/" + cli.id + "\"",
+        "npm install --prefix \"$DIR/vendor/" + cli.id + "\" --no-save --no-audit --no-fund " + cli.npm,
+        "ln -sf \"$DIR/vendor/" + cli.id + "/node_modules/.bin/" + cli.bin + "\" \"$DIR/bin/" + cli.bin + "\""
+      ].join("\n");
+    }
 
     function normalize(value) {
       return {
@@ -245,13 +270,10 @@ window.__ModuleLoader__.load({
       };
       var toggleInstallCommand = function (id) {
         if (cmdState[0][id]) { cmdState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; }); return; }
-        var call = props.api && props.api.cli && typeof props.api.cli.installCommand === "function" ? props.api.cli.installCommand.bind(props.api.cli) : null;
-        if (!call) return;
-        call({ cli: id }).then(function (r) {
-          if (r.result && r.result.ok && r.result.value && r.result.value.command) {
-            cmdState[1](function (prev) { var next = Object.assign({}, prev); next[id] = r.result.value.command; return next; });
-          }
-        }).catch(function () {});
+        var cli = CLIS.find(function (c) { return c.id === id; });
+        if (!cli) return;
+        var command = installCommandFor(cli, dirState[0]);
+        cmdState[1](function (prev) { var next = Object.assign({}, prev); next[id] = command; return next; });
       };
       var copyCommand = function (id) {
         var command = cmdState[0][id];
