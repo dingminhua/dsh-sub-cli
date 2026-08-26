@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
     var NS = "settings.dshSubCli";
     var ZH = {
       "row.title": "外部 Agent CLI 管理器（dsh-sub-cli）",
-      "row.desc": "为每个 CLI 设置模型。",
+      "row.desc": "统一目录 + 每 CLI 独立模型路由（Provider → 模型 → 推理强度）。",
       "row.dir": "CLI 统一目录",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "推理 Provider",
@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
-      "row.desc": "Set a model for each CLI.",
+      "row.desc": "Unified dir + a per-CLI model route (provider → model → reasoning effort).",
       "row.dir": "Unified CLI directory",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "Provider",
