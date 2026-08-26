@@ -28,11 +28,12 @@ function textPrompt(prompt) {
 }
 
 export class ManagedCliProvider {
-	constructor({ name, cli, dirSource, spawn }) {
+	constructor({ name, cli, dirSource, spawn, prepare }) {
 		this.name = name;
 		this.cli = cli;
 		this.dirSource = dirSource;
 		this.spawn = spawn;
+		this.prepare = prepare; // optional (cliId, dir) => { ok, env, reason } — run gate
 		this.capabilities = NO_START_CAPABILITIES;
 		this.inheritsParentContext = false;
 	}
@@ -58,10 +59,19 @@ export class ManagedCliProvider {
 			try {
 				const resolved = await this.spawn.resolveExecutable(bin, undefined, controller.signal).catch(() => null);
 				if (!resolved) return { output: [], stopReason: "error", diagnostic: `找不到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
+				// Run gate: derive env from the CURRENT live route; refuse if not ready.
+				let mergedEnv;
+				if (this.prepare) {
+					const prep = await this.prepare(this.cli, dir);
+					if (!prep.ok) return { output: [], stopReason: "error", diagnostic: prep.reason || "CLI 配置未就绪，拒绝启动。" };
+					mergedEnv = prep.env;
+				} else {
+					mergedEnv = envFor(entry, dir);
+				}
 				handle = this.spawn.spawn({
 					argv: winShimArgv(resolved, entry.argv(task)),
 					cwd: dir,
-					env: envFor(entry, dir),
+					env: mergedEnv,
 					signal: controller.signal,
 					stdio: { stdin: "ignore", stdout: { maxBytes: MAX_OUTPUT_BYTES }, stderr: { maxBytes: MAX_OUTPUT_BYTES } },
 					graceMs: GRACE_MS
@@ -91,13 +101,14 @@ export class ManagedCliProvider {
 	}
 }
 
-export function registerManagedCliProviders(ctx, dirSource) {
+export function registerManagedCliProviders(ctx, dirSource, envForEntry) {
 	for (const spec of MANAGED_PROVIDERS) {
 		ctx.subagents.registerProvider(new ManagedCliProvider({
 			name: spec.name,
 			cli: spec.cli,
 			dirSource,
-			spawn: ctx.subprocess
+			spawn: ctx.subprocess,
+			envFor: envForEntry
 		}));
 	}
 }

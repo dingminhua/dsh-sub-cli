@@ -22,6 +22,7 @@ import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
+import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv } from "./verify.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
@@ -101,33 +102,22 @@ async function onDirChange(ctx, oldDir, newDir) {
 	await migrateDir(ctx, oldDir, newDir);
 }
 
-/** Record that a CLI passed verification (model route works) with full details. */
-async function recordVerified(ctx, cliId, { version, provider, model } = {}) {
-	const settings = ctx.get("settings");
-	if (!settings) return;
-	try {
-		await settings.mutate(SETTINGS_NS, [{
-			op: "set",
-			path: ["verified", cliId],
-			value: { ok: true, version: version || "", at: new Date().toISOString(), provider: provider || "", model: model || "" }
-		}]);
-	} catch (_error) {
-		// best-effort: a failed record must not fail the install/test result.
+/**
+ * Preflight before delegating to an external CLI: if the stored verification
+ * still matches the live route (fingerprint), skip the probe; otherwise probe
+ * the CLI once — on success write a verified fingerprint and allow the run, on
+ * failure block and surface the reason so the agent never runs a broken CLI.
+ */
+async function preflightCli(ctx, cliId) {
+	if (await isVerifiedCurrentAsync(ctx, cliId)) return { ok: true, skipped: true };
+	const probe = await testCli(ctx, cliId, undefined);
+	if (probe.ok) {
+		await writeVerified(ctx, cliId, { version: probe.version, capabilities: probe.capabilities });
+		return { ok: true, skipped: false, verified: { version: probe.version, capabilities: probe.capabilities } };
 	}
-}
-
-/** Read one CLI's installed version (or null). */
-async function readCliVersion(ctx, cliId, signal) {
-	const entry = cliById(cliId);
-	if (!entry) return null;
-	const dir = currentDir();
-	const fs = ctx.get("fs");
-	const exists = async (p) => {
-		if (!fs) return false;
-		return (await fs.lstat(p, {}, signal).catch(() => undefined)) !== undefined;
-	};
-	const r = await detectInstalled({ exists, spawn: ctx.subprocess, dir, entry, signal });
-	return r.version;
+	// 失败也记录（带指纹 + 原因），设置卡据此显示失败原因，配置变则消失。
+	await writeVerified(ctx, cliId, { ok: false, error: probe.error, capabilities: probe.capabilities });
+	return { ok: false, error: probe.error };
 }
 
 export function apply(ctx) {
@@ -203,14 +193,15 @@ export function apply(ctx) {
 	// Register managed CLI subagent providers and the model-facing tools. These
 	// run once `subagents` (a hard dependency, always present in a DSH host) is
 	// available, so they are not skipped by boot ordering.
-	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir);
-	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools });
+	const envForEntry = (cliId, dir) => cliEnv(ctx, cliId, dir);
+	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir, envForEntry);
+	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, { preflight: (cliId) => preflightCli(ctx, cliId) });
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
-		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。",
+		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_codex / cli_claude_code / cli_qwen（子代理）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
 		parameters: {
 			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude / qwen" },
 			task: { type: "string", required: true, description: "自包含的任务描述" },
@@ -284,15 +275,14 @@ export function apply(ctx) {
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
 			const result = await installManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, signal: exec.signal });
-			if (result.ok) await recordVerified(ctx, cliId, { version: result.version });
 			return result;
 		}
 	}));
 
-	// `cli_test`: verify the CLI's configured model route answers a minimal request.
+	// `cli_test`: verify the CLI itself can run with the configured model/supplier.
 	ctx.tools.register(defineTool({
 		name: "cli_test",
-		description: "验证某个外部 Agent CLI 配置的模型路由是否真正可用。实现：用该 CLI 在插件里配置的 Provider + Model 向模型发送一个测试请求，要求它只回复 OK；能收到符合预期的答复（含 OK）即判定该模型路由可用（凭证、端点、模型都正常）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model（见插件设置卡），否则本工具会返回失败。当用户说「测一下 / 验证一下某 CLI 的模型能不能回话、通不通」时调用。参数 cli 取值：codex / claude / qwen。成功后会在插件里写入该 CLI 的「已通过验证」记录（含版本、provider/model、时间）。",
+		description: "真正验证某个外部 Agent CLI 能否用当前配置的模型/供应商跑通。实现：把所选供应商（baseURL + 最新 API key + wire_api）写进该 CLI 自己的配置（如 Codex 的 config-codex/config.toml），然后用该配置无头运行一次「Reply with exactly: OK」，能回来含 OK 即判定该 CLI 真实可用（不是只测 DSH 模型路由）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model，并且该中转商支持对应 CLI 的协议（如 Codex 需要 responses 协议）。当用户说「测一下 / 验证一下某 CLI 能不能正常用、通不通」时调用。参数 cli 取值：codex / claude / qwen。成功则写入该 CLI 的「已通过验证」记录（含配置指纹），失败则清除并说明原因。",
 		parameters: {
 			cli: { type: "string", required: true, description: "要测试的 CLI 标识：codex / claude / qwen" }
 		},
@@ -300,36 +290,12 @@ export function apply(ctx) {
 			schema: { type: "json" },
 			render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }]
 		},
-		async execute(args) {
+		async execute(args, exec) {
 			const cliId = args && typeof args.cli === "string" ? args.cli : "";
-			const entry = cliById(cliId);
-			if (!entry) return { ok: false, error: "未知或不存在的 CLI。参数 cli 取值：codex / claude / qwen。" };
-			const section = currentSection();
-			const route = section && section.models ? section.models[cliId] : null;
-			const provider = route && route.provider ? route.provider : "";
-			const model = route && route.model ? route.model : "";
-			if (!provider || !model) return { ok: false, error: `尚未为 ${entry.name} 配置 Provider 和 Model。请先在插件设置卡为该 CLI 选定模型。` };
-			const llm = ctx.get("llm");
-			if (!llm) return { ok: false, error: "模型服务不可用。" };
-			let reply = "";
-			try {
-				for await (const chunk of llm.stream({
-					provider,
-					model,
-					messages: [{ role: "user", content: [{ type: "text", text: "Reply with exactly: OK" }] }],
-					signal: new AbortController().signal
-				})) {
-					if (chunk && chunk.type === "text-delta") reply += chunk.text;
-				}
-			} catch (error) {
-				return { ok: false, error: error instanceof Error ? error.message : String(error) };
-			}
-			const trimmed = reply.trim();
-			if (!trimmed) return { ok: false, error: "模型未返回答复。" };
-			if (!trimmed.toUpperCase().includes("OK")) return { ok: false, error: `模型返回异常（预期含 OK，实际：${trimmed.slice(0, 80) || "（空）"}）。` };
-			const version = await readCliVersion(ctx, cliId);
-			await recordVerified(ctx, cliId, { version, provider, model });
-			return { ok: true, cli: cliId, provider, model, reply: trimmed, version: version || null, verified: true };
+			const result = await testCli(ctx, cliId, exec.signal);
+			if (result.ok) await writeVerified(ctx, cliId, { version: result.version, capabilities: result.capabilities });
+			else await writeVerified(ctx, cliId, { ok: false, error: result.error, capabilities: result.capabilities });
+			return { ...result, cli: cliId, verified: !!result.ok };
 		}
 	}));
 

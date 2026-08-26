@@ -15,8 +15,12 @@ export const CLI_REGISTRY = [
 		configDir: "config-codex",
 		npm: "@openai/codex",
 		// headless argv template: {task} is the self-contained prompt, {model} optional -m.
+		// --skip-git-repo-check: the unified dir is usually not a git repo.
+		// --dangerously-bypass-approvals-and-sandbox: unattended run must never
+		// stop for an interactive confirmation (no TTY); caps follow the CLI's own
+		// configured auth/sandbox. Codex requires an API key in <cliDir>/config-codex.
 		argv: (task, model) => {
-			const args = ["exec", "--json"];
+			const args = ["exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"];
 			if (model) args.push("-m", model);
 			args.push(task);
 			return args;
@@ -31,7 +35,7 @@ export const CLI_REGISTRY = [
 		configDir: "config-claude",
 		npm: "@anthropic-ai/claude-code",
 		argv: (task, model) => {
-			const args = ["-p", "--output-format", "text"];
+			const args = ["-p", "--output-format", "text", "--dangerously-skip-permissions"];
 			if (model) args.push("--model", model);
 			args.push(task);
 			return args;

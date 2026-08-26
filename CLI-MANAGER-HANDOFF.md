@@ -323,15 +323,27 @@ DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、�
 - **废弃 LLM adapter 伪 Provider**：不再用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM route（会污染模型选择器并触发 `invalid metadata`）；
 - **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-qwen`，one-shot；
 - **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_qwen`，任意工作模式可用；
-- **管理工具**（`plugin/lib/index.js`）：`cli_install`（装官方 npm 包到统一目录）、`cli_check`（检测/版本）、`cli_test`（用配置模型发请求验证连通，严格校验回复含 OK）、`cli_remove`（只删统一目录托管文件）、`cli_dispatch`（一次性无头）；
-- **验证记录**：`cli_install`/`cli_test` 成功后写 `verified.<cli> = { ok, version, at, provider, model }`，设置卡显示「已通过验证，版本 x · 日期 · provider/model」，无记录显示「未安装」；
+- **管理工具**（`plugin/lib/index.js`）：`cli_install`（装官方 npm 包到统一目录）、`cli_check`（检测/版本）、`cli_test`（实测该 CLI 用所选中转商/模型能否跑通，非 DSH 路由）、`cli_remove`（只删统一目录托管文件）、`cli_dispatch`（一次性无头）；
+- **验证记录（2026-08-27 重构）**：`verified.<cli> = { ok, version, at, provider, model, reasoningEffort, fingerprint, error? }`，`fingerprint = hash(provider|model|effort|baseURL)`；`cli_install` 不再写验证（安装≠可行），只有 `cli_test`/预检实测才写；**失败也记录**（`ok:false` + `error` 原因 + fingerprint），配置变更则旧结论（通过或失败）都随指纹不匹配而消失；
+- **测试本意（已澄清）**：把所选供应商（baseURL + 最新 key + `wire_api=responses`）写进该 CLI 自己的配置（Codex `config-codex/config.toml`），再 `codex exec -m <model> "Reply exactly: OK"` 真实跑一次，能回含 OK 才算通过；该中转商不支持相应协议（如 Codex 需 `responses`）就明确反馈「该代理不支持 Codex」；
+- **供应商注入（实测可行）**：写 `model_provider`/`base_url`/`env_key`/`wire_api=responses`/`model` 进 CLI 配置，并在 spawn 时从 DSH credentials 实时注入最新 key（`credentials.resolve(apiKeyEnv).value`，不缓存不写死）。Codex 0.149 只认 `responses`，不再支持 `chat`；k3-baoyue 实测支持 `responses`（`/v1/responses` 200）；
+- **调用前预检 + 指纹失效**：`cli_codex`/`cli_claude_code`/`cli_qwen` 执行前比对当前配置指纹与已验证指纹——一致则跳过预检直接执行；不一致/从未验证则先实测一次（成功→写指纹并执行，失败→拦截返回原因）；执行时失败会作废该指纹（下次重新检测）；
+- **key 实时最新**：预检/实测/注入都每次从 DSH credentials 取最新 key，永不缓存；换 key 不改变指纹，但每次执行都用最新 key；
+- **统一目录真实结构（实测）**：`~/dsh-clis/{bin,vendor,config-codex,config-claude,config-qwen}`；`config-codex/` 里混有 Codex 运行时数据（`*.sqlite`、`sessions/`、`logs_*.sqlite`、`shell_snapshots/`、`.tmp/` 等），插件写模型配置**只覆盖 `config.toml`**；
+- **TOML 顺序陷阱（实测踩坑）**：Codex `config.toml` 的顶层模型键必须在所有 `[xxx]` 段（如 `[projects."..."]`）**之前**，否则被归入错误表、失效、回退默认 OpenAI → 401；`codexToml()` 生成"模型段在前"的安全顺序；
+- **Codex 0.149 只认 `wire_api="responses"`**（不再支持 `chat`）；k3-baoyue 实测支持 responses；<code>`cli_codex` 在 supplier 配置未写入本机 `config-codex/config.toml` 时会回退 OpenAI 401</code>（这正是供应商注入要解决的）；
+- **Codex 0.149 只认 `wire_api="responses"`**（不再支持 `chat`，官方讨论 7782 已于 2026-02 移除）；k3-baoyue 单轮 OK 但续接 500；aixforge chat 型续接 400；**modelflare 原生 responses 续接实测通过**；
+- **Codex 测试改为"必须支持续接" + 失败原因随配置消失**：`cli_test` 对 Codex 额外做工具续接探测，纯文本通过但续接不支持 → **判失败**并写失败记录（`ok:false` + error 原因 + fingerprint）；设置卡按指纹匹配分三态显示——通过（绿）/失败原因（红）/未验证（换配置后旧结论消失）；Claude/Qwen 保持纯文本检测；
+- **免代理首选**：续接探测通过的供应商（modelflare）直连，零转换零端口；chat 型供应商跑工具任务才需代理，非默认路径；
+- **参考实现 codex-bridge（记录备选）**：`https://github.com/wujfeng712-ui/codex-bridge`（MIT、Node 单文件零依赖）——本地协议代理，Responses↔Chat 双向转换 + `previous_response_id` 会话续接；对比 `completion-to-response`（Go，无状态，续接 bug）。**需开端口起服务**，仅当用户执意用 chat 型供应商且要工具任务时才启用；
+- **核对签名纪律（教训）**：派发/测试前实时读当前 `models.<cli>`→provider `baseURL`/`apiKeyEnv`→credentials 最新 key，并核对 `verified.<cli>.fingerprint`；不得沿用历史会话缓存的供应商/key；
 - **目录自动迁移**：Host 监听 `cliDir` 变化，把旧目录的 `bin/`、`config-<cli>/`、`vendor/` 移到新目录，目标存在则不覆盖；macOS `mv` / Windows `cmd move`；
 - **`subagents` 硬依赖**：`inject = ["tools","subprocess","subagents"]`；
 - **`@Remote` 标记**：`lib/remote.js` 让 `CliService` 方法暴露（说明：bundle 插件客户端 `api` 只含 curated 命名空间，`api.cli` 无法到达设置卡，故设置卡不依赖它）；
 - **设置卡精简**：去掉操作按钮，只留目录 + 每 CLI 模型配置 + 底部「主控可调用工具」指南（含人话触发语）；
 - **安装命令修复**：去掉 `#` 注释行（zsh 报错）、`~/` 转 `$HOME`、补建 `bin` 目录；
 - **Windows 适配**：`paths`（`node:path` + `binName` .cmd）、`status`（`exists` 回调替代 `/bin/test` + `winShimArgv`）、`dispatch`/`provider`（`winShimArgv` 用 `cmd.exe` 包 `.cmd`）、`install`（PowerShell + `Copy-Item`）、`manage`（win32 `del`）、`index`（迁移 `cmd move`）；
-- **当前测试**：`plugin/test` 共 **40** 项全部通过（`node --test test/*.test.mjs`）。
+- **当前测试**：`plugin/test` 共 **49** 项全部通过（`node --test test/*.test.mjs`，含新增 `verify.test.mjs` 的指纹/供应商注入/失效逻辑）。
 
 ### 尚未实现 / 待做
 

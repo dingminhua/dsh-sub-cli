@@ -26,7 +26,16 @@ test("argv templates are shell-safe arrays; codex uses -m for model", () => {
 
 test("argv without model omits the model flag", () => {
 	const claude = cliById("claude");
-	assert.deepEqual(claude.argv("hi", ""), ["-p", "--output-format", "text", "hi"]);
+	assert.deepEqual(claude.argv("hi", ""), ["-p", "--output-format", "text", "--dangerously-skip-permissions", "hi"]);
+});
+
+test("headless argv includes unattended flags so codex never prompts for a TTY", () => {
+	const codex = cliById("codex");
+	const args = codex.argv("task", "");
+	assert.ok(args.includes("--skip-git-repo-check"));
+	assert.ok(args.includes("--dangerously-bypass-approvals-and-sandbox"));
+	const claude = cliById("claude");
+	assert.ok(claude.argv("task", "").includes("--dangerously-skip-permissions"));
 });
 
 test("qwen uses --prompt for headless task and --model for model", () => {

@@ -123,6 +123,52 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 
 **范围确认（2026-08-26）**：保留 **Codex + Claude Code + Qwen Code** 三个；OpenCode、Gemini、Pi 已排除（分别因文件级隔离、隔离未验证、Windows 需 bash + 部分隔离）。`Codex` 已安装（二进制在 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0，但**不在 PATH**）。插件本身不依赖系统 PATH。
 
+### 统一目录内的 `config-<cli>` 实际结构（2026-08-27 实测）
+
+统一目录（默认 `~/dsh-clis`）下每个受管 CLI 有自己的配置隔离子目录：
+
+```
+~/dsh-clis/
+├── bin/                 # 各 CLI 可执行链接
+├── vendor/              # 装到统一目录的官方 npm 包
+├── config-codex/        # Codex：CODEX_HOME 指向这里（含 config.toml + 运行时数据）
+├── config-claude/       # Claude Code：CLAUDE_CONFIG_DIR 指向这里
+└── config-qwen/         # Qwen Code：QWEN_HOME 指向这里
+```
+
+注意（实测）：`config-codex/` 里除了用户级 `config.toml`，还混有 Codex 自己生成的**运行时数据**（`*.sqlite`、`sessions/`、`logs_*.sqlite`、`shell_snapshots/`、`.tmp/`、`thread-writer-locks/` 等）。对 Codex 而言 `config.toml` 只是该目录下的配置文件之一，`CODEX_HOME` 把整个目录都当作它的状态根。插件写入模型配置时**只覆盖 `config.toml`**，不要动其它运行时文件。
+
+### Codex `config.toml` 的 TOML 段落顺序陷阱（实测踩坑）
+
+Codex 读 `config.toml` 用的仍是标准 TOML 规则：**不带表头的裸键属于当前最近的 `[table]`**。因此**顶层模型段必须放在所有 `[xxx]` 段（如 `[projects."..."]`）之前**，否则会被静默归入前面的表、模型配置失效、Codex 回退到默认 OpenAI endpoint 并报 401。
+
+❌ 错误顺序（`model = ...` 落在 `[projects]` 之后 → 归入 projects 表 → 失效）：
+
+```toml
+[projects."/private/tmp"]
+trust_level = "trusted"
+
+model = "kimi-k3"          # ← 归入 projects 表，Codex 读不到，回退 OpenAI → 401
+model_provider = "k3-baoyue"
+```
+
+✅ 正确顺序（模型段在前，`[projects]` 段后置）：
+
+```toml
+model = "kimi-k3"
+model_provider = "k3-baoyue"
+[model_providers.k3-baoyue]
+name = "k3-baoyue"
+base_url = "https://api.supxh.xin/v1"
+env_key = "K3_BAOYUE_API_KEY"
+wire_api = "responses"
+
+[projects."/private/tmp"]
+trust_level = "trusted"
+```
+
+插件 `verify.js` 的 `codexToml()` 生成的就是这种"模型段在前"的安全顺序；新增/维护该函数时**不得把任何 `[xxx]` 表头插到 `model = ...` 之前**。已运行的 Codex 实例还会生成 `.tmp/`、`*.sqlite` 等运行时文件，写 `config.toml` 前目录结构会自行产生，无需插件预创建（但用 `fs` 写前仍需确保目录存在）。
+
 ## 模型方案讨论
 
 ### 方案 A（初期推荐）：运行时传参，不动配置文件
@@ -236,6 +282,76 @@ CLI 子会话列表只需要展示：
 - 当前 DSH 官方 Codex / Claude Code product provider 为 **one-shot**，不支持产品进程/线程续接。插件不把它们冒充为持续产品会话。
 - 本插件为托管 CLI 注册真正的 `SubagentProvider`（one-shot），工具经 `ctx.subagents.start(managed-<cli>, ...)` 派发，把 CLI 输出作为子会话结果返回，不注册任何 LLM provider，因此模型选择器不被污染。CLI 以子会话形式进入 DSH 历史，但每轮都是新的托管 CLI 进程。
 - 早期尝试用 LLM adapter 伪装 `dsh-cli-*` route 以实现“持续 DSH 子会话”的做法，因会把私有 route 暴露进全局模型选择器并触发 metadata 校验错误，已废弃。当前以 one-shot provider 为准；如未来需要真正的持续原生 CLI 会话，仍需各产品协议提供可持久化 session id 和 resume 能力。
+
+## “已验证”与模型路由注入（2026-08-27 已确认并落地）
+
+**本意澄清**：`cli_test` 测的不是 DSH 的模型路由，而是**该 CLI 本身能否用所选中转商/模型真正跑通**。为此插件把所选供应商**写进该 CLI 自己的配置**（供应商注入），再真实无头运行一次验证。
+
+### 供应商注入（跨供应商用工，实测可行）
+
+- k3-baoyue 是 OpenAI 兼容供应商，实测支持 **`responses` 协议**（`/v1/responses` 返回 200，`/v1/models` 报 `supported_endpoint_types: ["...","openai-response"]`）。
+- **Codex 0.149 只认 `wire_api = "responses"`，不再支持 `chat`**（曾为此踩坑）。给 Codex 配 `config-codex/config.toml`：
+
+  ```toml
+  model = "kimi-k3"
+  model_provider = "k3-baoyue"
+  [model_providers.k3-baoyue]
+  name = "k3-baoyue"
+  base_url = "https://api.supxh.xin/v1"
+  env_key = "K3_BAOYUE_API_KEY"
+  wire_api = "responses"
+  ```
+
+- `base_url`/`apiKeyEnv` 从 DSH provider 配置读（`settings.describe` 的 `llm-pi-ai.providers.<name>`）；key 每次从 DSH credentials 实时取（`credentials.resolve(apiKeyEnv).value`，不缓存不写死）。
+- spawn 时把最新 key 注入该 CLI 的进程环境，Codex 即用所选供应商而非 OpenAI 原生。
+
+### “已验证”指纹 + 调用前预检
+
+1. **指纹**：`fingerprint = hash(provider | model | reasoningEffort | baseURL)`；
+2. **测试成功才写**：`cli_test` 实测成功才写 `verified.<cli>`（含指纹）；失败即清除；
+3. **调用前预检**：`cli_codex`/`cli_claude_code`/`cli_qwen` 执行前比对当前配置指纹与已验证指纹——一致则**跳过预检直接执行**（省一次探测）；不一致/从未验证则先实测一次（成功→写指纹并执行，失败→拦截返回原因）；
+4. **指纹失效**：换 provider / model / reasoningEffort / 供应商（baseURL 变）→ 指纹不匹配 → 设置卡「已通过验证」消失，显示未验证；
+5. **失败作废**：指纹有效但执行时失败 → 撤销该指纹，下次调用重新检测；
+6. **key 实时**：换 key 不改指纹，但每次调用/预检都用最新 key。
+
+### 供应商工具续接能力（实测：aixforge 对 Codex 的硬限制，2026-08-27）
+
+**发现**：`aixforge`（`https://api.aixforge.com/v1`，`deepseek-v4-flash`）对 Codex 是**半兼容**——
+- 单轮纯文本通过：`POST /v1/responses` 返回 200 + `output_text` = `OK`；
+- 但 Codex 的联网/工具类任务失败，`turn.failed` 报错：
+  ```
+  function_call_output requires call_id on HTTP requests;
+  continuation via previous_response_id is only supported on Responses WebSocket v2
+  ```
+- 根因：Codex 需要"多轮工具调用续接"（发起 `function_call`，再把 `function_call_output` 续接回去），而这只有 `Responses WebSocket v2` 支持；aixforge 的 HTTP `/v1/responses` 端点不提供该能力。Codex 联网搜索/跑 shell 工具都依赖此续接，故这类供应商**无法跑真实工具类任务**。
+
+**对验证逻辑的设计影响（必须落地）**：
+- `cli_test` **不能只测一次纯文本 `Reply OK` 就判"已验证"**——那会"假通过"工具续接不支持的供应商；
+- 验证应包含一次**工具续接探测**：发起带 tool 的两步 responses 请求（第一步让模型返回 `function_call`、拿 `call_id`；第二步带 `function_call_output` 续接），能续接成功才算真正可用于 Codex 工具类任务；
+- 探测结果以能力位记录进 `verified.<cli>.capabilities.toolContinuation`（+ `websocketV2`），设置卡可据此展示"仅纯文本 / 可跑工具任务"，预检/派发前据此预警，避免用户以为能联网却实际跑死。
+
+（对比：k3-baoyue 实测支持工具续接，能跑通 Codex 联网任务。）
+
+### 本机实测结论
+
+- `POST https://api.supxh.xin/v1/responses`（带 key）回报 200 + response 对象；
+- Codex（0.149）用上述 k3-baoyue 配置 `exec -m kimi-k3 "Reply with exactly: OK"` 实测返回 `OK`、exit 0。
+
+> **核对签名纪律（2026-08-27 教训）**：派发/测试前必须从 DSH 实时读当前 `models.<cli>` → provider 的 `baseURL`/`apiKeyEnv` → credentials 的**最新** key，并核对 `verified.<cli>.fingerprint` 是否仍匹配当前路由；不得用历史会话里缓存过的供应商/key。文中的 k3-baoyue 示例仅为"工具续接可用"的对照，不代表任何用户当前选中的供应商。
+
+### 决策：Codex 测试 = 必须支持 responses 工具续接（2026-08-27 已落地）
+
+Codex 0.149 已移除 `wire_api="chat"`（官方讨论 7782：2026-02 完全移除 chat/completions）。Codex 要跑工具/联网任务必须走 **responses 工具续接**。因此：
+- **Codex 的 `cli_test` 不再"纯文本 OK 就算过"**：纯文本通过但工具续接不支持的供应商（如 aixforge `function_call_output requires call_id … WebSocket v2`、k3-baoyue step2 `upstream_error`）会**判失败**，明确告知「当前供应商不支持 Codex 所需的新接口（responses 工具续接），请更换如 modelflare」；
+- **Claude / Qwen 保持纯文本检测**（各自协议不同，不以 responses 续接为准）；
+- **免代理首选**：`cli_test` 用续接探测选供应商——原生支持 responses 续接的（实测 **modelflare** `openai-responses`，step1+step2 全通）直连、零转换、零端口；chat 型供应商要跑工具任务才需代理，非默认路径。
+
+### 参考实现：codex-bridge（2026-08-27 记录，备选）
+
+- 仓库：`https://github.com/wujfeng712-ui/codex-bridge`（MIT，Node 单文件零依赖，约 2000 行）。
+- 定位：本地协议代理，把 Codex 的 Responses API ↔ 任意 Chat Completions 供应商双向转换（含流式 SSE、思考强度翻译、工具调用回合、`previous_response_id` 会话续接、web_fetch、入站鉴权、多供应商路由）。
+- 对比：`completion-to-response`（Go）无状态、`previous_response_id` 续接未实现（step2 报 `messages cannot be empty`）；codex-bridge 带 LRU 响应存储 + `resolveResponseChain`，续接实测成功。
+- 集成方式：作为**可选**本地代理，按当前所选 provider 动态生成 env（`DEEPSEEK_BASE_URL`/`DEEPSEEK_API_KEY`/`DEEPSEEK_MODELS` 指向该 provider 的 base_url + 最新 key + model），Codex `base_url` 指向 `127.0.0.1:PORT/v1`，`auth.json` 写入站 key。**需开端口、起常驻服务**，故仅当用户执意用 chat 型供应商且要工具任务时才启用，不进默认链路。
 
 ## 已确认事项与剩余决策
 

@@ -89,6 +89,9 @@ plugin/
 │   ├── paths.js              # 统一目录 + 配置隔离（跨平台路径）
 │   ├── status.js             # 安装/版本检测
 │   ├── dispatch.js           # 无头派发
+│   ├── verify.js             # “已验证”指纹 + 供应商注入 + 实测/预检
+│   ├── provider.js           # 托管 CLI 的 subagent provider（spawn 注入供应商 key）
+│   ├── subagent-tools.js     # cli_codex/claude/qwen（调用前按指纹预检）
 │   └── client.js             # Web 设置卡片
 ├── test/                     # node --test 单元测试
 ├── package.json
@@ -97,6 +100,15 @@ plugin/
 ├── CHANGELOG.md
 └── LICENSE
 ```
+
+## 供应商注入与 config 写入注意（2026-08-27 实测）
+
+- **写 Codex `config.toml` 的 TOML 顺序陷阱**：顶层模型键（`model`/`model_provider`）**必须放在所有 `[xxx]` 表段（如 `[projects."..."]`）之前**；否则标准 TOML 会把它们归入前面的表、模型配置失效、Codex 回退默认 OpenAI → 401。`verify.js` 的 `codexToml()` 已生成"模型段在前"的安全顺序，后续维护不得破坏。
+- **`config-<cli>/` 混有运行时数据**：Codex 会在 `config-codex/` 里生成 `*.sqlite`、`sessions/`、`logs_*.sqlite` 等运行时文件；插件写模型配置**只覆盖 `config.toml`**，不触碰其它文件。
+- **Codex 0.149 只认 `wire_api = "responses"`**，不再支持 `wire_api = "chat"`（历史上曾因此报错）；k3-baoyue 实测支持 responses。写供应商注入时固定 `wire_api = "responses"`。
+- **key 不写进 config**：`env_key = "K3_BAOYUE_API_KEY"` 只声明变量名，真正 key 由插件每次从 DSH credentials 实时注入 spawn 环境（`credentials.resolve(apiKeyEnv).value`）。
+- **`cli_test` 必须测工具续接，不只是纯文本**：实测 `aixforge` 对 Codex 是半兼容——单轮 `Reply OK` 通过，但联网/工具类任务 `turn.failed`（`function_call_output requires call_id … only supported on Responses WebSocket v2`）。验证必须加一次**工具续接探测**（两步 responses：先让模型返回 `function_call` 拿 `call_id`，再带 `function_call_output` 续接），结果记入 `verified.<cli>.capabilities.toolContinuation`；纯文本通过≠可用于 Codex 工具任务。**Codex 的 `cli_test` 对续接不通过的供应商直接判失败**，告知「不支持新接口，请换如 modelflare」。Claude/Qwen 保持纯文本检测。
+- **参考实现：codex-bridge**（`https://github.com/wujfeng712-ui/codex-bridge`，MIT，Node 单文件零依赖）——本地协议代理，Responses API ↔ Chat Completions 双向转换，带 `previous_response_id` 会话续接。**需开端口起常驻服务**，仅当用户执意用 chat 型供应商且要工具任务时才启用，不进默认链路。
 
 ## 可复用模式
 
