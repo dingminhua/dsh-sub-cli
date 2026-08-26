@@ -12,8 +12,8 @@ export const GRACE_MS = 30000;
  * @param {object} deps - { spawn: SubprocessService, dir: string, entry, argv: string[], task: string, model?: string }
  * @returns {Promise<{ok:boolean, exitCode:number|null, stdout:string, stderr:string, error?:string}>}
  */
-export async function dispatch({ spawn, dir, entry, argv, model }) {
-	const resolved = await spawn.resolveExecutable(binPath(dir, entry.bin)).catch(() => null);
+export async function dispatch({ spawn, dir, entry, argv, signal }) {
+	const resolved = await spawn.resolveExecutable(binPath(dir, entry.bin), undefined, signal).catch(() => null);
 	if (!resolved) {
 		return { ok: false, exitCode: null, stdout: "", stderr: "", error: `找不到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
 	}
@@ -23,6 +23,7 @@ export async function dispatch({ spawn, dir, entry, argv, model }) {
 			argv: [resolved, ...argv],
 			cwd: ".",
 			env: envFor(entry, dir),
+			signal,
 			stdio: { stdin: "ignore", stdout: { maxBytes: MAX_OUTPUT_BYTES }, stderr: { maxBytes: MAX_OUTPUT_BYTES } },
 			graceMs: GRACE_MS
 		});

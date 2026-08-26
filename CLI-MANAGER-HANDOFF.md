@@ -269,7 +269,48 @@ CLI 管理器放**插件配置区域**（`settings.plugin.item` 或独立 `setti
 
 ---
 
-## 12. 关联资源
+## 12. 主界面产品决策（2026-08-26 补充）
+
+### 12.1 不做手工任务工作台
+
+用户只向当前主控 AI 提出目标。主控 AI 自主选择是否调用外部 CLI、选择哪个 CLI，并生成简短标题与自包含任务。主界面不提供“新建 CLI 任务”、工作目录表单或人工调度面板。
+
+### 12.2 CLI 工作必须表现为子会话
+
+主控安排后，当前会话的子代理目录中出现 CLI 工作实例。列表仅展示标题、CLI 产品、状态和打开入口。打开实例后复用 DSH 原生 subagent 会话界面，包括：
+
+- 父子会话导航；
+- 完整历史与执行输出；
+- 运行中/可继续/停止/失败状态；
+- 对 continuable provider 的后续消息；
+- 当前轮次停止；
+- 完成后自动通知父级主控。
+
+不要为这些能力维护第二套 Client 状态、历史或任务数据库。
+
+### 12.3 Composition 边界
+
+- CLI provider 注册到 Host 的共享 `subagents` registry；
+- 面向模型的委派 Tool 属于 Agent Preset；
+- 设置卡仍由当前插件 Client 入口提供；
+- Skill 可以说明何时使用 CLI，但真正派发必须通过 Tool/Provider。
+
+### 12.4 当前平台能力与分阶段实施
+
+DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、运行状态和父级通知。官方 `@deepseek-ai/dsh-subagent-codex` 与 `@deepseek-ai/dsh-subagent-claude-code` 当前版本只实现 one-shot provider：它们能进入原生 subagent 生命周期并返回最终文本，但明确不支持续接、进度流或产品会话持久化。
+
+当前实现采用两层架构：
+
+1. **直接 one-shot product provider**：如果 Profile 另行安装官方 Codex / Claude Code provider，插件动态暴露直接委派 Tool；
+2. **continuable DSH 子会话**：使用原生 `spawn` provider 建立可持久化子 Agent，并给它配置 `dsh-cli-codex`、`dsh-cli-claude`、`dsh-cli-opencode` 或 `dsh-cli-gemini` 路由。该路由把子会话历史整理为自包含提示，每一轮独立执行统一目录中的对应 CLI。
+
+第二层实现了用户确认的主界面交互：主控自动创建、标题与状态可见、点击查看历史、用户或主控继续发消息、停止当前轮次、结束后通知主控。它是持续的 **DSH 子会话**，但每一轮会启动新的原生 CLI 无头进程；文档和 UI 不得声称复用了同一个 Codex thread 或 Claude SDK session。
+
+OpenCode 与 Gemini 已接入相同路由框架，但发布前仍需对真实安装版本验证参数、认证隔离、取消与输出格式。
+
+---
+
+## 13. 关联资源
 
 - 原插件：`dsh-subagent-default-model`（`/Users/dmh2002/DshProject/dsh-subagent-default-model`），其 `plugin/lib/client.js` 的卡片模式、`plugin/lib/index.js` 的 `installSettingsSection` + `settingsScope` 模式可直接复用。
 - 设计文档：`CLI-MANAGER-DESIGN.md`（同目录，更精简的设计要点版）。

@@ -16,6 +16,8 @@ import { CLI_REGISTRY, cliById } from "./registry.js";
 import { resolveDir } from "./paths.js";
 import { dispatch } from "./dispatch.js";
 import { detectInstalled } from "./status.js";
+import { registerCliSubagentTools } from "./subagent-tools.js";
+import { registerCliLlmAdapters } from "./cli-llm-adapter.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess"];
@@ -23,13 +25,13 @@ export const inject = ["tools", "subprocess"];
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
 const MODEL_ENTRY = z.object({
-	provider: z.string(),
-	model: z.string(),
-	reasoningEffort: z.string()
-});
+	provider: z.string().default(""),
+	model: z.string().default(""),
+	reasoningEffort: z.string().default("")
+}).default({});
 
 const SCHEMA = z.object({
-	cliDir: z.string(),
+	cliDir: z.string().default(""),
 	models: z.dict(MODEL_ENTRY).default({})
 }).default({});
 
@@ -84,7 +86,21 @@ export function apply(ctx) {
 	// Register the CLI service - this makes it available via ctx.remote.cli.check()
 	new CliService();
 
-	// `cli_dispatch`: headless-run one external CLI and return its output.
+	// Optional runtime integrations must not block settings/status activation on
+	// deployments that have not mounted those registries yet.
+	const llm = ctx.get("llm");
+	if (llm) registerCliLlmAdapters({ llm, subprocess: ctx.subprocess }, currentDir);
+
+	const subagents = ctx.get("subagents");
+	if (subagents) registerCliSubagentTools({
+		subagents,
+		tools: ctx.tools,
+		on: ctx.on.bind(ctx),
+		effect: ctx.effect.bind(ctx)
+	});
+
+	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
+	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
 		description: "用指定的外部 Agent CLI 无头执行一个自包含任务并返回输出。任务必须自包含：对方看不到当前对话上下文。",

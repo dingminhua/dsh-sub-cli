@@ -15,14 +15,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: plugin/package-lock.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
       - name: Install
         working-directory: plugin
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Test
         working-directory: plugin
-        run: npm test
+        run: pnpm test
       - name: Pack dry-run
         working-directory: plugin
-        run: npm pack --dry-run
+        run: pnpm pack --dry-run

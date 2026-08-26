@@ -4,6 +4,64 @@
 
 插件已实现 `plugin/` 目录下的完整开源包结构（Host + Client + 测试 + 文档），正在进行将插件安装到 DSH Desktop 的集成验证。
 
+### Desktop 启动崩溃回归
+
+曾发现两类会让整个 Desktop profile 启动失败的 Host 入口兼容问题：
+
+1. 旧版入口在模块求值阶段调用当前 Schemastery 不支持的 `z.object(...).partial()`；
+2. CLI LLM adapter 没有实现 `providerRetryPolicy()`，`llm.registerAdapter()` 在注册 route 时直接抛错。
+
+Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归；自定义 LLM adapter 必须覆盖宿主注册阶段调用的 `providerInfo`、`providerRetryPolicy`、`listModels`、`resolveModel` 与 `stream` 方法。插件启动错误可在：
+
+```text
+~/Library/Application Support/DSH Desktop/logs/dsh-YYYY-MM-DD.error.log
+```
+
+中查看。禁止只依赖单元测试里的宽松 mock 判断 Host 可加载。
+
+## CLI 工具的工作模式策略（已确认）
+
+### 产品要求
+
+安装并启用 `dsh-sub-cli` 后，CLI 委派能力应默认可供**所有 Agent 工作模式**使用，不要求用户选择专门的「Code + External CLI」模式。
+
+目标行为：
+
+```text
+任意工作模式（standard / code / cordis / 用户自定义模式）
+  → 主控 AI 可调用 cli_codex / cli_claude_code / cli_opencode / cli_gemini
+  → DSH 创建原生子会话
+  → 展示标题、状态与历史
+  → 支持后续消息和停止当前轮次
+```
+
+### 架构边界
+
+- CLI 可执行文件、配置、状态检测和 LLM route 由 `dsh-sub-cli` Host 插件管理；
+- 四个模型工具也应由 Host 插件注册到共享 `tools` registry，不依赖一个专用 Agent Preset；
+- DSH 原生 subagent runtime 继续负责子会话、父子关系、历史、状态、follow-up、interrupt 和完成通知；
+- 某个工作模式如果明确使用工具白名单、deny 规则或安全策略屏蔽 CLI 工具，插件必须尊重该限制，不得绕过；
+- 插件卸载或停用时，所有 CLI 工具和 route 必须随 Fiber 一起释放。
+
+### 专用 Preset 的处理
+
+开发期间创建的用户 Preset：
+
+```text
+~/.dsh/.agent-presets/dsh-sub-cli/
+```
+
+只用于早期验证，不是正式产品依赖。正式实现完成 Host 全局工具注册后，应删除该开发 Preset；`plugin/agent.cordis.yml` 也不应作为正常使用的必选步骤，可删除或降级为高级定制示例。
+
+### 验收标准
+
+1. 安装插件后，不创建自定义工作模式也能在普通会话获得 CLI 工具；
+2. 至少验证 `standard`、`code`、`cordis` 三种模式的工具可见性；
+3. 主控调用 CLI 工具后，创建的工作实例按原生 subagent 子会话呈现；
+4. 子会话支持查看历史、后续沟通和停止当前轮次；
+5. 明确限制 CLI 工具的模式仍保持限制；
+6. 删除开发用 Preset 后，上述能力不受影响。
+
 ## 跨平台支持目标
 
 本插件应同时支持 macOS 和 Windows（DSH 运行的两种主要平台）。当前实现以 macOS 为主，对 Windows 的适配点包括：

@@ -1,0 +1,44 @@
+# Agent Preset fragment: expose continuable external CLI delegations.
+#
+# The dsh-sub-cli Host bundle registers the dsh-cli-* LLM routes. These rows
+# reuse the stock spawn provider so DSH owns child Session history, navigation,
+# followups, interruption and settlement notification.
+- id: tool-cli-codex
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: cli_codex
+    backgroundMode: continuable
+    agentOptions:
+      provider: dsh-cli-codex
+      model: native
+
+- id: tool-cli-claude
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: cli_claude_code
+    backgroundMode: continuable
+    agentOptions:
+      provider: dsh-cli-claude
+      model: native
+
+- id: tool-cli-opencode
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: cli_opencode
+    backgroundMode: continuable
+    agentOptions:
+      provider: dsh-cli-opencode
+      model: native
+
+- id: tool-cli-gemini
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: cli_gemini
+    backgroundMode: continuable
+    agentOptions:
+      provider: dsh-cli-gemini
+      model: native

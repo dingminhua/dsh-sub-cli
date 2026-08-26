@@ -21,6 +21,14 @@
 4. **像点子代理**：在会话头能看到这些 CLI 的状态，点进去进入它自己的对话；
 5. **跨平台**：同时支持 macOS 和 Windows，在路径、系统命令、默认目录上分别适配。
 
+## 已确认的主界面交互
+
+主界面不提供手工“新建 CLI 任务”工作台。用户只向主控 AI 提需求，由主控决定是否委派给某个 CLI，并生成一个简短工作标题。
+
+CLI 工作应复用 DSH 的 subagent 子会话体验：当前主控会话下展示标题、CLI 产品与运行状态；点击进入后查看历史和输出；支持的 provider 可继续接收用户或主控消息，也可停止当前轮次；完成结果自动回报主控。插件设置页只负责安装、配置、认证提示、检测和测试。
+
+当前实现提供 `agent.cordis.yml` Preset 片段：它用 DSH 原生 continuable 子 Agent 承载四种 CLI 工作。主控调用对应 Tool 后，标题、状态、历史、后续消息、停止和完成通知都由原生 subagent UI/runtime 提供。外部 CLI 在每个子会话轮次中独立无头执行，因此这是持续的 DSH 子会话，不宣称复用同一个 Codex thread 或 Claude SDK session。详细约束见 `CLI-MANAGER-DESIGN.md` 与 `CLI-MANAGER-HANDOFF.md`。
+
 ## 项目结构
 
 ```

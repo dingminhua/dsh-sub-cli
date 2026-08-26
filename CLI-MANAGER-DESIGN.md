@@ -196,10 +196,56 @@ Web 面板里只提供两个选项（GPT / Claude），插件自动处理 base U
 - 连通性测试（验证 base_url + key）
 - 模型列表探测（可选）
 
-## 待确认事项
+## 主界面交互与运行模型（2026-08-26 已确认）
 
-- [x] 首批纳入 Codex、Claude Code、OpenCode、Gemini CLI；前两者为核心支持。
-- [ ] 模型策略：确认走「方向 2（只调度 CLI，模型留给各 CLI 配）」，还是「方向 1（写入 CLI 配置，跨 CLI 轮换同一批模型）」
-- [ ] 测试功能做到什么程度？（建议先只做连通性）
-- [ ] 派发工具注册为 DSH Tool 还是 Skill？（用户提到"Skill 可以调用"，倾向 Skill）
-- [ ] 代码放在当前插件里还是独立新插件？
+### 产品边界
+
+插件分为两个明确入口：
+
+1. **插件设置页负责准备 CLI**：安装引导、统一目录、独立配置、认证提示、版本检测与连通性测试；
+2. **主界面负责观察 CLI 工作**：主控 AI 自主决定是否委派以及委派给哪个 CLI，用户不手工创建 CLI 任务。
+
+主界面不得另造「新建 CLI 任务」表单或独立任务管理系统。正常流程是：
+
+```text
+用户向主控提出目标
+  → 主控 AI 调用一个 CLI 委派工具
+  → 工具参数包含简短标题和自包含任务
+  → 当前主控会话下出现一个 CLI 子会话
+  → 用户查看其状态和完整工作过程
+  → 用户或主控向可继续的实例补充消息
+  → 用户可停止当前轮次
+  → CLI 完成后把结果通知主控
+```
+
+### 主界面最小信息
+
+CLI 子会话列表只需要展示：
+
+- 简短任务标题；
+- CLI 产品名；
+- `运行中 / 可继续 / 已停止 / 失败 / 不可用` 状态；
+- 打开详情入口。
+
+点击后使用 DSH 原生 subagent 子会话体验：父子会话导航、历史记录、运行状态、输入框、停止操作和后续消息。首期不新增专用工作台、不要求用户选择模型或手工填写任务。
+
+### 技术决策
+
+- **Host plane** 注册 CLI subagent provider；它属于跨会话共享的 `subagents` registry，不能放进 Agent Preset 私有 realm。
+- **Agent Preset** 只贡献面向主控模型的委派工具；工具根据 CLI 选择 provider，并传入 `description`（标题）与 `prompt`（自包含任务）。
+- 优先复用 DSH 原生 `SubagentRuntime`、子会话目录、history、prompt、interrupt 和父子导航，不新增第二套 Client 任务状态源。
+- 当前 DSH 官方 Codex / Claude Code product provider 为 **one-shot**，不支持产品进程/线程续接。插件不把它们冒充为持续产品会话。
+- 本插件的 continuable 方案使用 DSH 原生 `spawn` 子 Agent 作为持久化会话所有者，并为其选择 `dsh-cli-<cli>` LLM route；每一轮把该子会话的任务、既有回答和最新 follow-up 整理成自包含提示，再调用统一目录中的 CLI。这样 DSH 原生提供父子导航、历史、运行状态、后续消息、停止和完成通知，而外部 CLI 每轮仍是独立无头进程。
+- 该方案是“持续 DSH 子会话”，不是“持续同一个原生 CLI session”。如未来需要原生 CLI thread/session 续接，仍需各产品协议提供可持久化 session id 和 resume 能力。
+
+## 已确认事项与剩余决策
+
+- [x] 首批产品方向为 Codex、Claude Code、OpenCode、Gemini CLI；Codex 与 Claude Code 优先。
+- [x] 用户只向主控 AI 提需求，不手工创建 CLI 任务。
+- [x] CLI 工作以简短标题显示，点击后表现与 subagent 子会话一致。
+- [x] 设置页负责安装、测试、配置；主界面负责观察和沟通。
+- [x] 派发必须是 DSH Tool，Skill 仅可提供使用指导，不能替代实际 Tool/Provider。
+- [x] 模型先留给各 CLI 原生配置，不把 DSH provider/model 目录直接当作 CLI 模型目录。
+- [x] 以 DSH 持续子会话承载 follow-up，每轮独立调用外部 CLI。
+- [ ] Codex / Claude Code 原生持续产品会话协议与更细粒度进度事件属于后续增强。
+- [ ] OpenCode / Gemini 的具体 CLI 版本兼容性仍需真实安装验证。
