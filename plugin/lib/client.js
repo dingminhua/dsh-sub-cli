@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
     var NS = "settings.dshSubCli";
     var ZH = {
       "row.title": "外部 Agent CLI 管理器（dsh-sub-cli）",
-      "row.desc": "统一目录 + 每 CLI 独立模型路由（Provider → 模型 → 推理强度）。修改会保存到本地设置。",
+      "row.desc": "为每个 CLI 设置模型。",
       "row.dir": "CLI 统一目录",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "推理 Provider",
@@ -44,13 +44,13 @@ window.__ModuleLoader__.load({
       "row.save": "保存",
       "row.saved": "已保存",
       "row.browse": "浏览",
-      "row.hint": "bin/ 放 CLI，config-<cli>/ 放各 CLI 隔离配置。切换目录时旧内容会自动迁移，冲突时不覆盖。",
+      "row.hint": "切换目录时会迁移已有内容，冲突时不会覆盖。",
       "row.toastSaved": "dsh-sub-cli 设置已保存。"
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
-      "row.desc": "Unified dir + a per-CLI model route (provider → model → reasoning effort). Changes are saved to local settings.",
-      "row.dir": "Unified CLI dir",
+      "row.desc": "Set a model for each CLI.",
+      "row.dir": "Unified CLI directory",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "Provider",
       "row.model": "Model",
@@ -173,8 +173,6 @@ window.__ModuleLoader__.load({
         }
       };
       return React.createElement("section", { className: "dsc-card" },
-        React.createElement("div", { className: "dsc-title" }, t("row.title")),
-        React.createElement("div", { className: "dsc-desc" }, t("row.desc")),
         React.createElement("div", { className: "dsc-grand" },
           React.createElement("label", { className: "dsc-field" }, t("row.dir"),
             React.createElement("input", { className: "dsc-input", value: dirState[0], placeholder: t("row.dirPlaceholder"), onChange: function (e) { dirState[1](e.target.value); dirtyState[1](true); savedState[1](false); } })
