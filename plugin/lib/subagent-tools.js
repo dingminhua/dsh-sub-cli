@@ -9,8 +9,7 @@ import { MANAGED_PROVIDERS } from "./provider.js";
 export const CLI_SUBAGENT_TOOLS = [
 	{ cli: "codex", toolName: "cli_codex", displayName: "Codex", provider: "managed-codex" },
 	{ cli: "claude", toolName: "cli_claude_code", displayName: "Claude Code", provider: "managed-claude" },
-	{ cli: "opencode", toolName: "cli_opencode", displayName: "OpenCode", provider: "managed-opencode" },
-	{ cli: "gemini", toolName: "cli_gemini", displayName: "Gemini CLI", provider: "managed-gemini" }
+	{ cli: "qwen", toolName: "cli_qwen", displayName: "Qwen Code", provider: "managed-qwen" }
 ];
 
 export { MANAGED_PROVIDERS };

@@ -70,15 +70,12 @@
 ├── bin/                          ← 各 CLI 二进制/软链（进程本体）
 │   ├── codex → ~/.codex/plugins/.plugin-appserver/codex
 │   ├── claude
-│   ├── opencode
-│   └── gemini
+│   └── qwen
 ├── config-codex/                 ← 各 CLI 独立配置（通过环境变量或启动参数隔离）
 │   └── config.toml
 ├── config-claude/
 │   └── settings.json
-├── config-opencode/
-│   └── opencode.json
-└── config-gemini/
+└── config-qwen/
 ```
 
 **两层各自独立**：
@@ -112,9 +109,11 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 |---|---|---|---|---|
 | **Codex** | `CODEX_HOME` 环境变量（二进制确认；Cindy 实证） | `-m, --model`；`-c key=value` 运行时覆盖任意 config；`--profile` | ✅ | 首批 |
 | **Claude Code** | `CLAUDE_CONFIG_DIR` 环境变量 | `ANTHROPIC_MODEL` 或 `--model` | ✅ | 首批 |
-| **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅ | 首批 |
-| **Gemini CLI** | 首批实现前按官方配置文档确认并固化隔离路径 | 支持运行时模型选择（具体参数需实现前实测锁定） | ⚠️ 待实测 | 首批 |
-| **Kimi CLI / Qwen Code** | 已有候选隔离方式 | 支持模型参数/环境变量 | ✅/待复核 | 暂缓，不属于首批 |
+| **Qwen Code** | `QWEN_HOME` 环境变量（重定向 `~/.qwen` 配置根） | `--model` 运行时模型 | ✅ | 首批 |
+| **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅/文件级 | 已排除 |
+| **Gemini CLI** | 隔离路径未实测确认 | 支持运行时模型选择 | ⚠️ 待实测 | 已排除 |
+| **Pi（pi-coding-agent）** | `PI_CODING_AGENT_DIR` 重定向 | `--model`/`--provider` | ⚠️ Windows 需 bash + 项目级 `.pi` 部分隔离 | 已排除 |
+| **Kimi CLI** | 已有候选隔离方式 | 支持模型参数/环境变量 | ✅/待复核 | 暂缓 |
 | **Trae CLI** | 官方 CLI 文档存在，但独立配置根隔离仍需实测 | 有模型相关设置，是否满足完整外部控制待验证 | ⚠️ | 暂缓调研 |
 | **WorkBuddy / CodeBuddy** | 产品命名和 CLI 边界需先澄清；CodeBuddy 有无头模式文档 | 能力需按确切产品重新验证 | ⚠️ | 暂缓调研 |
 | Cursor / Copilot / Grok | 通常无满足本项目要求的独立配置目录 | 内置模型为主 | ❌/待确认 | 暂不纳入 |
@@ -303,12 +302,12 @@ DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、�
 
 实现约定：
 
-1. 每个托管 CLI 一个 one-shot `SubagentProvider`（`managed-codex` / `managed-claude` / `managed-opencode` / `managed-gemini`）；
-2. `cli_codex` 等四个工具调用对应 provider，把 CLI 输出作为子 Agent 结果；
+1. 每个托管 CLI 一个 one-shot `SubagentProvider`（`managed-codex` / `managed-claude` / `managed-qwen`）；
+2. `cli_codex` 等三个工具调用对应 provider，把 CLI 输出作为子 Agent 结果；
 3. CLI 以子会话形式进入 DSH 历史，但每轮启动新的托管 CLI 进程，不得声称复用了同一个 Codex thread 或 Claude SDK session；
 4. 曾试验用 LLM adapter 伪装 `dsh-cli-*` route 以实现持续子会话，因会把私有 route 暴露进全局模型选择器并触发 metadata 校验错误，已废弃。
 
-OpenCode 与 Gemini 已接入相同 one-shot provider 框架，但发布前仍需对真实安装版本验证参数、认证隔离、取消与输出格式。
+范围（2026-08-26 确认）：保留 **Codex + Claude Code + Qwen Code**；OpenCode、Gemini、Pi 已排除。发布前仍需对三个 CLI 的真实安装版本验证参数、认证隔离、取消与输出格式。
 
 ---
 
@@ -318,8 +317,8 @@ OpenCode 与 Gemini 已接入相同 one-shot provider 框架，但发布前仍�
 
 - **平台启动崩溃修复**：移除 Schemastery `z.object(...).partial()`、未定义 `require`、残缺 LLM adapter 调用；
 - **废弃 LLM adapter 伪 Provider**：不再用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM route（会污染模型选择器并触发 `invalid metadata`）；改为注册真正的 `SubagentProvider`；
-- **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-opencode` / `managed-gemini`，one-shot，启动统一目录托管 CLI、捕获输出作为子会话结果；
-- **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_opencode` / `cli_gemini`，任意工作模式默认可用，尊重各模式工具限制；
+- **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-qwen`，one-shot，启动统一目录托管 CLI、捕获输出作为子会话结果；
+- **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_qwen`，任意工作模式默认可用，尊重各模式工具限制；
 - **设置卡**：每 CLI 标题行右侧紧凑按钮，未安装显示 `安装`，已安装显示灰色版本号 + `测试/更新/删除`；
 - **连接测试**（`plugin/lib/manage.js` `testManagedCli`）：真实最小请求；
 - **删除**（`removeManagedCli`）：只删统一目录托管文件，不碰系统与 `config-<cli>`；

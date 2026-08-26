@@ -62,15 +62,12 @@
 ├── bin/                          ← 各 CLI 二进制/软链
 │   ├── codex → ~/.codex/plugins/.plugin-appserver/codex
 │   ├── claude
-│   ├── opencode
-│   └── gemini
+│   └── qwen
 ├── config-codex/                 ← 各 CLI 的独立配置（通过环境变量或参数隔离）
 │   └── config.toml
 ├── config-claude/
 │   └── settings.json
-├── config-opencode/
-│   └── opencode.json
-└── config-gemini/
+└── config-qwen/
 ```
 
 **两层隔离**（对话中确认的关键设计）：
@@ -115,14 +112,16 @@ CLAUDE_CONFIG_DIR=~/dsh-clis/config-claude ~/dsh-clis/bin/claude -p "任务"
 |---|---|---|---|---|
 | **Codex** | `CODEX_HOME` 环境变量（Cindy 已证实，二进制确认） | `-m, --model`；还支持 `-c key=value` 运行时覆盖任何 config、`--profile` | ✅ | 首批 |
 | **Claude Code** | `CLAUDE_CONFIG_DIR` 环境变量 | `ANTHROPIC_MODEL` 或 `--model` | ✅ | 首批 |
-| **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅ | 首批 |
-| **Gemini CLI** | 首批实现前依据官方配置文档确认并实测隔离路径 | 运行时模型选择，参数需按具体版本锁定 | ⚠️ 待实测 | 首批 |
-| **Kimi CLI / Qwen Code** | 已有候选隔离方案 | 有模型参数或环境变量 | ✅/待复核 | 暂缓 |
+| **Qwen Code** | `QWEN_HOME` 环境变量（重定向 `~/.qwen` 配置根） | `--model` 运行时模型 | ✅ | 首批 |
+| **OpenCode** | `OPENCODE_CONFIG` 环境变量（指定文件路径） | 配置文件 `"model"` 或 `--model` | ✅/文件级 | 已排除 |
+| **Gemini CLI** | 隔离路径未实测确认 | 运行时模型选择 | ⚠️ 待实测 | 已排除 |
+| **Pi（pi-coding-agent）** | `PI_CODING_AGENT_DIR` 重定向 | `--model`/`--provider` | ⚠️ Windows 需 bash + 项目级 `.pi` 部分隔离 | 已排除 |
+| **Kimi CLI** | 已有候选隔离方案 | 有模型参数或环境变量 | ✅/待复核 | 暂缓 |
 | **Trae CLI** | 官方 CLI 存在，但独立配置根隔离需验证 | 模型控制能力需实测 | ⚠️ | 暂缓调研 |
 | **WorkBuddy / CodeBuddy** | 名称和产品边界需澄清；CodeBuddy 有无头模式文档 | 需按确切产品验证 | ⚠️ | 暂缓调研 |
 | Cursor / Copilot / Grok | 通常无满足要求的独立配置目录 | 内置模型为主 | ❌/待确认 | 暂不纳入 |
 
-**本机现状**：`Codex` 已安装（二进制在 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0，但**不在 PATH**）；Claude Code、OpenCode 和 Gemini CLI 的安装与隔离方式需在首批实现前按具体版本实测。插件本身不依赖系统 PATH。
+**范围确认（2026-08-26）**：保留 **Codex + Claude Code + Qwen Code** 三个；OpenCode、Gemini、Pi 已排除（分别因文件级隔离、隔离未验证、Windows 需 bash + 部分隔离）。`Codex` 已安装（二进制在 `~/.codex/plugins/.plugin-appserver/codex`，v0.148.0，但**不在 PATH**）。插件本身不依赖系统 PATH。
 
 ## 模型方案讨论
 
@@ -240,7 +239,7 @@ CLI 子会话列表只需要展示：
 
 ## 已确认事项与剩余决策
 
-- [x] 首批产品方向为 Codex、Claude Code、OpenCode、Gemini CLI；Codex 与 Claude Code 优先。
+- [x] 首批产品方向为 Codex、Claude Code、Qwen Code；Codex 与 Claude Code 为核心。
 - [x] 用户只向主控 AI 提需求，不手工创建 CLI 任务。
 - [x] CLI 工作以简短标题显示，点击后表现与 subagent 子会话一致。
 - [x] 设置页负责安装、测试、配置；主界面负责观察和沟通。
@@ -248,4 +247,4 @@ CLI 子会话列表只需要展示：
 - [x] 模型先留给各 CLI 原生配置，不把 DSH provider/model 目录直接当作 CLI 模型目录。
 - [x] 以 DSH 持续子会话承载 follow-up，每轮独立调用外部 CLI。
 - [ ] Codex / Claude Code 原生持续产品会话协议与更细粒度进度事件属于后续增强。
-- [ ] OpenCode / Gemini 的具体 CLI 版本兼容性仍需真实安装验证。
+- [ ] Codex / Claude Code / Qwen Code 的具体 CLI 版本兼容性仍需真实安装验证。

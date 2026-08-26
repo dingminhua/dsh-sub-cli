@@ -85,8 +85,7 @@ window.__ModuleLoader__.load({
     var CLIS = [
       { id: "codex", name: "Codex" },
       { id: "claude", name: "Claude Code" },
-      { id: "opencode", name: "OpenCode" },
-      { id: "gemini", name: "Gemini CLI" }
+      { id: "qwen", name: "Qwen Code" }
     ];
     var SETTINGS_NS = "dsh-sub-cli";
 

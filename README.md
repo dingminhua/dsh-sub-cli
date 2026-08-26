@@ -2,9 +2,10 @@
 
 在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的开源插件。
 
-- 把 Codex、Claude Code、OpenCode、Gemini CLI 放到**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
+- 把 Codex、Claude Code、Qwen Code 放到**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**，通过该 CLI 自身环境变量指向，完全不碰系统里已装的 CLI 配置；
 - Web 插件配置卡片配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
+- 注册 **`cli_codex` / `cli_claude_code` / `cli_qwen`** 工具让 DSH 模型把任务交给对应 CLI 并作为子会话返回；
 - 注册 **`cli_dispatch`** 模型工具让 DSH 模型无头调用外部 CLI 并回传输出。
 
 ## 产品目标

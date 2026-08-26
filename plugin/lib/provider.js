@@ -18,8 +18,7 @@ const NO_START_CAPABILITIES = Object.freeze({
 export const MANAGED_PROVIDERS = [
 	{ cli: "codex", name: "managed-codex" },
 	{ cli: "claude", name: "managed-claude" },
-	{ cli: "opencode", name: "managed-opencode" },
-	{ cli: "gemini", name: "managed-gemini" }
+	{ cli: "qwen", name: "managed-qwen" }
 ];
 
 function textPrompt(prompt) {

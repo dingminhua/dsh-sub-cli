@@ -11,8 +11,8 @@ function spawnFixture(stdout = "ok") {
 	};
 }
 
-test("declares four managed providers with no LLM capabilities", () => {
-	assert.deepEqual(MANAGED_PROVIDERS.map((entry) => entry.name), ["managed-codex", "managed-claude", "managed-opencode", "managed-gemini"]);
+test("declares three managed providers with no LLM capabilities", () => {
+	assert.deepEqual(MANAGED_PROVIDERS.map((entry) => entry.name), ["managed-codex", "managed-claude", "managed-qwen"]);
 	const provider = new ManagedCliProvider({ name: "managed-codex", cli: "codex", dirSource: () => "/managed", spawn: spawnFixture() });
 	assert.deepEqual(provider.capabilities, { outputSchema: false, depthLimit: false, toolFilter: false, persona: false });
 	assert.equal(provider.inheritsParentContext, false);
@@ -49,7 +49,7 @@ test("registers each provider on the subagents registry", () => {
 	const registrations = [];
 	const ctx = { subagents: { registerProvider: (provider) => registrations.push(provider.name) }, subprocess: {} };
 	registerManagedCliProviders(ctx, () => "/managed");
-	assert.deepEqual(registrations, ["managed-codex", "managed-claude", "managed-opencode", "managed-gemini"]);
+	assert.deepEqual(registrations, ["managed-codex", "managed-claude", "managed-qwen"]);
 });
 
 test("registering providers never touches the llm adapter registry", () => {

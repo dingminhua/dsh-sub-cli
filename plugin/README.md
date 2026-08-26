@@ -2,16 +2,16 @@
 
 在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的插件。
 
-- 把 Codex、Claude Code、OpenCode、Gemini CLI 放到一个**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
+- 把 Codex、Claude Code、Qwen Code 放到一个**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**（`config-<cli>/`），通过该 CLI 自身的环境变量指向，**完全不碰**你系统里已装的 CLI 配置；
 - Web 插件配置卡片可配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
-- 注册 **`cli_dispatch`** 模型工具，让 DSH 模型无头调用外部 CLI 并回传输出；
-- 通过 `cli_dispatch` 让每个 CLI 能在自己的对话里被调用。
+- 注册 **`cli_codex` / `cli_claude_code` / `cli_qwen`** 工具，让 DSH 模型把自包含任务交给对应 CLI，并作为子会话返回；
+- 注册 **`cli_dispatch`** 模型工具，让 DSH 模型无头调用外部 CLI 并回传输出。
 
 ## 功能
 
 - **统一目录**：所有 CLI 二进制集中到 `~/dsh-clis/bin/`，配置集中在 `~/dsh-clis/config-<cli>/`；
-- **配置隔离**：启动时设置 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `OPENCODE_CONFIG` / `GEMINI_CONFIG_DIR` 指向统一目录内配置，不触碰系统默认路径；
+- **配置隔离**：启动时设置 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `QWEN_HOME` 指向统一目录内配置，不触碰系统默认路径；
 - **三层模型路由**：每个 CLI 可独立选 Provider → 模型 → 推理强度；
 - **无头派发**：`cli_dispatch` 工具用 argv 数组执行 CLI，不用 shell 字符串拼接，处理超时、输出上限、退出码和 stderr；
 - **持久化**：统一目录与模型路由通过 `installSettingsSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。
@@ -47,7 +47,7 @@ npm install dsh-sub-cli
 | `models.<cli>.model` | 该 CLI 的模型 |
 | `models.<cli>.reasoningEffort` | 该 CLI 的推理强度 |
 
-`<cli>` 取值：`codex` / `claude` / `opencode` / `gemini`。
+`<cli>` 取值：`codex` / `claude` / `qwen`。
 
 ## 环境变量隔离
 
@@ -55,8 +55,7 @@ npm install dsh-sub-cli
 |---|---|
 | Codex | `CODEX_HOME` |
 | Claude Code | `CLAUDE_CONFIG_DIR` |
-| OpenCode | `OPENCODE_CONFIG` |
-| Gemini CLI | `GEMINI_CONFIG_DIR` |
+| Qwen Code | `QWEN_HOME` |
 
 ## 本地开发
 

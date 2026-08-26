@@ -11,11 +11,11 @@ function context() {
 	return { ctx, tools };
 }
 
-test("registers all four CLI tools globally without any LLM provider", () => {
+test("registers all three CLI tools globally without any LLM provider", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
-	assert.deepEqual([...fixture.tools.keys()], ["cli_codex", "cli_claude_code", "cli_opencode", "cli_gemini"]);
-	assert.equal(CLI_SUBAGENT_TOOLS.length, 4);
+	assert.deepEqual([...fixture.tools.keys()], ["cli_codex", "cli_claude_code", "cli_qwen"]);
+	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
 });
 
 test("delegates through its one-shot managed provider and returns CLI text", async () => {

@@ -37,32 +37,18 @@ export const CLI_REGISTRY = [
 		install: "安装 Claude Code，把可执行文件放到统一目录的 bin/claude。"
 	},
 	{
-		id: "opencode",
-		name: "OpenCode",
-		bin: "opencode",
-		env: "OPENCODE_CONFIG",
-		configDir: "config-opencode",
-		argv: (task, model) => {
-			const args = ["run"];
-			if (model) args.push("--model", model);
-			args.push(task);
-			return args;
-		},
-		install: "安装 OpenCode，把可执行文件放到统一目录的 bin/opencode。"
-	},
-	{
-		id: "gemini",
-		name: "Gemini CLI",
-		bin: "gemini",
-		env: "GEMINI_CONFIG_DIR",
-		configDir: "config-gemini",
+		id: "qwen",
+		name: "Qwen Code",
+		bin: "qwen",
+		env: "QWEN_HOME",
+		configDir: "config-qwen",
 		argv: (task, model) => {
 			const args = [];
 			if (model) args.push("--model", model);
-			args.push(task);
+			args.push("--prompt", task);
 			return args;
 		},
-		install: "安装 Gemini CLI，把可执行文件放到统一目录的 bin/gemini。"
+		install: "安装 Qwen Code，把可执行文件放到统一目录的 bin/qwen。"
 	}
 ];
 

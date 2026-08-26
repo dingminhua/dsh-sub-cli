@@ -2,15 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CLI_REGISTRY, cliById } from "../lib/registry.js";
 
-test("registry exposes the four managed CLIs", () => {
-	assert.equal(CLI_REGISTRY.length, 4);
+test("registry exposes the three managed CLIs", () => {
+	assert.equal(CLI_REGISTRY.length, 3);
 	const ids = CLI_REGISTRY.map((e) => e.id).sort();
-	assert.deepEqual(ids, ["claude", "codex", "gemini", "opencode"]);
+	assert.deepEqual(ids, ["claude", "codex", "qwen"]);
 });
 
 test("cliById resolves known ids and returns null for unknown", () => {
 	assert.equal(cliById("codex").bin, "codex");
 	assert.equal(cliById("claude").env, "CLAUDE_CONFIG_DIR");
+	assert.equal(cliById("qwen").env, "QWEN_HOME");
 	assert.equal(cliById("nope"), null);
 });
 
@@ -26,4 +27,10 @@ test("argv templates are shell-safe arrays; codex uses -m for model", () => {
 test("argv without model omits the model flag", () => {
 	const claude = cliById("claude");
 	assert.deepEqual(claude.argv("hi", ""), ["-p", "--output-format", "text", "hi"]);
+});
+
+test("qwen uses --prompt for headless task and --model for model", () => {
+	const qwen = cliById("qwen");
+	assert.deepEqual(qwen.argv("check", "qwen-max"), ["--model", "qwen-max", "--prompt", "check"]);
+	assert.deepEqual(qwen.argv("check", ""), ["--prompt", "check"]);
 });
