@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dispatch } from "../lib/dispatch.js";
+import { dispatch, winShimArgv } from "../lib/dispatch.js";
 import { CLI_REGISTRY } from "../lib/registry.js";
 
 function fakeSpawn(handle) {
@@ -34,4 +34,14 @@ test("dispatch returns { ok:false } when binary missing", async () => {
 	const r = await dispatch({ spawn: { resolveExecutable: async () => null }, dir: "/d", entry: CLI_REGISTRY[1], argv: ["-p"], model: "" });
 	assert.equal(r.ok, false);
 	assert.match(r.error, /找不到/);
+});
+
+test("winShimArgv wraps a .cmd shim through cmd.exe on Windows", () => {
+	const wrapped = winShimArgv("C:\\d\\bin\\codex.cmd", ["exec", "task"], "win32");
+	assert.deepEqual(wrapped, ["cmd.exe", "/d", "/s", "/c", "C:\\d\\bin\\codex.cmd", "exec", "task"]);
+});
+
+test("winShimArgv passes through a POSIX executable unchanged", () => {
+	const passed = winShimArgv("/d/bin/codex", ["exec", "task"]);
+	assert.deepEqual(passed, ["/d/bin/codex", "exec", "task"]);
 });

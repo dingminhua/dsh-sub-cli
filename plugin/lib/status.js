@@ -1,23 +1,20 @@
 // dsh-sub-cli install-status detection.
-// "Installed" means a real binary exists at <unifiedDir>/bin/<bin>; the optional
-// version probe runs `<bin> --version` and captures the first line. Detection
-// never falls back to the system PATH — the plugin only uses the unified dir.
+// "Installed" means a real binary/shim exists at <unifiedDir>/bin/<bin>; the
+// optional version probe runs `<bin> --version` and captures the first line.
+// Existence is checked via an injected cross-platform `exists` callback (the
+// DSH fs service) so no POSIX-only command like `/bin/test` is required.
 
 import { binPath } from "./paths.js";
-
-/** True when the path exists (uses a subprocess `test -e` under the hood). */
-export async function pathExists(runCmd, p) {
-	const r = await runCmd(["/bin/test", "-e", p]);
-	return r.exitCode === 0;
-}
+import { winShimArgv } from "./dispatch.js";
 
 /**
  * Detect whether a CLI is installed and, when possible, its version.
+ * @param deps - { exists(path), spawn, dir, entry }
  * @returns {{ installed: boolean, version: string | null, message: string }}
  */
-export async function detectInstalled({ runCmd, spawn, dir, entry }) {
+export async function detectInstalled({ exists, spawn, dir, entry }) {
 	const bin = binPath(dir, entry.bin);
-	if (!(await pathExists(runCmd, bin))) {
+	if (!(await exists(bin))) {
 		return { installed: false, version: null, message: `未找到 ${bin}。请先安装到该位置。` };
 	}
 	// Try to resolve the executable (verifies it is actually runnable).
@@ -28,7 +25,7 @@ export async function detectInstalled({ runCmd, spawn, dir, entry }) {
 	let handle;
 	try {
 		handle = spawn.spawn({
-			argv: [resolved, "--version"],
+			argv: winShimArgv(resolved, ["--version"]),
 			cwd: ".",
 			stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } },
 			graceMs: 20000

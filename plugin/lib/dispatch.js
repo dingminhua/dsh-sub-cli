@@ -1,26 +1,36 @@
 // dsh-sub-cli headless dispatch.
 // Runs an installed external CLI via ctx.subprocess.spawn with an argv array
 // (never a shell string), the CLI's isolated config env, and a bounded output.
+// On Windows, an npm shim binary is a `.cmd`/`.bat` and cannot be spawned
+// directly, so it is wrapped via `cmd.exe /d /s /c` (see wrapWinShim).
 
-import { binPath, envFor } from "./paths.js";
+import { binPath, envFor, PLATFORM } from "./paths.js";
 
 export const MAX_OUTPUT_BYTES = 200000;
 export const GRACE_MS = 30000;
 
+/** Wrap a Windows `.cmd`/`.bat` executable through cmd.exe; other outputs pass through. */
+export function winShimArgv(resolved, argv, platform = PLATFORM) {
+	const lower = resolved.toLowerCase();
+	const isWinShim = platform === "win32" && (lower.endsWith(".cmd") || lower.endsWith(".bat"));
+	if (!isWinShim) return [resolved, ...argv];
+	return ["cmd.exe", "/d", "/s", "/c", resolved, ...argv];
+}
+
 /**
  * Run one headless dispatch.
- * @param {object} deps - { spawn: SubprocessService, dir: string, entry, argv: string[], task: string, model?: string }
- * @returns {Promise<{ok:boolean, exitCode:number|null, stdout:string, stderr:string, error?:string}>}
+ * @param {object} deps - { spawn: SubprocessService, dir: string, entry, argv: string[], signal?, platform? }
  */
 export async function dispatch({ spawn, dir, entry, argv, signal }) {
-	const resolved = await spawn.resolveExecutable(binPath(dir, entry.bin), undefined, signal).catch(() => null);
+	const bin = binPath(dir, entry.bin);
+	const resolved = await spawn.resolveExecutable(bin, undefined, signal).catch(() => null);
 	if (!resolved) {
 		return { ok: false, exitCode: null, stdout: "", stderr: "", error: `找不到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
 	}
 	let handle;
 	try {
 		handle = spawn.spawn({
-			argv: [resolved, ...argv],
+			argv: winShimArgv(resolved, argv),
 			cwd: ".",
 			env: envFor(entry, dir),
 			signal,

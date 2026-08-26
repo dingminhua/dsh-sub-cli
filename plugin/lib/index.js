@@ -19,7 +19,8 @@ import { detectInstalled } from "./status.js";
 import { registerCliSubagentTools } from "./subagent-tools.js";
 import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
-import { installManagedCli, updateManagedCli } from "./install.js";
+import { installCommandOf } from "./install.js";
+import { markRemoteMethods } from "./remote.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
@@ -63,10 +64,17 @@ export function apply(ctx) {
 	class CliService extends TypertRemoteService {
 		constructor() {
 			super(ctx, "cli");
+			markRemoteMethods(CliService.prototype, ["check", "test", "remove", "installCommand"]);
 		}
 
 		async check(args) {
 			const dir = currentDir();
+			const fs = ctx.get("fs");
+			const exists = async (p) => {
+				if (!fs) return false;
+				const info = await fs.lstat(p, {}, undefined).catch(() => undefined);
+				return info !== undefined;
+			};
 			const runCmd = async (argv) => {
 				const handle = ctx.subprocess.spawn({ argv, cwd: ".", stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 20000 });
 				const outcome = await handle.done;
@@ -78,7 +86,7 @@ export function apply(ctx) {
 			const target = only ? CLI_REGISTRY.filter((e) => e.id === only) : CLI_REGISTRY;
 			const results = [];
 			for (const entry of target) {
-				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
+				const r = await detectInstalled({ exists, runCmd, spawn: ctx.subprocess, dir, entry });
 				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message, install: entry.install });
 			}
 			return { dir, results };
@@ -98,16 +106,10 @@ export function apply(ctx) {
 			return removeManagedCli({ fs, spawn: ctx.subprocess, dir: currentDir(), entry });
 		}
 
-		async install(args, signal) {
+		async installCommand(args) {
 			const entry = cliById(args && args.cli);
 			if (!entry) throw new Error("未知或不存在的 CLI");
-			return installManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, version: args && args.version, signal });
-		}
-
-		async update(args, signal) {
-			const entry = cliById(args && args.cli);
-			if (!entry) throw new Error("未知或不存在的 CLI");
-			return updateManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, signal });
+			return { ok: true, command: installCommandOf(entry, currentDir()) };
 		}
 	}
 
@@ -158,6 +160,12 @@ export function apply(ctx) {
 		},
 		async execute(args) {
 			const dir = currentDir();
+			const fs = ctx.get("fs");
+			const exists = async (p) => {
+				if (!fs) return false;
+				const info = await fs.lstat(p, {}, undefined).catch(() => undefined);
+				return info !== undefined;
+			};
 			const runCmd = async (argv) => {
 				const handle = ctx.subprocess.spawn({ argv, cwd: ".", stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 20000 });
 				const outcome = await handle.done;
@@ -169,7 +177,7 @@ export function apply(ctx) {
 			const target = only ? CLI_REGISTRY.filter((e) => e.id === only) : CLI_REGISTRY;
 			const results = [];
 			for (const entry of target) {
-				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
+				const r = await detectInstalled({ exists, runCmd, spawn: ctx.subprocess, dir, entry });
 				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message, install: entry.install });
 			}
 			return { dir, results };

@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { binPath, envFor } from "./paths.js";
 import { cliById } from "./registry.js";
-import { MAX_OUTPUT_BYTES, GRACE_MS } from "./dispatch.js";
+import { MAX_OUTPUT_BYTES, GRACE_MS, winShimArgv } from "./dispatch.js";
 
 const NO_START_CAPABILITIES = Object.freeze({
 	outputSchema: false,
@@ -59,7 +59,7 @@ export class ManagedCliProvider {
 				const resolved = await this.spawn.resolveExecutable(bin, undefined, controller.signal).catch(() => null);
 				if (!resolved) return { output: [], stopReason: "error", diagnostic: `找不到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
 				handle = this.spawn.spawn({
-					argv: [resolved, ...entry.argv(task)],
+					argv: winShimArgv(resolved, entry.argv(task)),
 					cwd: dir,
 					env: envFor(entry, dir),
 					signal: controller.signal,

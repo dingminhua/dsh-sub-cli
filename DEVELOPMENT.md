@@ -67,16 +67,17 @@ Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归。�
 
 ## 跨平台支持目标
 
-本插件应同时支持 macOS 和 Windows（DSH 运行的两种主要平台）。当前实现以 macOS 为主，对 Windows 的适配点包括：
+本插件应同时支持 macOS 和 Windows（DSH 运行的两种主要平台）。Windows 支持已按最佳实践实现（macOS 为开发主环境，Windows 不在本机实测）：
 
-- **路径分隔符**：统一目录中 `bin/`、`config-<cli>/` 等路径的拼接，在 Windows 上须使用 `path.join` 或 `path.sep`，不能硬编码 `/`；
-- **系统命令**：`/bin/test`、`/bin/cp`、`/bin/mkdir`、`/bin/rm` 等仅存在于 macOS/Linux。Windows 上须改用 `fs` 模块或 `cmd.exe` 命令；
-- **默认目录**：macOS 默认 `~/dsh-clis`，Windows 默认 `%USERPROFILE%\dsh-clis`；
-- **环境变量隔离**：各 CLI 的配置目录环境变量（`CODEX_HOME`、`CLAUDE_CONFIG_DIR` 等）在 Windows 上行为相同；
-- **子进程**：`ctx.subprocess.spawn` 应当跨平台工作，但 argv 中不得包含 shell 语法（已遵守）；
-- **测试**：`/bin/sh`、`/bin/test` 等 POSIX 命令在测试中不应出现；Windows 测试应使用 `cmd.exe` 或 `node:child_process` 原生能力。
+- **路径**：`paths.js` 统一用 `node:path`（`join`/`sep`）；`binName()` 在 Windows 给 npm shim 追加 `.cmd`；
+- **存在检测**：`status.js` 不再用 `/bin/test`，改用注入的跨平台 `exists` 回调（DSH `fs` 服务）；`detectInstalled` 签名改为 `{ exists, spawn, dir, entry }`；
+- **默认目录**：macOS `~/dsh-clis`，Windows `%USERPROFILE%\dsh-clis`（`expandTilde` 兼容 `~\`）；
+- **子进程 shim**：`dispatch.js` 的 `winShimArgv(resolved, argv, platform)` 把 Windows `.cmd`/`.bat` 用 `cmd.exe /d /s /c` 包裹；`provider.js`、`status.js` 均复用；
+- **安装命令**：`install.js` 的 `installCommandOf` 按平台渲染 —— POSIX 给 shell 脚本，Windows 给 PowerShell（`New-Item`/`Copy-Item` 复制 `.cmd` shim，避免需要提权的符号链接）；
+- **删除**：`manage.js` `removeManagedCli` 已有 win32 分支（`cmd.exe /d /s /c del`）。
+- **测试**：单元测试不依赖 `/bin/sh`、`/bin/test`；跨平台分支通过注入 `platform` 参数（`winShimArgv`、`binName`、`installCommandOf`）覆盖。
 
-Windows 适配是**渐进式**的，不在首版中全部完成，但上述差异点应在代码和文档中标注。
+> Windows 支持为最佳实践实现，未经 Windows 实机验证；`cmd.exe` shim、PowerShell 安装命令等分支已在单元测试中按注入平台参数覆盖。
 
 ## 建议项目布局
 
