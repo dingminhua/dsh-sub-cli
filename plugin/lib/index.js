@@ -77,7 +77,7 @@ export function apply(ctx) {
 			const results = [];
 			for (const entry of target) {
 				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
-				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message });
+				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message, install: entry.install });
 			}
 			return { dir, results };
 		}
@@ -144,7 +144,7 @@ export function apply(ctx) {
 			const results = [];
 			for (const entry of target) {
 				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
-				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message });
+				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message, install: entry.install });
 			}
 			return { dir, results };
 		}
