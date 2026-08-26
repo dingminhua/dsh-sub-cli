@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
     var NS = "settings.dshSubCli";
     var ZH = {
       "row.title": "外部 Agent CLI 管理器（dsh-sub-cli）",
-      "row.desc": "统一目录 + 每 CLI 独立模型路由（Provider → 模型 → 推理强度）。",
+      "row.desc": "统一管理并调用外部 Agent CLI，与原生安装隔离，可预设各种模型并像子代理一样被主控调用。",
       "row.dir": "CLI 统一目录",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "推理 Provider",
@@ -50,7 +50,12 @@ window.__ModuleLoader__.load({
       "row.connectionTest": "测试",
       "row.testingConnection": "测试中…",
       "row.install": "安装",
+      "row.installing": "安装中…",
+      "row.installPassed": "安装成功",
       "row.update": "更新",
+      "row.updating": "更新中…",
+      "row.noUpdate": "当前已是最新版本",
+      "row.updatePassed": "已更新",
       "row.remove": "删除",
       "row.removing": "删除中…",
       "row.testPassed": "连接测试通过",
@@ -58,7 +63,7 @@ window.__ModuleLoader__.load({
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
-      "row.desc": "Unified dir + a per-CLI model route (provider → model → reasoning effort).",
+      "row.desc": "Unified management and invocation of external Agent CLIs, isolated from native installs, with configurable models, callable by the controller like subagents.",
       "row.dir": "Unified CLI directory",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "Provider",
@@ -75,7 +80,12 @@ window.__ModuleLoader__.load({
       "row.connectionTest": "Test",
       "row.testingConnection": "Testing…",
       "row.install": "Install",
+      "row.installing": "Installing…",
+      "row.installPassed": "Install succeeded",
       "row.update": "Update",
+      "row.updating": "Updating…",
+      "row.noUpdate": "Already on the latest version",
+      "row.updatePassed": "Updated",
       "row.remove": "Remove",
       "row.removing": "Removing…",
       "row.testPassed": "Connection test passed",
@@ -236,6 +246,36 @@ window.__ModuleLoader__.load({
           cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
         });
       };
+      var installCli = function (id) {
+        if (cliBusyState[0][id]) return;
+        var call = props.api && props.api.cli && typeof props.api.cli.install === "function" ? props.api.cli.install.bind(props.api.cli) : null;
+        if (!call) return;
+        cliBusyState[1](function (prev) { var next = Object.assign({}, prev); next[id] = "install"; return next; });
+        call({ cli: id }).then(function (r) {
+          if (!r.result || !r.result.ok) throw new Error((r.result && (r.result.error || r.result.message)) || "Install failed");
+          var found = (r.result.value && r.result.value.version) || "0";
+          replaceCliStatus(id, { id: id, installed: true, version: found, message: "", install: "" });
+          setCliNotice(id, t("row.installPassed"), false);
+        }).catch(function (e) { setCliNotice(id, String(e), true); }).finally(function () {
+          cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
+        });
+      };
+      var updateCli = function (id) {
+        if (cliBusyState[0][id]) return;
+        var call = props.api && props.api.cli && typeof props.api.cli.update === "function" ? props.api.cli.update.bind(props.api.cli) : null;
+        if (!call) return;
+        cliBusyState[1](function (prev) { var next = Object.assign({}, prev); next[id] = "update"; return next; });
+        call({ cli: id }).then(function (r) {
+          if (!r.result || !r.result.ok) throw new Error((r.result && (r.result.error || r.result.message)) || "Update failed");
+          var v = r.result.value || {};
+          if (!v.updated) { setCliNotice(id, t("row.noUpdate"), false); return; }
+          var found = (v.currentVersion) || "0";
+          replaceCliStatus(id, { id: id, installed: true, version: found, message: "", install: "" });
+          setCliNotice(id, t("row.updatePassed"), false);
+        }).catch(function (e) { setCliNotice(id, String(e), true); }).finally(function () {
+          cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
+        });
+      };
       return React.createElement("section", { className: "dsc-card" },
         React.createElement("div", { className: "dsc-grand" },
           React.createElement("label", { className: "dsc-field" }, t("row.dir"),
@@ -251,9 +291,9 @@ window.__ModuleLoader__.load({
           var badge = !installed ? React.createElement("span", { className: "dsc-cli-ver" }, t("row.notInstalled")) : null;
           var ver = installed && status.version ? React.createElement("span", { className: "dsc-cli-ver" }, status.version) : null;
           var cliBusy = cliBusyState[0][cli.id];
-          var installBtn = !installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: true, title: status && status.install ? status.install : "" }, t("row.install")) : null;
+          var installBtn = !installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, title: status && status.install ? status.install : "", onClick: function () { installCli(cli.id); } }, cliBusy === "install" ? t("row.installing") : t("row.install")) : null;
           var connectionBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { testConnection(cli.id); } }, cliBusy === "test" ? t("row.testingConnection") : t("row.connectionTest")) : null;
-          var updateBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: true }, t("row.update")) : null;
+          var updateBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { updateCli(cli.id); } }, cliBusy === "update" ? t("row.updating") : t("row.update")) : null;
           var removeBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { removeCli(cli.id); } }, cliBusy === "remove" ? t("row.removing") : t("row.remove")) : null;
           return React.createElement("div", { className: "dsc-cli", key: cli.id },
             React.createElement("div", { className: "dsc-cli-title-row" },

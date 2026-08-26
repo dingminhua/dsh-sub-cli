@@ -13,6 +13,7 @@ export const CLI_REGISTRY = [
 		bin: "codex",
 		env: "CODEX_HOME",
 		configDir: "config-codex",
+		npm: "@openai/codex",
 		// headless argv template: {task} is the self-contained prompt, {model} optional -m.
 		argv: (task, model) => {
 			const args = ["exec", "--json"];
@@ -28,6 +29,7 @@ export const CLI_REGISTRY = [
 		bin: "claude",
 		env: "CLAUDE_CONFIG_DIR",
 		configDir: "config-claude",
+		npm: "@anthropic-ai/claude-code",
 		argv: (task, model) => {
 			const args = ["-p", "--output-format", "text"];
 			if (model) args.push("--model", model);
@@ -42,6 +44,7 @@ export const CLI_REGISTRY = [
 		bin: "qwen",
 		env: "QWEN_HOME",
 		configDir: "config-qwen",
+		npm: "@qwen-code/qwen-code",
 		argv: (task, model) => {
 			const args = [];
 			if (model) args.push("--model", model);

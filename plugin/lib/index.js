@@ -19,6 +19,7 @@ import { detectInstalled } from "./status.js";
 import { registerCliSubagentTools } from "./subagent-tools.js";
 import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
+import { installManagedCli, updateManagedCli } from "./install.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
@@ -95,6 +96,18 @@ export function apply(ctx) {
 			const fs = ctx.get("fs");
 			if (!fs) throw new Error("当前 DSH 未提供文件状态服务");
 			return removeManagedCli({ fs, spawn: ctx.subprocess, dir: currentDir(), entry });
+		}
+
+		async install(args, signal) {
+			const entry = cliById(args && args.cli);
+			if (!entry) throw new Error("未知或不存在的 CLI");
+			return installManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, version: args && args.version, signal });
+		}
+
+		async update(args, signal) {
+			const entry = cliById(args && args.cli);
+			if (!entry) throw new Error("未知或不存在的 CLI");
+			return updateManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, signal });
 		}
 	}
 
