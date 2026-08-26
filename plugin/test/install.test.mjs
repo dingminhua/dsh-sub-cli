@@ -16,6 +16,14 @@ test("installCommandOf renders a copyable npm command scoped to the unified dir"
 	assert.match(command, /--prefix "\$DIR\/vendor\/codex"/);
 	assert.match(command, /ln -sf .*"\$DIR\/bin\/codex"/);
 	assert.match(command, /DIR="\/managed"/);
+	assert.match(command, /mkdir -p "\$DIR\/bin"/);
+});
+
+test("installCommandOf has no comment-only line (zsh treats # as a command)", () => {
+	for (const entry of CLI_REGISTRY) {
+		const first = installCommandOf(entry, "/managed").split("\n")[0];
+		assert.ok(!/^\s*#/.test(first), "command must not start with a # comment");
+	}
 });
 
 test("installCommandOf never installs globally or touches system config", () => {

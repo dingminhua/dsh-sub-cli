@@ -311,38 +311,44 @@ DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、�
 
 ---
 
-## 13. 当前实施进度（2026-08-26，供后续接续）
+## 13. 当前实施进度（2026-08-27，供后续接续）
+
+### 产品定位（已确认）
+
+插件**设置卡只做两件事**：① 选**统一安装目录**（切换目录会同时移动该目录下插件托管内容）；② 为**每个 CLI 选它要用的模型**（Provider/Model/Effort）。**其余全部操作交给主控 A**，由用户在对话里用自然语言触发（见第 12 节工具清单与底部指南）。
 
 ### 已完成
 
 - **平台启动崩溃修复**：移除 Schemastery `z.object(...).partial()`、未定义 `require`、残缺 LLM adapter 调用；
-- **废弃 LLM adapter 伪 Provider**：不再用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM route（会污染模型选择器并触发 `invalid metadata`）；改为注册真正的 `SubagentProvider`；
-- **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-qwen`，one-shot，启动统一目录托管 CLI、捕获输出作为子会话结果；
-- **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_qwen`，任意工作模式默认可用，尊重各模式工具限制；
-- **设置卡**：每 CLI 标题行右侧紧凑按钮，未安装显示 `安装`，已安装显示灰色版本号 + `测试/更新/删除`；
-- **连接测试**（`plugin/lib/manage.js` `testManagedCli`）：真实最小请求；
-- **删除**（`removeManagedCli`）：只删统一目录托管文件，不碰系统与 `config-<cli>`；
-- **`subagents` 硬依赖**：`inject = ["tools","subprocess","subagents"]`，确保 provider/工具在 `subagents` 可用后再注册，不受启动顺序影响；
-- **文档漂移清理**：删除不存在的 `get-directory/set-directory/subcli-status` 注释、`迁移目录` 提示、无引用 locale 键、`RELEASING.md` 现状说明；
-- **当前测试**：`plugin/test` 共 30 项全部通过（`node --test test/*.test.mjs`）。
+- **废弃 LLM adapter 伪 Provider**：不再用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM route（会污染模型选择器并触发 `invalid metadata`）；
+- **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-qwen`，one-shot；
+- **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_qwen`，任意工作模式可用；
+- **管理工具**（`plugin/lib/index.js`）：`cli_install`（装官方 npm 包到统一目录）、`cli_check`（检测/版本）、`cli_test`（用配置模型发请求验证连通，严格校验回复含 OK）、`cli_remove`（只删统一目录托管文件）、`cli_dispatch`（一次性无头）；
+- **验证记录**：`cli_install`/`cli_test` 成功后写 `verified.<cli> = { ok, version, at, provider, model }`，设置卡显示「已通过验证，版本 x · 日期 · provider/model」，无记录显示「未安装」；
+- **目录自动迁移**：Host 监听 `cliDir` 变化，把旧目录的 `bin/`、`config-<cli>/`、`vendor/` 移到新目录，目标存在则不覆盖；macOS `mv` / Windows `cmd move`；
+- **`subagents` 硬依赖**：`inject = ["tools","subprocess","subagents"]`；
+- **`@Remote` 标记**：`lib/remote.js` 让 `CliService` 方法暴露（说明：bundle 插件客户端 `api` 只含 curated 命名空间，`api.cli` 无法到达设置卡，故设置卡不依赖它）；
+- **设置卡精简**：去掉操作按钮，只留目录 + 每 CLI 模型配置 + 底部「主控可调用工具」指南（含人话触发语）；
+- **安装命令修复**：去掉 `#` 注释行（zsh 报错）、`~/` 转 `$HOME`、补建 `bin` 目录；
+- **Windows 适配**：`paths`（`node:path` + `binName` .cmd）、`status`（`exists` 回调替代 `/bin/test` + `winShimArgv`）、`dispatch`/`provider`（`winShimArgv` 用 `cmd.exe` 包 `.cmd`）、`install`（PowerShell + `Copy-Item`）、`manage`（win32 `del`）、`index`（迁移 `cmd move`）；
+- **当前测试**：`plugin/test` 共 **40** 项全部通过（`node --test test/*.test.mjs`）。
 
 ### 尚未实现 / 待做
 
-1. **真实“下载安装”**：按钮目前禁用。需先为每个 CLI 固化官方来源：下载地址/npm 包名、macOS 与 Windows 二进制、版本查询来源、校验和、归档格式、Windows `.exe/.cmd`/shim。建议先从 Codex 开始；
-2. **真实“更新”**：需“是否有新版本”的判断协议、下载并替换、安装后版本检测；
-3. **目录内容迁移**：设置卡提示已改为“不迁移”；如未来要求迁移需单独实现（含确认、校验、冲突处理）；
-4. **Windows 适配**：`status.js` 用 `/bin/test`、`paths.js` 用字符串 `/` 拼接、默认目录 `%USERPROFILE%\dsh-clis` 需适配；
-5. **实机待重启验收（未提交代码已含修复）**：重启后确认四个 `managed-*` provider 与四个 `cli_*` 工具出现在运行时，模型选择器干净；
-6. **未提交改动**：`git status` 中 `CLI-MANAGER-DESIGN.md`、`CLI-MANAGER-HANDOFF.md`、`DEVELOPMENT.md`、`README.md`、`RELEASING.md`、`plugin/cordis.patch.yml`、`plugin/lib/{client,index,paths}.js`、`plugin/test/{host-import,provider}.test.mjs` 等修改尚未提交。这些改动含“`subagents` 硬依赖”关键修复，应在接续前提交。
+1. **Windows 实机验证**：见 `WINDOWS-HANDOFF.md`（A–F 项：安装、检测、连接测试、删除、目录迁移、子代理 Provider）。Windows 分支按最佳实践实现，未经 Windows 实机验证；
+2. **Windows 验证记录/迁移的实机确认**：`verified` 写入设置、`migrateDir` 的 `cmd.exe if not exist ... mkdir`/`move` 是否真正工作需在 Windows 跑；
+3. **真实“更新”对比新版本**：`cli_install` 复用 npm latest 即更新；如需“是否有新版本”的显式判断可后续加；
+4. **设置卡「打开即读验证状态」路径核验**：当前通过 settings `verified` 读到并显示；刷新/重开设置卡即可看到，无 host RPC。
 
 ### 关键文件
 
-- `plugin/lib/index.js`：Host 入口（设置、`CliService`、Provider/工具注册、`cli_dispatch`/`cli_check`）；
+- `plugin/lib/index.js`：Host（设置、工具、迁移、验证记录、`CliService`）；
 - `plugin/lib/provider.js`：托管 CLI `SubagentProvider`；
-- `plugin/lib/subagent-tools.js`：四个 CLI 工具；
-- `plugin/lib/manage.js`：删除与连接测试；
-- `plugin/lib/client.js`：设置卡 UI；
-- `plugin/test/*.test.mjs`：单元回归（30 项）。
+- `plugin/lib/subagent-tools.js`：`cli_codex`/`cli_claude_code`/`cli_qwen`；
+- `plugin/lib/install.js`：`installManagedCli` + `installCommandOf`；
+- `plugin/lib/manage.js`：`removeManagedCli` + `testManagedCli`；
+- `plugin/lib/{paths,status,dispatch,remote}.js`；`lib/client.js`：设置卡 UI；
+- `plugin/test/*.test.mjs`：单元回归（40 项）。
 
 ---
 

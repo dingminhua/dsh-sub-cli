@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     var DSC_ICON = "data:image/png;base64,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";
 
     // ── CSS ──────────────────────────────────────────────────────────────
-    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 4px}.dsc-footer-status{flex:1;min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
+    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:14px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:#2ed084}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 4px}.dsc-footer-status{flex:1;min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
 
     if (typeof document !== "undefined") {
       var cssId = "dsh-sub-cli/client.css";
@@ -44,9 +44,11 @@ window.__ModuleLoader__.load({
       "row.discard": "放弃修改",
       "row.saved": "已保存",
       "row.browse": "浏览",
-      "row.hint": "bin/ 存放 CLI 二进制，config-<cli>/ 存放各 CLI 隔离配置。切换目录只更改查找与安装位置，不会迁移已有内容。",
+      "row.hint": "CLI 统一目录，切换目录将同时移动目录内所有内容。",
+      "row.modelHint": "选择不同CLI所需要的模型，其他看说明，交给AI帮你完成即可。",
       "row.toastSaved": "dsh-sub-cli 设置已保存。",
       "row.notInstalled": "未安装",
+      "row.verified": "已通过验证，版本",
       "row.connectionTest": "测试",
       "row.testingConnection": "测试中…",
       "row.copyInstall": "安装命令",
@@ -57,7 +59,25 @@ window.__ModuleLoader__.load({
       "row.remove": "删除",
       "row.removing": "删除中…",
       "row.testPassed": "连接测试通过",
-      "row.removePassed": "已删除"
+      "row.removePassed": "已删除",
+      "guide.title": "主控可调用的 CLI 工具",
+      "guide.example": "你对主控说：",
+      "guide.install": "cli_install · 安装托管 CLI",
+      "guide.installEx": "帮我把 Claude Code 装上。",
+      "guide.check": "cli_check · 检测是否已装/版本",
+      "guide.checkEx": "看看 Codex 装了没？",
+      "guide.test": "cli_test · 验证模型连通",
+      "guide.testEx": "测一下 Claude Code 的模型能回话吗？",
+      "guide.remove": "cli_remove · 卸载托管 CLI",
+      "guide.removeEx": "把 Qwen Code 卸载掉。",
+      "guide.codex": "cli_codex · 交给 Codex",
+      "guide.codexEx": "用 Codex 看看这个项目。",
+      "guide.claude": "cli_claude_code · 交给 Claude Code",
+      "guide.claudeEx": "让 Claude Code review 一下。",
+      "guide.qwen": "cli_qwen · 交给 Qwen Code",
+      "guide.qwenEx": "用 Qwen Code 重构。",
+      "guide.dispatch": "cli_dispatch · 通用无头",
+      "guide.dispatchEx": "让 Codex 无头跑这个任务。"
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
@@ -72,9 +92,11 @@ window.__ModuleLoader__.load({
       "row.discard": "Discard",
       "row.saved": "Saved",
       "row.browse": "Browse",
-      "row.hint": "bin/ holds CLI binaries, config-<cli>/ holds each CLI's isolated config. Switching the directory changes where the plugin looks and installs; it does not migrate existing content.",
+      "row.hint": "Unified CLI directory; changing it moves all content inside.",
+      "row.modelHint": "Pick the model each CLI needs; for everything else, follow the notes / let the AI handle it.",
       "row.toastSaved": "dsh-sub-cli settings saved.",
       "row.notInstalled": "Not installed",
+      "row.verified": "Verified, version",
       "row.connectionTest": "Test",
       "row.testingConnection": "Testing…",
       "row.copyInstall": "Install command",
@@ -85,7 +107,25 @@ window.__ModuleLoader__.load({
       "row.remove": "Remove",
       "row.removing": "Removing…",
       "row.testPassed": "Connection test passed",
-      "row.removePassed": "Removed"
+      "row.removePassed": "Removed",
+      "guide.title": "Controller-callable CLI tools",
+      "guide.example": "You say:",
+      "guide.install": "cli_install · install managed CLI",
+      "guide.installEx": "Install Claude Code for me.",
+      "guide.check": "cli_check · installed/version check",
+      "guide.checkEx": "Is Codex installed?",
+      "guide.test": "cli_test · model connectivity",
+      "guide.testEx": "Can the model configured for Claude Code reply?",
+      "guide.remove": "cli_remove · uninstall managed CLI",
+      "guide.removeEx": "Uninstall Qwen Code.",
+      "guide.codex": "cli_codex · delegate to Codex",
+      "guide.codexEx": "Use Codex to inspect this project.",
+      "guide.claude": "cli_claude_code · delegate to Claude Code",
+      "guide.claudeEx": "Have Claude Code review this.",
+      "guide.qwen": "cli_qwen · delegate to Qwen Code",
+      "guide.qwenEx": "Refactor this with Qwen Code.",
+      "guide.dispatch": "cli_dispatch · generic headless",
+      "guide.dispatchEx": "Have Codex run this task headlessly."
     };
 
     var CLIS = [
@@ -95,35 +135,11 @@ window.__ModuleLoader__.load({
     ];
     var SETTINGS_NS = "dsh-sub-cli";
 
-    /** Build a copyable install/update command for one CLI (client-side, no host RPC). */
-    function installCommandFor(cli, dir) {
-      var base = JSON.stringify(dir || "~/dsh-clis");
-      var vendor = "$DIR/vendor/" + cli.id;
-      if (navigator.platform && /Win/.test(navigator.platform)) {
-        var d = dir || "~/dsh-clis";
-        return [
-          "# 安装/更新 " + cli.name + " 到 " + d,
-          "$DIR = '" + d + "'",
-          "New-Item -ItemType Directory -Force -Path \"$DIR\\vendor\\" + cli.id + "\" | Out-Null",
-          "npm install --prefix \"$DIR\\vendor\\" + cli.id + "\" --no-save --no-audit --no-fund " + cli.npm,
-          "New-Item -ItemType Directory -Force -Path \"$DIR\\bin\" | Out-Null",
-          "Remove-Item -Force \"$DIR\\bin\\" + cli.bin + ".cmd\" -ErrorAction SilentlyContinue",
-          "Copy-Item \"$DIR\\vendor\\" + cli.id + "\\node_modules\\.bin\\" + cli.bin + ".cmd\" \"$DIR\\bin\\" + cli.bin + ".cmd\""
-        ].join("\n");
-      }
-      return [
-        "# 安装/更新 " + cli.name + " 到 " + (dir || "~/dsh-clis"),
-        "DIR=" + base,
-        "mkdir -p \"$DIR/vendor/" + cli.id + "\"",
-        "npm install --prefix \"$DIR/vendor/" + cli.id + "\" --no-save --no-audit --no-fund " + cli.npm,
-        "ln -sf \"$DIR/vendor/" + cli.id + "/node_modules/.bin/" + cli.bin + "\" \"$DIR/bin/" + cli.bin + "\""
-      ].join("\n");
-    }
-
     function normalize(value) {
       return {
         cliDir: (value && value.cliDir) || "",
-        models: (value && value.models) || {}
+        models: (value && value.models) || {},
+        verified: (value && value.verified) || {}
       };
     }
 
@@ -181,25 +197,21 @@ window.__ModuleLoader__.load({
       var value = (snap && snap.status === "ready" && snap.value) || {};
       var dirState = React.useState(normalize(value).cliDir);
       var modelsState = React.useState(normalize(value).models);
+      var verifiedState = React.useState(normalize(value).verified);
       var groupsState = React.useState([]);
-      var cliState = React.useState([]);
       var dirtyState = React.useState(false);
       var busyState = React.useState(false);
-      var cliBusyState = React.useState({});
-      var cliNoticeState = React.useState({});
-      var cmdState = React.useState({});
       var savedState = React.useState(false);
       React.useEffect(function () {
         var alive = true;
         props.api.llm.models({}).then(function (r) { if (alive && r.result && r.result.ok) groupsState[1](r.result.value.groups || []); }).catch(function () {});
-        var checkCli = props.api && props.api.cli && typeof props.api.cli.check === "function" ? props.api.cli.check.bind(props.api.cli) : null;
-        if (checkCli) checkCli({}).then(function (r) { if (alive && r.result && r.result.ok) cliState[1](r.result.value.results || []); }).catch(function () {});
         return function () { alive = false; };
       }, []);
       React.useEffect(function () {
         if (dirtyState[0] || busyState[0]) return;
         dirState[1](normalize(value).cliDir);
         modelsState[1](normalize(value).models);
+        verifiedState[1](normalize(value).verified);
         savedState[1](false);
       }, [snap ? snap.revision : -1, dirtyState[0], busyState[0]]);
       function updateRoute(id, route) {
@@ -232,87 +244,23 @@ window.__ModuleLoader__.load({
           Promise.resolve(props.pickDirectory()).then(function (p) { if (p) { dirState[1](p); dirtyState[1](true); savedState[1](false); } }).catch(function () {});
         }
       };
-      function setCliNotice(id, text, error) {
-        cliNoticeState[1](function (prev) { var next = Object.assign({}, prev); next[id] = { text: text, error: !!error }; return next; });
-      }
-      function replaceCliStatus(id, found) {
-        cliState[1](function (prev) {
-          var next = prev.slice();
-          var idx = next.findIndex(function (x) { return x.id === id; });
-          if (idx >= 0) next[idx] = found; else next.push(found);
-          return next;
-        });
-      }
-      var testConnection = function (id) {
-        if (cliBusyState[0][id]) return;
-        var call = props.api && props.api.cli && typeof props.api.cli.test === "function" ? props.api.cli.test.bind(props.api.cli) : null;
-        if (!call) return;
-        cliBusyState[1](function (prev) { var next = Object.assign({}, prev); next[id] = "test"; return next; });
-        call({ cli: id }).then(function (r) {
-          if (r.result && r.result.ok && r.result.value && r.result.value.ok) setCliNotice(id, t("row.testPassed"), false);
-          else setCliNotice(id, (r.result && r.result.value && r.result.value.message) || "Test failed", true);
-        }).catch(function (e) { setCliNotice(id, String(e), true); }).finally(function () {
-          cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
-        });
-      };
-      var removeCli = function (id) {
-        if (cliBusyState[0][id]) return;
-        var call = props.api && props.api.cli && typeof props.api.cli.remove === "function" ? props.api.cli.remove.bind(props.api.cli) : null;
-        if (!call) return;
-        cliBusyState[1](function (prev) { var next = Object.assign({}, prev); next[id] = "remove"; return next; });
-        call({ cli: id }).then(function (r) {
-          if (!r.result || !r.result.ok) throw new Error("Remove failed");
-          replaceCliStatus(id, { id: id, installed: false, version: null, message: "", install: "" });
-          setCliNotice(id, t("row.removePassed"), false);
-        }).catch(function (e) { setCliNotice(id, String(e), true); }).finally(function () {
-          cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
-        });
-      };
-      var toggleInstallCommand = function (id) {
-        if (cmdState[0][id]) { cmdState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; }); return; }
-        var cli = CLIS.find(function (c) { return c.id === id; });
-        if (!cli) return;
-        var command = installCommandFor(cli, dirState[0]);
-        cmdState[1](function (prev) { var next = Object.assign({}, prev); next[id] = command; return next; });
-      };
-      var copyCommand = function (id) {
-        var command = cmdState[0][id];
-        if (!command) return;
-        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(command).then(function () { setCliNotice(id, t("row.copied"), false); }, function () { setCliNotice(id, t("row.copyFailed"), true); });
-        } else setCliNotice(id, t("row.copyFailed"), true);
-      };
       return React.createElement("section", { className: "dsc-card" },
+        React.createElement("div", { className: "dsc-dir-note" }, t("row.hint")),
         React.createElement("div", { className: "dsc-grand" },
-          React.createElement("label", { className: "dsc-field" }, t("row.dir"),
+          React.createElement("label", { className: "dsc-field" },
             React.createElement("input", { className: "dsc-input", value: dirState[0], placeholder: t("row.dirPlaceholder"), onChange: function (e) { dirState[1](e.target.value); dirtyState[1](true); savedState[1](false); } })
           ),
           React.createElement(Button, { type: "button", variant: "outline", size: "sm", onClick: browse }, t("row.browse"))
         ),
-        React.createElement("div", { className: "dsc-hint" }, t("row.hint")),
+        React.createElement("div", { className: "dsc-model-hint" }, t("row.modelHint")),
         CLIS.map(function (cli) {
           var route = modelsState[0][cli.id] || {};
-          var status = (cliState[0] || []).find(function (x) { return x.id === cli.id; });
-          var installed = !!(status && status.installed);
-          var badge = !installed ? React.createElement("span", { className: "dsc-cli-ver" }, t("row.notInstalled")) : null;
-          var ver = installed && status.version ? React.createElement("span", { className: "dsc-cli-ver" }, status.version) : null;
-          var cliBusy = cliBusyState[0][cli.id];
-          var installLabel = installed ? t("row.copyUpdate") : t("row.copyInstall");
-          var installBtn = React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { toggleInstallCommand(cli.id); } }, installLabel);
-          var connectionBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { testConnection(cli.id); } }, cliBusy === "test" ? t("row.testingConnection") : t("row.connectionTest")) : null;
-          var removeBtn = installed ? React.createElement(Button, { type: "button", variant: "outline", size: "xs", disabled: !!cliBusy, onClick: function () { removeCli(cli.id); } }, cliBusy === "remove" ? t("row.removing") : t("row.remove")) : null;
-          var cmd = cmdState[0][cli.id];
-          var cmdBlock = cmd ? React.createElement("div", { className: "dsc-install-cmd" },
-              React.createElement("pre", { className: "dsc-install-cmd-pre" }, cmd),
-              React.createElement(Button, { type: "button", variant: "outline", size: "xs", onClick: function () { copyCommand(cli.id); } }, t("row.copy"))
-            ) : null;
+          var v = (verifiedState[0][cli.id] && verifiedState[0][cli.id].ok) ? verifiedState[0][cli.id] : null;
           return React.createElement("div", { className: "dsc-cli", key: cli.id },
             React.createElement("div", { className: "dsc-cli-title-row" },
-              React.createElement("div", { className: "dsc-cli-head" }, cli.name, badge, ver),
-              React.createElement("div", { className: "dsc-cli-actions" }, installBtn, connectionBtn, removeBtn)
+              React.createElement("div", { className: "dsc-cli-head" }, cli.name),
+              React.createElement("span", { className: "dsc-verified" + (v ? " dsc-verified-ok" : "") }, v ? (t("row.verified") + " " + (v.version || "-") + " · " + (v.at ? v.at.slice(0, 10) : "") + (v.provider && v.model ? " · " + v.provider + "/" + v.model : "")) : t("row.notInstalled"))
             ),
-            cliNoticeState[0][cli.id] ? React.createElement("div", { className: "dsc-cli-notice" + (cliNoticeState[0][cli.id].error ? " dsc-cli-notice-error" : "") }, cliNoticeState[0][cli.id].text) : null,
-            cmdBlock,
             React.createElement(RouteSelects, { t: t, groups: groupsState[0], route: route, onChange: function (r) { updateRoute(cli.id, r); } })
           );
         }),
@@ -320,6 +268,17 @@ window.__ModuleLoader__.load({
           savedState[0] ? React.createElement("span", { className: "dsc-footer-status" }, t("row.saved")) : null,
           React.createElement("button", { type: "button", className: "dsm-btn dsm-btn-outline", disabled: !dirtyState[0] || busyState[0], onClick: discard }, t("row.discard")),
           React.createElement("button", { type: "button", className: "dsm-btn dsm-btn-primary", disabled: !snap || snap.status !== "ready" || snap.writable === false || busyState[0], onClick: save }, busyState[0] ? t("row.save") + "…" : t("row.save"))
+        ),
+        React.createElement("div", { className: "dsc-guide" },
+          React.createElement("div", { className: "dsc-guide-title" }, t("guide.title")),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_install"), t("guide.install"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.installEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_check"), t("guide.check"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.checkEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_test"), t("guide.test"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.testEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_remove"), t("guide.remove"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.removeEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_codex"), t("guide.codex"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.codexEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_claude_code"), t("guide.claude"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.claudeEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_qwen"), t("guide.qwen"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.qwenEx"))),
+          React.createElement("div", { className: "dsc-guide-row" }, React.createElement("code", null, "cli_dispatch"), t("guide.dispatch"), React.createElement("span", { className: "dsc-guide-ex" }, t("guide.example") + t("guide.dispatchEx")))
         )
       );
     }
