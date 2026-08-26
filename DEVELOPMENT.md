@@ -51,7 +51,7 @@ Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归；�
 ~/.dsh/.agent-presets/dsh-sub-cli/
 ```
 
-只用于早期验证，不是正式产品依赖。正式实现完成 Host 全局工具注册后，应删除该开发 Preset；`plugin/agent.cordis.yml` 也不应作为正常使用的必选步骤，可删除或降级为高级定制示例。
+只用于早期验证，不是正式产品依赖。Host 全局工具注册完成后，该用户 Preset 与 `plugin/agent.cordis.yml` 已删除；正常使用不需要创建或选择额外工作模式。
 
 ### 验收标准
 

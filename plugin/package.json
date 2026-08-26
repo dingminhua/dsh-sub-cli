@@ -34,14 +34,12 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./agent.cordis.yml": "./agent.cordis.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "icons",
     "cordis.patch.yml",
-    "agent.cordis.yml",
     "LICENSE",
     "README.md",
     "README.en.md",

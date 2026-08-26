@@ -27,7 +27,7 @@
 
 CLI 工作应复用 DSH 的 subagent 子会话体验：当前主控会话下展示标题、CLI 产品与运行状态；点击进入后查看历史和输出；支持的 provider 可继续接收用户或主控消息，也可停止当前轮次；完成结果自动回报主控。插件设置页只负责安装、配置、认证提示、检测和测试。
 
-当前实现提供 `agent.cordis.yml` Preset 片段：它用 DSH 原生 continuable 子 Agent 承载四种 CLI 工作。主控调用对应 Tool 后，标题、状态、历史、后续消息、停止和完成通知都由原生 subagent UI/runtime 提供。外部 CLI 在每个子会话轮次中独立无头执行，因此这是持续的 DSH 子会话，不宣称复用同一个 Codex thread 或 Claude SDK session。详细约束见 `CLI-MANAGER-DESIGN.md` 与 `CLI-MANAGER-HANDOFF.md`。
+当前实现由 Host 插件全局注册四个 CLI 委派工具，任意工作模式默认可用（明确的工具白名单或 deny 规则仍然优先）。工具使用 DSH 原生 continuable 子 Agent 承载 CLI 工作，标题、状态、历史、后续消息、停止和完成通知都由原生 subagent UI/runtime 提供。外部 CLI 在每个子会话轮次中独立无头执行，因此这是持续的 DSH 子会话，不宣称复用同一个 Codex thread 或 Claude SDK session。详细约束见 `CLI-MANAGER-DESIGN.md` 与 `CLI-MANAGER-HANDOFF.md`。
 
 ## 项目结构
 

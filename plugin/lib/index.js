@@ -92,12 +92,7 @@ export function apply(ctx) {
 	if (llm) registerCliLlmAdapters({ llm, subprocess: ctx.subprocess }, currentDir);
 
 	const subagents = ctx.get("subagents");
-	if (subagents) registerCliSubagentTools({
-		subagents,
-		tools: ctx.tools,
-		on: ctx.on.bind(ctx),
-		effect: ctx.effect.bind(ctx)
-	});
+	if (subagents) registerCliSubagentTools({ subagents, tools: ctx.tools });
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
