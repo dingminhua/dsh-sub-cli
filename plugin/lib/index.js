@@ -11,6 +11,7 @@
 import z from "@deepseek-ai/schemastery";
 import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { CLI_REGISTRY, cliById } from "./registry.js";
 import { resolveDir } from "./paths.js";
 import { dispatch } from "./dispatch.js";
@@ -53,6 +54,35 @@ export function apply(ctx) {
 		},
 		onChange: () => {}
 	});
+
+	// Create a CLI service that can be accessed remotely through Typert Gateway
+	class CliService extends TypertRemoteService {
+		constructor() {
+			super(ctx, "cli");
+		}
+
+		async check(args) {
+			const dir = currentDir();
+			const runCmd = async (argv) => {
+				const handle = ctx.subprocess.spawn({ argv, cwd: ".", stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 20000 });
+				const outcome = await handle.done;
+				const o = handle.collected && handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : "";
+				const e = handle.collected && handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : "";
+				return { exitCode: outcome.exitCode, stdout: o, stderr: e };
+			};
+			const only = args && typeof args.cli === "string" && args.cli ? args.cli : null;
+			const target = only ? CLI_REGISTRY.filter((e) => e.id === only) : CLI_REGISTRY;
+			const results = [];
+			for (const entry of target) {
+				const r = await detectInstalled({ runCmd, spawn: ctx.subprocess, dir, entry });
+				results.push({ id: entry.id, name: entry.name, installed: r.installed, version: r.version, message: r.message });
+			}
+			return { dir, results };
+		}
+	}
+
+	// Register the CLI service - this makes it available via ctx.remote.cli.check()
+	new CliService();
 
 	// `cli_dispatch`: headless-run one external CLI and return its output.
 	ctx.tools.register(defineTool({
