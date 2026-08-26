@@ -235,8 +235,8 @@ CLI 子会话列表只需要展示：
 - **Agent Preset** 只贡献面向主控模型的委派工具；工具根据 CLI 选择 provider，并传入 `description`（标题）与 `prompt`（自包含任务）。
 - 优先复用 DSH 原生 `SubagentRuntime`、子会话目录、history、prompt、interrupt 和父子导航，不新增第二套 Client 任务状态源。
 - 当前 DSH 官方 Codex / Claude Code product provider 为 **one-shot**，不支持产品进程/线程续接。插件不把它们冒充为持续产品会话。
-- 本插件的 continuable 方案使用 DSH 原生 `spawn` 子 Agent 作为持久化会话所有者，并为其选择 `dsh-cli-<cli>` LLM route；每一轮把该子会话的任务、既有回答和最新 follow-up 整理成自包含提示，再调用统一目录中的 CLI。这样 DSH 原生提供父子导航、历史、运行状态、后续消息、停止和完成通知，而外部 CLI 每轮仍是独立无头进程。
-- 该方案是“持续 DSH 子会话”，不是“持续同一个原生 CLI session”。如未来需要原生 CLI thread/session 续接，仍需各产品协议提供可持久化 session id 和 resume 能力。
+- 本插件为托管 CLI 注册真正的 `SubagentProvider`（one-shot），工具经 `ctx.subagents.start(managed-<cli>, ...)` 派发，把 CLI 输出作为子会话结果返回，不注册任何 LLM provider，因此模型选择器不被污染。CLI 以子会话形式进入 DSH 历史，但每轮都是新的托管 CLI 进程。
+- 早期尝试用 LLM adapter 伪装 `dsh-cli-*` route 以实现“持续 DSH 子会话”的做法，因会把私有 route 暴露进全局模型选择器并触发 metadata 校验错误，已废弃。当前以 one-shot provider 为准；如未来需要真正的持续原生 CLI 会话，仍需各产品协议提供可持久化 session id 和 resume 能力。
 
 ## 已确认事项与剩余决策
 

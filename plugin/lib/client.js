@@ -40,17 +40,13 @@ window.__ModuleLoader__.load({
       "row.model": "模型",
       "row.effort": "推理强度",
       "row.inherit": "（继承）",
-      "row.empty": "尚未配置。",
       "row.save": "保存",
       "row.discard": "放弃修改",
       "row.saved": "已保存",
       "row.browse": "浏览",
-      "row.hint": "切换目录时会迁移已有内容，冲突时不会覆盖。",
+      "row.hint": "bin/ 存放 CLI 二进制，config-<cli>/ 存放各 CLI 隔离配置。切换目录只更改查找与安装位置，不会迁移已有内容。",
       "row.toastSaved": "dsh-sub-cli 设置已保存。",
-      "row.installed": "已安装",
       "row.notInstalled": "未安装",
-      "row.versionCheck": "版本检查",
-      "row.checkingVersion": "检查中…",
       "row.connectionTest": "测试",
       "row.testingConnection": "测试中…",
       "row.install": "安装",
@@ -58,10 +54,7 @@ window.__ModuleLoader__.load({
       "row.remove": "删除",
       "row.removing": "删除中…",
       "row.testPassed": "连接测试通过",
-      "row.removePassed": "已删除",
-      "row.installGuide": "安装说明",
-      "row.version": "版本",
-      "row.installHint": "安装提示"
+      "row.removePassed": "已删除"
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
@@ -72,17 +65,13 @@ window.__ModuleLoader__.load({
       "row.model": "Model",
       "row.effort": "Reasoning effort",
       "row.inherit": "(inherit)",
-      "row.empty": "Not configured yet.",
       "row.save": "Save",
       "row.discard": "Discard",
       "row.saved": "Saved",
       "row.browse": "Browse",
-      "row.hint": "bin/ holds CLIs, config-<cli>/ holds each CLI's isolated config. Switching dir migrates old content; conflicts are not overwritten.",
+      "row.hint": "bin/ holds CLI binaries, config-<cli>/ holds each CLI's isolated config. Switching the directory changes where the plugin looks and installs; it does not migrate existing content.",
       "row.toastSaved": "dsh-sub-cli settings saved.",
-      "row.installed": "Installed",
       "row.notInstalled": "Not installed",
-      "row.versionCheck": "Check version",
-      "row.checkingVersion": "Checking…",
       "row.connectionTest": "Test",
       "row.testingConnection": "Testing…",
       "row.install": "Install",
@@ -90,10 +79,7 @@ window.__ModuleLoader__.load({
       "row.remove": "Remove",
       "row.removing": "Removing…",
       "row.testPassed": "Connection test passed",
-      "row.removePassed": "Removed",
-      "row.installGuide": "Install guide",
-      "row.version": "Version",
-      "row.installHint": "Install hint"
+      "row.removePassed": "Removed"
     };
 
     var CLIS = [
@@ -226,21 +212,6 @@ window.__ModuleLoader__.load({
           return next;
         });
       }
-      var checkVersion = function (id) {
-        if (cliBusyState[0][id]) return;
-        var checkCli = props.api && props.api.cli && typeof props.api.cli.check === "function" ? props.api.cli.check.bind(props.api.cli) : null;
-        if (!checkCli) return;
-        cliBusyState[1](function (prev) { var next = Object.assign({}, prev); next[id] = "version"; return next; });
-        checkCli({ cli: id }).then(function (r) {
-          if (r.result && r.result.ok) {
-            var items = r.result.value.results || [];
-            var found = items.find(function (x) { return x.id === id; });
-            if (found) replaceCliStatus(id, found);
-          }
-        }).catch(function () {}).finally(function () {
-          cliBusyState[1](function (prev) { var next = Object.assign({}, prev); delete next[id]; return next; });
-        });
-      };
       var testConnection = function (id) {
         if (cliBusyState[0][id]) return;
         var call = props.api && props.api.cli && typeof props.api.cli.test === "function" ? props.api.cli.test.bind(props.api.cli) : null;

@@ -6,12 +6,15 @@
 
 ### Desktop 启动崩溃回归
 
-曾发现两类会让整个 Desktop profile 启动失败的 Host 入口兼容问题：
+曾发现三类会让整个 Desktop profile 启动失败或污染 UI 的兼容问题：
 
 1. 旧版入口在模块求值阶段调用当前 Schemastery 不支持的 `z.object(...).partial()`；
-2. CLI LLM adapter 没有实现 `providerRetryPolicy()`，`llm.registerAdapter()` 在注册 route 时直接抛错。
+2. 某一版 Host 入口执行了未定义的 `require`；
+3. 早期用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM Provider，导致模型选择器出现 “External CLI · codex/claude/opencode/gemini” 并报 `adapter returned invalid or duplicate model metadata`。
 
-Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归；自定义 LLM adapter 必须覆盖宿主注册阶段调用的 `providerInfo`、`providerRetryPolicy`、`listModels`、`resolveModel` 与 `stream` 方法。插件启动错误可在：
+针对第 3 点：DSH 没有“私有 LLM route（不暴露给模型选择器）”的机制，`registerAdapter` 一旦加入就会被 `listProviders()` 暴露。因此托管 CLI 必须注册为真正的 `SubagentProvider`，而不是 LLM adapter；当前实现已改为 `lib/provider.js` 的 one-shot provider。
+
+Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归。插件启动错误可在：
 
 ```text
 ~/Library/Application Support/DSH Desktop/logs/dsh-YYYY-MM-DD.error.log

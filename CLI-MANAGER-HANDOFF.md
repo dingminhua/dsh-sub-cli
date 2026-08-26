@@ -299,18 +299,55 @@ CLI 管理器放**插件配置区域**（`settings.plugin.item` 或独立 `setti
 
 DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、运行状态和父级通知。官方 `@deepseek-ai/dsh-subagent-codex` 与 `@deepseek-ai/dsh-subagent-claude-code` 当前版本只实现 one-shot provider：它们能进入原生 subagent 生命周期并返回最终文本，但明确不支持续接、进度流或产品会话持久化。
 
-当前实现采用两层架构：
+当前实现为托管 CLI 注册真正的 `SubagentProvider`（one-shot），工具经 `ctx.subagents.start(managed-<cli>, ...)` 派发，把 CLI 输出作为子会话结果返回。由于不注册任何 LLM provider，模型选择器不会被 `dsh-cli-*` route 污染。
 
-1. **直接 one-shot product provider**：如果 Profile 另行安装官方 Codex / Claude Code provider，插件动态暴露直接委派 Tool；
-2. **continuable DSH 子会话**：使用原生 `spawn` provider 建立可持久化子 Agent，并给它配置 `dsh-cli-codex`、`dsh-cli-claude`、`dsh-cli-opencode` 或 `dsh-cli-gemini` 路由。该路由把子会话历史整理为自包含提示，每一轮独立执行统一目录中的对应 CLI。
+实现约定：
 
-第二层实现了用户确认的主界面交互：主控自动创建、标题与状态可见、点击查看历史、用户或主控继续发消息、停止当前轮次、结束后通知主控。它是持续的 **DSH 子会话**，但每一轮会启动新的原生 CLI 无头进程；文档和 UI 不得声称复用了同一个 Codex thread 或 Claude SDK session。
+1. 每个托管 CLI 一个 one-shot `SubagentProvider`（`managed-codex` / `managed-claude` / `managed-opencode` / `managed-gemini`）；
+2. `cli_codex` 等四个工具调用对应 provider，把 CLI 输出作为子 Agent 结果；
+3. CLI 以子会话形式进入 DSH 历史，但每轮启动新的托管 CLI 进程，不得声称复用了同一个 Codex thread 或 Claude SDK session；
+4. 曾试验用 LLM adapter 伪装 `dsh-cli-*` route 以实现持续子会话，因会把私有 route 暴露进全局模型选择器并触发 metadata 校验错误，已废弃。
 
-OpenCode 与 Gemini 已接入相同路由框架，但发布前仍需对真实安装版本验证参数、认证隔离、取消与输出格式。
+OpenCode 与 Gemini 已接入相同 one-shot provider 框架，但发布前仍需对真实安装版本验证参数、认证隔离、取消与输出格式。
 
 ---
 
-## 13. 关联资源
+## 13. 当前实施进度（2026-08-26，供后续接续）
+
+### 已完成
+
+- **平台启动崩溃修复**：移除 Schemastery `z.object(...).partial()`、未定义 `require`、残缺 LLM adapter 调用；
+- **废弃 LLM adapter 伪 Provider**：不再用 `ctx.llm.registerAdapter()` 把 `dsh-cli-*` 注册成 LLM route（会污染模型选择器并触发 `invalid metadata`）；改为注册真正的 `SubagentProvider`；
+- **托管 CLI SubagentProvider**（`plugin/lib/provider.js`）：`managed-codex` / `managed-claude` / `managed-opencode` / `managed-gemini`，one-shot，启动统一目录托管 CLI、捕获输出作为子会话结果；
+- **全局 CLI 工具**（`plugin/lib/subagent-tools.js`）：`cli_codex` / `cli_claude_code` / `cli_opencode` / `cli_gemini`，任意工作模式默认可用，尊重各模式工具限制；
+- **设置卡**：每 CLI 标题行右侧紧凑按钮，未安装显示 `安装`，已安装显示灰色版本号 + `测试/更新/删除`；
+- **连接测试**（`plugin/lib/manage.js` `testManagedCli`）：真实最小请求；
+- **删除**（`removeManagedCli`）：只删统一目录托管文件，不碰系统与 `config-<cli>`；
+- **`subagents` 硬依赖**：`inject = ["tools","subprocess","subagents"]`，确保 provider/工具在 `subagents` 可用后再注册，不受启动顺序影响；
+- **文档漂移清理**：删除不存在的 `get-directory/set-directory/subcli-status` 注释、`迁移目录` 提示、无引用 locale 键、`RELEASING.md` 现状说明；
+- **当前测试**：`plugin/test` 共 30 项全部通过（`node --test test/*.test.mjs`）。
+
+### 尚未实现 / 待做
+
+1. **真实“下载安装”**：按钮目前禁用。需先为每个 CLI 固化官方来源：下载地址/npm 包名、macOS 与 Windows 二进制、版本查询来源、校验和、归档格式、Windows `.exe/.cmd`/shim。建议先从 Codex 开始；
+2. **真实“更新”**：需“是否有新版本”的判断协议、下载并替换、安装后版本检测；
+3. **目录内容迁移**：设置卡提示已改为“不迁移”；如未来要求迁移需单独实现（含确认、校验、冲突处理）；
+4. **Windows 适配**：`status.js` 用 `/bin/test`、`paths.js` 用字符串 `/` 拼接、默认目录 `%USERPROFILE%\dsh-clis` 需适配；
+5. **实机待重启验收（未提交代码已含修复）**：重启后确认四个 `managed-*` provider 与四个 `cli_*` 工具出现在运行时，模型选择器干净；
+6. **未提交改动**：`git status` 中 `CLI-MANAGER-DESIGN.md`、`CLI-MANAGER-HANDOFF.md`、`DEVELOPMENT.md`、`README.md`、`RELEASING.md`、`plugin/cordis.patch.yml`、`plugin/lib/{client,index,paths}.js`、`plugin/test/{host-import,provider}.test.mjs` 等修改尚未提交。这些改动含“`subagents` 硬依赖”关键修复，应在接续前提交。
+
+### 关键文件
+
+- `plugin/lib/index.js`：Host 入口（设置、`CliService`、Provider/工具注册、`cli_dispatch`/`cli_check`）；
+- `plugin/lib/provider.js`：托管 CLI `SubagentProvider`；
+- `plugin/lib/subagent-tools.js`：四个 CLI 工具；
+- `plugin/lib/manage.js`：删除与连接测试；
+- `plugin/lib/client.js`：设置卡 UI；
+- `plugin/test/*.test.mjs`：单元回归（30 项）。
+
+---
+
+## 14. 关联资源
 
 - 原插件：`dsh-subagent-default-model`（`/Users/dmh2002/DshProject/dsh-subagent-default-model`），其 `plugin/lib/client.js` 的卡片模式、`plugin/lib/index.js` 的 `installSettingsSection` + `settingsScope` 模式可直接复用。
 - 设计文档：`CLI-MANAGER-DESIGN.md`（同目录，更精简的设计要点版）。

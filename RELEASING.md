@@ -52,4 +52,4 @@ npm 账号启用 2FA 时，按 npm 交互提示在浏览器完成确认。
 
 ## 现状说明
 
-当前 `lib/index.js`（Host）实现 `installSettingsSection` 持久化 + `cli_dispatch` 工具，`lib/client.js`（Client）实现设置卡片。安装检测、统一目录迁移、每 CLI 实时状态 UI 需要 `@Remote` host 方法（typert）才能从 Client 触达，属于后续版本。
+当前 `lib/index.js`（Host）通过 `installSettingsSection` 持久化设置、注册 `cli_dispatch` / `cli_check` 工具、并为托管 CLI 注册 `SubagentProvider`，还提供带 `check` / `test` / `remove` 的远程 `cli` 服务；`lib/client.js`（Client）实现设置卡片及每个 CLI 的安装/测试/更新/删除操作。尚未实现：真实“安装/更新”命令（需固化各 CLI 官方来源、版本协议与校验）、目录内容迁移、以及完整的 Windows 适配。

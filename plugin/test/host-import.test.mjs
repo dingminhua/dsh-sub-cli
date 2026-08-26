@@ -7,5 +7,5 @@ test("host entry imports without evaluating unavailable schema methods or Common
 	const plugin = await import(`../lib/index.js?host-import=${Date.now()}`);
 	assert.equal(plugin.name, "dsh-sub-cli");
 	assert.equal(typeof plugin.apply, "function");
-	assert.deepEqual(plugin.inject, ["tools", "subprocess"]);
+	assert.deepEqual(plugin.inject, ["tools", "subprocess", "subagents"]);
 });

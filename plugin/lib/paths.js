@@ -32,7 +32,7 @@ export function configDirPath(dir, configDir) {
 	return `${dir}/${configDir}`;
 }
 
-/** Whole managed names, used by migrate to move the plugin-owned content. */
+/** Whole subdirectory names the plugin owns under the unified dir. */
 export function managedNames(registry) {
 	return ["bin", ...registry.map((entry) => entry.configDir)];
 }

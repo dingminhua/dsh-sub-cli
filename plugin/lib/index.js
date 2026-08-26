@@ -21,7 +21,7 @@ import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 
 export const name = "dsh-sub-cli";
-export const inject = ["tools", "subprocess"];
+export const inject = ["tools", "subprocess", "subagents"];
 
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
@@ -101,13 +101,11 @@ export function apply(ctx) {
 	// Register the CLI service - this makes it available via ctx.remote.cli.check()
 	new CliService();
 
-	// Optional runtime integrations must not block settings/status activation on
-	// deployments that have not mounted those registries yet.
-	const subagents = ctx.get("subagents");
-	if (subagents) {
-		registerManagedCliProviders({ subagents, subprocess: ctx.subprocess }, currentDir);
-		registerCliSubagentTools({ subagents, tools: ctx.tools });
-	}
+	// Register managed CLI subagent providers and the model-facing tools. These
+	// run once `subagents` (a hard dependency, always present in a DSH host) is
+	// available, so they are not skipped by boot ordering.
+	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir);
+	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools });
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
@@ -123,14 +121,14 @@ export function apply(ctx) {
 			schema: { type: "json" },
 			render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }]
 		},
-		async execute(args) {
+		async execute(args, exec) {
 			const cliId = args && typeof args.cli === "string" ? args.cli : "";
 			const task = args && typeof args.task === "string" ? args.task : "";
 			const model = args && typeof args.model === "string" ? args.model : "";
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
 			const dir = currentDir();
-			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined), model });
+			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined), signal: exec.signal });
 		}
 	}));
 

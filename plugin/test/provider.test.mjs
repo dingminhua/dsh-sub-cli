@@ -51,3 +51,14 @@ test("registers each provider on the subagents registry", () => {
 	registerManagedCliProviders(ctx, () => "/managed");
 	assert.deepEqual(registrations, ["managed-codex", "managed-claude", "managed-opencode", "managed-gemini"]);
 });
+
+test("registering providers never touches the llm adapter registry", () => {
+	let adapterCalls = 0;
+	const ctx = {
+		subagents: { registerProvider: () => {} },
+		subprocess: {},
+		llm: { registerAdapter: () => { adapterCalls += 1; } }
+	};
+	registerManagedCliProviders(ctx, () => "/managed");
+	assert.equal(adapterCalls, 0);
+});
