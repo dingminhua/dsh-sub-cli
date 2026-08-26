@@ -5,65 +5,59 @@ import { CLI_SUBAGENT_TOOLS, registerCliSubagentTools } from "../lib/subagent-to
 function context() {
 	const tools = new Map();
 	const ctx = {
-		subagents: {
-			startContinuable: async () => { throw new Error("start not configured"); }
-		},
-		tools: {
-			register(definition) {
-				tools.set(definition.name, definition);
-				return () => tools.delete(definition.name);
-			}
-		}
+		subagents: { start: async () => { throw new Error("start not configured"); } },
+		tools: { register(definition) { tools.set(definition.name, definition); return () => tools.delete(definition.name); } }
 	};
 	return { ctx, tools };
 }
 
-test("registers all four CLI tools globally without product providers", () => {
+test("registers all four CLI tools globally without any LLM provider", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
 	assert.deepEqual([...fixture.tools.keys()], ["cli_codex", "cli_claude_code", "cli_opencode", "cli_gemini"]);
 	assert.equal(CLI_SUBAGENT_TOOLS.length, 4);
 });
 
-test("starts a native continuable child on the matching CLI route", async () => {
+test("delegates through its one-shot managed provider and returns CLI text", async () => {
 	const fixture = context();
 	let seen;
-	fixture.ctx.subagents.startContinuable = async (spec) => {
-		seen = spec;
-		return { childId: "child-1", messageId: "message-1" };
+	fixture.ctx.subagents.start = async (provider, request) => {
+		seen = { provider, request };
+		return {
+			id: "run-1",
+			result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "found issues" }] }),
+			dispose: async () => {}
+		};
 	};
 	registerCliSubagentTools(fixture.ctx);
 	const tool = fixture.tools.get("cli_codex");
 	const agent = { id: "parent" };
 	const signal = new AbortController().signal;
 	const result = await tool.execute({ description: "检查测试", prompt: "完整检查项目测试" }, { agent, signal });
-	assert.deepEqual(result, { subagentId: "child-1" });
-	assert.equal(seen.provider, "spawn");
-	assert.equal(seen.label, "检查测试");
-	assert.equal(seen.request.parent, agent);
+	assert.equal(seen.provider, "managed-codex");
+	assert.equal(seen.request.label, "检查测试");
 	assert.deepEqual(seen.request.prompt, [{ type: "text", text: "完整检查项目测试" }]);
-	assert.deepEqual(seen.request.agentOptions, { provider: "dsh-cli-codex", model: "native" });
-	assert.equal(seen.signal, signal);
+	assert.equal(seen.request.parent, agent);
+	assert.equal(seen.request.signal, signal);
+	assert.equal(result.output, "found issues");
 });
 
-test("uses a distinct LLM route for every CLI", async () => {
+test("surfaces a non-completed provider result as a tool error", async () => {
 	const fixture = context();
-	const routes = [];
-	fixture.ctx.subagents.startContinuable = async (spec) => {
-		routes.push(spec.request.agentOptions.provider);
-		return { childId: `child-${routes.length}`, messageId: `message-${routes.length}` };
-	};
+	fixture.ctx.subagents.start = async () => ({
+		id: "run-2",
+		result: Promise.resolve({ stopReason: "error", diagnostic: "auth missing", output: [] }),
+		dispose: async () => {}
+	});
 	registerCliSubagentTools(fixture.ctx);
-	for (const tool of fixture.tools.values()) {
-		await tool.execute({ description: "运行任务", prompt: "执行完整任务" }, { agent: { id: "parent" }, signal: new AbortController().signal });
-	}
-	assert.deepEqual(routes, ["dsh-cli-codex", "dsh-cli-claude", "dsh-cli-opencode", "dsh-cli-gemini"]);
+	const tool = fixture.tools.get("cli_codex");
+	await assert.rejects(() => tool.execute({ description: "检查认证", prompt: "检查认证" }, { agent: { id: "parent" }, signal: new AbortController().signal }), /auth missing/);
 });
 
-test("rejects empty titles and prompts before creating a child", async () => {
+test("rejects empty titles and prompts before starting a provider", async () => {
 	const fixture = context();
 	let starts = 0;
-	fixture.ctx.subagents.startContinuable = async () => { starts += 1; };
+	fixture.ctx.subagents.start = async () => { starts += 1; };
 	registerCliSubagentTools(fixture.ctx);
 	const tool = fixture.tools.get("cli_codex");
 	const exec = { agent: { id: "parent" }, signal: new AbortController().signal };

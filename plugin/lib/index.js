@@ -17,7 +17,8 @@ import { resolveDir } from "./paths.js";
 import { dispatch } from "./dispatch.js";
 import { detectInstalled } from "./status.js";
 import { registerCliSubagentTools } from "./subagent-tools.js";
-import { registerCliLlmAdapters } from "./cli-llm-adapter.js";
+import { registerManagedCliProviders } from "./provider.js";
+import { removeManagedCli, testManagedCli } from "./manage.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess"];
@@ -81,6 +82,20 @@ export function apply(ctx) {
 			}
 			return { dir, results };
 		}
+
+		async test(args) {
+			const entry = cliById(args && args.cli);
+			if (!entry) throw new Error("未知或不存在的 CLI");
+			return testManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry });
+		}
+
+		async remove(args) {
+			const entry = cliById(args && args.cli);
+			if (!entry) throw new Error("未知或不存在的 CLI");
+			const fs = ctx.get("fs");
+			if (!fs) throw new Error("当前 DSH 未提供文件状态服务");
+			return removeManagedCli({ fs, spawn: ctx.subprocess, dir: currentDir(), entry });
+		}
 	}
 
 	// Register the CLI service - this makes it available via ctx.remote.cli.check()
@@ -88,11 +103,11 @@ export function apply(ctx) {
 
 	// Optional runtime integrations must not block settings/status activation on
 	// deployments that have not mounted those registries yet.
-	const llm = ctx.get("llm");
-	if (llm) registerCliLlmAdapters({ llm, subprocess: ctx.subprocess }, currentDir);
-
 	const subagents = ctx.get("subagents");
-	if (subagents) registerCliSubagentTools({ subagents, tools: ctx.tools });
+	if (subagents) {
+		registerManagedCliProviders({ subagents, subprocess: ctx.subprocess }, currentDir);
+		registerCliSubagentTools({ subagents, tools: ctx.tools });
+	}
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
