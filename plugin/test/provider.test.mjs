@@ -45,6 +45,41 @@ test("maps a missing binary to an error result, not a throw", async () => {
 	await run.dispose();
 });
 
+test("uses the prepared env from the run gate when provided", async () => {
+	let calledWith = null;
+	const provider = new ManagedCliProvider({
+		name: "managed-claude",
+		cli: "claude",
+		dirSource: () => "/managed",
+		spawn: {
+			resolveExecutable: async (path) => path,
+			spawn: (opts) => { calledWith = opts; return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: output("ok"), stderr: output("") } }; }
+		},
+		prepare: async () => ({ ok: true, env: { ANTHROPIC_MODEL: "deepseek-v4-flash", ANTHROPIC_API_KEY: "sk-test", CLAUDE_CONFIG_DIR: "/managed/config-claude" } })
+	});
+	const run = await provider.start({ prompt: [{ type: "text", text: "task" }], signal: new AbortController().signal });
+	const result = await run.result;
+	assert.equal(result.stopReason, "completed");
+	assert.equal(calledWith.env.ANTHROPIC_MODEL, "deepseek-v4-flash");
+	assert.equal(calledWith.env.CLAUDE_CONFIG_DIR, "/managed/config-claude");
+	await run.dispose();
+});
+
+test("blocks startup when the run gate is not ready", async () => {
+	const provider = new ManagedCliProvider({
+		name: "managed-claude",
+		cli: "claude",
+		dirSource: () => "/managed",
+		spawn: { resolveExecutable: async (path) => path },
+		prepare: async () => ({ ok: false, reason: "尚未为 Claude Code 配置 Provider 和 Model。" })
+	});
+	const run = await provider.start({ prompt: [{ type: "text", text: "task" }], signal: new AbortController().signal });
+	const result = await run.result;
+	assert.equal(result.stopReason, "error");
+	assert.match(result.diagnostic, /尚未为 Claude Code 配置/);
+	await run.dispose();
+});
+
 test("registers each provider on the subagents registry", () => {
 	const registrations = [];
 	const ctx = { subagents: { registerProvider: (provider) => registrations.push(provider.name) }, subprocess: {} };

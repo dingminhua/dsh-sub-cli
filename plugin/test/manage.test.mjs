@@ -40,3 +40,16 @@ test("testManagedCli dispatches a fixed minimal connection prompt", async () => 
 	assert.equal(result.ok, true);
 	assert.ok(seen.argv.some((arg) => String(arg).includes("DSH CLI connection OK")));
 });
+
+test("testManagedCli runs with the current environment when one is provided", async () => {
+	let seen;
+	const spawn = {
+		resolveExecutable: async (path) => path,
+		spawn(spec) { seen = spec; return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: output("DSH CLI connection OK"), stderr: output("") } }; }
+	};
+	const env = { CODEX_HOME: "/managed/config-codex", OPENAI_API_KEY: "sk-current" };
+	const result = await testManagedCli({ spawn, dir: "/managed", entry: codex, env });
+	assert.equal(result.ok, true);
+	assert.equal(seen.env, env);
+	assert.equal(seen.env.OPENAI_API_KEY, "sk-current");
+});

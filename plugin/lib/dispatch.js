@@ -19,9 +19,9 @@ export function winShimArgv(resolved, argv, platform = PLATFORM) {
 
 /**
  * Run one headless dispatch.
- * @param {object} deps - { spawn: SubprocessService, dir: string, entry, argv: string[], signal?, platform? }
+ * @param {object} deps - { spawn: SubprocessService, dir: string, entry, argv: string[], env?: object, signal?, platform? }
  */
-export async function dispatch({ spawn, dir, entry, argv, signal }) {
+export async function dispatch({ spawn, dir, entry, argv, env, signal }) {
 	const bin = binPath(dir, entry.bin);
 	const resolved = await spawn.resolveExecutable(bin, undefined, signal).catch(() => null);
 	if (!resolved) {
@@ -32,7 +32,7 @@ export async function dispatch({ spawn, dir, entry, argv, signal }) {
 		handle = spawn.spawn({
 			argv: winShimArgv(resolved, argv),
 			cwd: ".",
-			env: envFor(entry, dir),
+			env: env || envFor(entry, dir),
 			signal,
 			stdio: { stdin: "ignore", stdout: { maxBytes: MAX_OUTPUT_BYTES }, stderr: { maxBytes: MAX_OUTPUT_BYTES } },
 			graceMs: GRACE_MS

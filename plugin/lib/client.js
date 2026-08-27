@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     var DSC_ICON = "data:image/png;base64,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";
 
     // ── CSS ──────────────────────────────────────────────────────────────
-    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-verified-fail{color:#ef4444}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:14px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:#2ed084}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 4px}.dsc-footer-status{flex:1;min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
+    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-test-hint-error{color:#ef4444}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:14px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:#2ed084}.dsc-cli-status{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap}.dsc-cli-conn{margin-top:4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-conn-ok{color:#2ed084}.dsc-conn-fail{color:#ef4444}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 4px}.dsc-footer-status{flex:1;min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
 
     if (typeof document !== "undefined") {
       var cssId = "dsh-sub-cli/client.css";
@@ -50,9 +50,15 @@ window.__ModuleLoader__.load({
       "row.toastSaved": "dsh-sub-cli 设置已保存。",
       "row.notInstalled": "未安装",
       "row.installed": "已安装",
+      "row.detecting": "检测中…",
+      "row.detectFailed": "状态获取失败",
+      "row.connNotTested": "未测试",
+      "row.connPassed": "已通过",
+      "row.connFailed": "失败",
       "row.verified": "已通过验证，版本",
       "row.failed": "未通过验证",
       "row.connectionTest": "测试",
+      "row.connectionLabel": "连通性验证：",
       "row.testingConnection": "测试中…",
       "row.copyInstall": "安装命令",
       "row.copyUpdate": "更新命令",
@@ -65,21 +71,21 @@ window.__ModuleLoader__.load({
       "row.removePassed": "已删除",
       "guide.title": "主控可调用的 CLI 工具",
       "guide.example": "你对主控说：",
-      "guide.install": "cli_install · 安装托管 CLI",
+      "guide.install": "安装托管 CLI",
       "guide.installEx": "帮我把 Claude Code 装上。",
-      "guide.check": "cli_check · 检测是否已装/版本",
+      "guide.check": "检测是否已装 / 版本",
       "guide.checkEx": "看看 Codex 装了没？",
-      "guide.test": "cli_test · 验证模型连通",
+      "guide.test": "验证模型连通",
       "guide.testEx": "测一下 Claude Code 的模型能回话吗？",
-      "guide.remove": "cli_remove · 卸载托管 CLI",
+      "guide.remove": "卸载托管 CLI",
       "guide.removeEx": "把 Qwen Code 卸载掉。",
-      "guide.codex": "cli_codex · 交给 Codex",
+      "guide.codex": "交给 Codex",
       "guide.codexEx": "用 Codex 看看这个项目。",
-      "guide.claude": "cli_claude_code · 交给 Claude Code",
+      "guide.claude": "交给 Claude Code",
       "guide.claudeEx": "让 Claude Code review 一下。",
-      "guide.qwen": "cli_qwen · 交给 Qwen Code",
+      "guide.qwen": "交给 Qwen Code",
       "guide.qwenEx": "用 Qwen Code 重构。",
-      "guide.dispatch": "cli_dispatch · 通用无头",
+      "guide.dispatch": "通用无头执行",
       "guide.dispatchEx": "让 Codex 无头跑这个任务。"
     };
     var EN = {
@@ -101,9 +107,15 @@ window.__ModuleLoader__.load({
       "row.toastSaved": "dsh-sub-cli settings saved.",
       "row.notInstalled": "Not installed",
       "row.installed": "Installed",
+      "row.detecting": "Checking…",
+      "row.detectFailed": "Status unavailable",
+      "row.connNotTested": "Not tested",
+      "row.connPassed": "Passed",
+      "row.connFailed": "Failed",
       "row.verified": "Verified, version",
       "row.failed": "Not verified",
       "row.connectionTest": "Test",
+      "row.connectionLabel": "Connectivity: ",
       "row.testingConnection": "Testing…",
       "row.copyInstall": "Install command",
       "row.copyUpdate": "Update command",
@@ -116,21 +128,21 @@ window.__ModuleLoader__.load({
       "row.removePassed": "Removed",
       "guide.title": "Controller-callable CLI tools",
       "guide.example": "You say:",
-      "guide.install": "cli_install · install managed CLI",
+      "guide.install": "Install managed CLI",
       "guide.installEx": "Install Claude Code for me.",
-      "guide.check": "cli_check · installed/version check",
+      "guide.check": "Installed / version check",
       "guide.checkEx": "Is Codex installed?",
-      "guide.test": "cli_test · model connectivity",
+      "guide.test": "Verify model connectivity",
       "guide.testEx": "Can the model configured for Claude Code reply?",
-      "guide.remove": "cli_remove · uninstall managed CLI",
+      "guide.remove": "Uninstall managed CLI",
       "guide.removeEx": "Uninstall Qwen Code.",
-      "guide.codex": "cli_codex · delegate to Codex",
+      "guide.codex": "Delegate to Codex",
       "guide.codexEx": "Use Codex to inspect this project.",
-      "guide.claude": "cli_claude_code · delegate to Claude Code",
+      "guide.claude": "Delegate to Claude Code",
       "guide.claudeEx": "Have Claude Code review this.",
-      "guide.qwen": "cli_qwen · delegate to Qwen Code",
+      "guide.qwen": "Delegate to Qwen Code",
       "guide.qwenEx": "Refactor this with Qwen Code.",
-      "guide.dispatch": "cli_dispatch · generic headless",
+      "guide.dispatch": "Generic headless run",
       "guide.dispatchEx": "Have Codex run this task headlessly."
     };
 
@@ -171,6 +183,23 @@ window.__ModuleLoader__.load({
       }).then(function () {
         return scope.set("permissions", value.permissions || {});
       });
+    }
+
+    // Convert an external CLI / stale-verification failure message into unified
+    // Simplified Chinese at display time. Old persisted failure records may
+    // still hold English text (written before localization); convert them on
+    // render so the card never shows a non-Chinese failure. Already-Chinese
+    // messages pass through untouched (no double prefix).
+    function localizeError(cliName, message) {
+      var raw = typeof message === "string" ? message.trim() : String(message || "").trim();
+      if (!raw) return "CLI 执行失败，但未返回具体原因。";
+      if (/[\u4e00-\u9fff]/.test(raw)) return raw; // 已是简体中文，原样返回
+      if (/not logged in|please run \/login/i.test(raw)) return cliName + " 尚未登录。请先在插件隔离配置中完成登录认证。";
+      if (/no auth type is selected|configure an auth type|--auth-type/i.test(raw)) return cliName + " 尚未配置认证方式。请先为该 CLI 选择并配置认证类型。";
+      if (/unauthorized|authentication|invalid api key|api key|\b401\b|\b403\b|forbidden/i.test(raw)) return cliName + " 认证/授权失败。请检查当前供应商的 API Key 或登录状态。";
+      if (/not supported|unsupported|does not support/i.test(raw)) return cliName + " 当前供应商不支持所需的协议或功能。请更换支持该协议的供应商（Codex 可试 modelflare）。";
+      if (/could not connect|connection (failed|refused)|ecoconn|timeout|timed ?out|network error|tunnel|econnrefused|socket hang/i.test(raw)) return cliName + " 无法连接到供应商服务。请检查网络、代理或 baseURL 配置。";
+      return "CLI 执行失败：" + raw;
     }
 
     function RouteSelects(props) {
@@ -214,13 +243,14 @@ window.__ModuleLoader__.load({
     function SetupRow(props) {
       var t = props.t;
       var api = props.api;
+      var callCliCheck = props.callCliCheck;
       var snap = useSettingsScopeSnapshot(props.settingsScope);
       var value = (snap && snap.status === "ready" && snap.value) || {};
       var dirState = React.useState(normalize(value).cliDir);
       var modelsState = React.useState(normalize(value).models);
       var permissionsState = React.useState(normalize(value).permissions);
       var verifiedState = React.useState(normalize(value).verified);
-      var installedState = React.useState({}); // { cliId: boolean } — live bin existence
+      var installedState = React.useState({ status: "loading", rows: {} }); // loading | ready | error
       var groupsState = React.useState([]);
       var dirtyState = React.useState(false);
       var busyState = React.useState(false);
@@ -230,20 +260,49 @@ window.__ModuleLoader__.load({
         props.api.llm.models({}).then(function (r) { if (alive && r.result && r.result.ok) groupsState[1](r.result.value.groups || []); }).catch(function () {});
         return function () { alive = false; };
       }, []);
-      // Live install detection: check <dir>/bin/<cli> via the host browse API,
-      // not just the verified record. Re-check whenever dir or revision changes.
+      // Live install detection uses the Host's authoritative cli.check result.
+      // This is important when cliDir is empty: Host resolves that to the
+      // default ~/dsh-clis, while the browser cannot expand ~ itself.
       React.useEffect(function () {
         var alive = true;
         function probe() {
-          var dir = (normalize(value).cliDir) || "";
-          if (!dir) { installedState[1]({}); return; }
-          Promise.all(CLIS.map(function (cli) {
-            return props.api.host.listDirectory({ path: dir + "/bin" }).then(function (r) {
-              var box = r && r.result && r.result.value ? r.result.value : (r && r.result);
-              var entries = box && Array.isArray(box.entries) ? box.entries : [];
-              return [cli.id, entries.some(function (e) { return e.name === cli.bin; })];
-            }).catch(function () { return [cli.id, false]; });
-          })).then(function (rows) { if (alive) { var o = {}; rows.forEach(function (r) { o[r[0]] = r[1]; }); installedState[1](o); } });
+          installedState[1]({ status: "loading", rows: {} });
+          if (typeof callCliCheck !== "function") {
+            installedState[1]({ status: "error", rows: {} });
+            return;
+          }
+          Promise.resolve(callCliCheck()).then(function (r) {
+            // Host `rpc.call` resolves `{ ok:true, value }` on success or
+            // `{ ok:false, error:{ code, message, details } }` on failure. Some
+            // older adapters wrapped it as `{ result: { ok, value } }`. Accept
+            // both so a shape change never masquerades as "not installed".
+            var res = r && r.result && typeof r.result === "object" ? r.result : r;
+            if (!res || res.ok !== true) {
+              // Extract the carrier's structured message; never stringify the
+              // whole error object into "[object Object]".
+              var errText = "unknown";
+              if (res && res.error) {
+                if (typeof res.error === "string") errText = res.error;
+                else if (res.error.message) errText = String(res.error.message);
+              }
+              if (typeof console !== "undefined" && console.warn) console.warn("cli/check RPC failed:", errText);
+              throw new Error("cli.check returned ok=false: " + errText);
+            }
+            var value = res.value;
+            if (!value || !Array.isArray(value.results)) throw new Error("invalid cli.check result");
+            var o = {};
+            value.results.forEach(function (row) {
+              o[row.id] = { installed: row.installed === true, version: typeof row.version === "string" ? row.version : "" };
+            });
+            if (alive) installedState[1]({ status: "ready", rows: o });
+          }).catch(function (err) {
+            if (!alive) return;
+            // Never swallow the RPC failure silently: keep the last error so
+            // diagnostics (e.g. endpoint not claimed, transport failure) are not
+            // lost, and surface it to the console for troubleshooting.
+            if (typeof console !== "undefined" && console.error) console.error("cli/check detection failed:", err);
+            installedState[1]({ status: "error", rows: {}, lastError: err && (err.message || String(err)) });
+          });
         }
         probe();
         return function () { alive = false; };
@@ -309,7 +368,10 @@ window.__ModuleLoader__.load({
           var route = modelsState[0][cli.id] || {};
           var stored = (verifiedState[0][cli.id] && verifiedState[0][cli.id].ok) ? verifiedState[0][cli.id] : null;
           var failed = (verifiedState[0][cli.id] && verifiedState[0][cli.id].ok === false) ? verifiedState[0][cli.id] : null;
-          var installed = installedState[0][cli.id] === true; // live bin existence
+          var installProbe = installedState[0];
+          var installInfo = installProbe.rows[cli.id] || null;
+          var installed = installProbe.status === "ready" && !!(installInfo && installInfo.installed); // only Host-confirmed CLI existence decides installed
+          var installedVersion = installInfo && installInfo.version ? installInfo.version : "";
           // A record only counts while its route still matches the live
           // provider/model/effort; changing any of them invalidates it (so a
           // switched-away supplier's success/failure text disappears).
@@ -317,27 +379,45 @@ window.__ModuleLoader__.load({
           var v = fpOk(stored) ? stored : null;
           var f = fpOk(failed) ? failed : null;
           var toolNote = (v && v.capabilities && v.capabilities.toolContinuation === false) ? " · 仅纯文本" : null;
-          // Status: only write "未安装" when the bin truly does not exist. If the
-          // CLI IS installed but failed the connectivity test, show the failure
-          // reason — never "未安装".
-          var statusCls = "dsc-verified" + (v ? " dsc-verified-ok" : (f ? " dsc-verified-fail" : ""));
-          var statusText;
-          if (v) {
-            statusText = t("row.verified") + " " + (v.version || "-") + " · " + (v.at ? v.at.slice(0, 10) : "") + (v.provider && v.model ? " · " + v.provider + "/" + v.model : "") + (toolNote || "");
-          } else if (f) {
-            statusText = f.error || t("row.failed");
+          // First line — INSTALL STATUS. Decided ONLY by the Host cli/check
+          // result (which row.installed comes from). Detection state and
+          // failures surface as a state label, never a bare "检测失败".
+          var installCls = "dsc-cli-status";
+          var installText;
+          if (installProbe.status === "loading") {
+            installText = t("row.detecting");
+          } else if (installProbe.status === "error") {
+            installText = t("row.detectFailed");
           } else if (installed) {
-            statusText = t("row.installed"); // 已安装但未通过/未测试 → "已安装"
+            installText = t("row.installed") + (installedVersion ? " · " + installedVersion : " · -");
+            installCls += " dsc-verified-ok";
           } else {
-            statusText = t("row.notInstalled"); // bin 不存在才写"未安装"
+            installText = t("row.notInstalled"); // Host 明确返回 false 才写"未安装"
+          }
+          // Second line — CONNECTIVITY VERIFICATION (separate from install).
+          // "已通过" only when a current verified record matches the live route;
+          // "失败" only when a current failed record matches the live route.
+          var connCls = "dsc-cli-conn";
+          var connText = t("row.connNotTested");
+          if (v) {
+            connText = t("row.connPassed");
+            connCls += " dsc-conn-ok";
+          } else if (f) {
+            connText = t("row.connFailed");
+            connCls += " dsc-conn-fail";
           }
           return React.createElement("div", { className: "dsc-cli", key: cli.id },
             React.createElement("div", { className: "dsc-cli-title-row" },
               React.createElement("div", { className: "dsc-cli-head" }, cli.name),
-              React.createElement("span", { className: statusCls }, statusText)
+              React.createElement("span", { className: installCls }, installText)
             ),
             React.createElement(RouteSelects, { t: t, groups: groupsState[0], route: route, permission: permissionsState[0][cli.id] || DEFAULT_PERMISSION, onChange: function (r) { updateRoute(cli.id, r); }, onPermissionChange: function (p) { updatePermission(cli.id, p); } }),
-            React.createElement("div", { className: "dsc-cli-test-hint" }, cli.testHint)
+            React.createElement("div", { className: "dsc-cli-conn" },
+              t("row.connectionLabel") + " " + React.createElement("span", { className: connCls }, connText)
+            ),
+            React.createElement("div", { className: "dsc-cli-test-hint" + (f ? " dsc-cli-test-hint-error" : "") },
+              f ? (localizeError(cli.name, f.error) || t("row.failed")) : cli.testHint
+            )
           );
         }),
         React.createElement("div", { className: "dsc-footer" },
@@ -390,6 +470,9 @@ window.__ModuleLoader__.load({
         return {
           settingsScope: scope,
           api: api,
+          callCliCheck: function () {
+            return ctx.connection.rpc.call("/api", "cli/check", { args: { args: {} } });
+          },
           pickDirectory: function () {
             var ws = ctx.get("workspaces");
             return ws && typeof ws.pickDirectory === "function" ? ws.pickDirectory() : Promise.resolve(null);

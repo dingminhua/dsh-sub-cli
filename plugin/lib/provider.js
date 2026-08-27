@@ -65,7 +65,7 @@ export class ManagedCliProvider {
 				let mergedEnv;
 				if (this.prepare) {
 					const prep = await this.prepare(this.cli, dir);
-					if (!prep.ok) return { output: [], stopReason: "error", diagnostic: prep.reason || "CLI 配置未就绪，拒绝启动。" };
+					if (!prep.ok) return { output: [], stopReason: "error", diagnostic: typeof prep.reason === "string" ? prep.reason : "CLI 配置未就绪，拒绝启动。" };
 					mergedEnv = prep.env;
 				} else {
 					mergedEnv = envFor(entry, dir);

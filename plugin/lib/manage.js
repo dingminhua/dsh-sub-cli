@@ -25,9 +25,9 @@ export async function removeManagedCli({ fs, spawn, dir, entry, signal, platform
 	return { ok: true, removed: true, path };
 }
 
-export async function testManagedCli({ spawn, dir, entry, signal }) {
+export async function testManagedCli({ spawn, dir, entry, signal, env }) {
 	const task = "Reply with exactly: DSH CLI connection OK";
-	const result = await dispatch({ spawn, dir, entry, argv: entry.argv(task), signal });
+	const result = await dispatch({ spawn, dir, entry, argv: entry.argv(task), env, signal });
 	if (!result.ok) return { ok: false, message: result.error || result.stderr || result.stdout || "CLI connection test failed" };
 	const output = (result.stdout || result.stderr || "").trim();
 	return { ok: true, message: output || "CLI connection succeeded" };

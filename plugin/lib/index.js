@@ -22,7 +22,7 @@ import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
-import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf } from "./verify.js";
+import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf, prepareManagedRun } from "./verify.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
@@ -170,7 +170,13 @@ export function apply(ctx) {
 		async test(args) {
 			const entry = cliById(args && args.cli);
 			if (!entry) throw new Error("未知或不存在的 CLI");
-			return testManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry });
+			// Test through the CURRENT provider/model route: derive the env from
+			// the live config so the CLI points at the configured supplier (not
+			// its own credentials). Gate failures report the reason instead of a
+			// misleading pass.
+			const prep = await prepareManagedRun(ctx, entry.id, currentDir());
+			if (!prep.ok) return { ok: false, message: prep.reason };
+			return testManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, env: prep.env });
 		}
 
 		async remove(args) {
@@ -194,7 +200,11 @@ export function apply(ctx) {
 	// Register managed CLI subagent providers and the model-facing tools. These
 	// run once `subagents` (a hard dependency, always present in a DSH host) is
 	// available, so they are not skipped by boot ordering.
-	const envForEntry = (cliId, dir) => cliEnv(ctx, cliId, dir);
+	const envForEntry = async (cliId, dir) => {
+		const prep = await prepareManagedRun(ctx, cliId, dir);
+		if (!prep.ok) return { ok: false, reason: prep.reason };
+		return { ok: true, env: prep.env };
+	};
 	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir, envForEntry);
 	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, { preflight: (cliId) => preflightCli(ctx, cliId) });
 
@@ -219,7 +229,10 @@ export function apply(ctx) {
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
 			const dir = currentDir();
-			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined, permissionOf(ctx, cliId)), signal: exec.signal });
+			const prep = await prepareManagedRun(ctx, cliId, dir);
+			if (!prep.ok) return { ok: false, error: prep.reason };
+			const argv = entry.argv(task, model || undefined, permissionOf(ctx, cliId));
+			return dispatch({ spawn: ctx.subprocess, dir, entry, argv, env: prep.env, signal: exec.signal });
 		}
 	}));
 

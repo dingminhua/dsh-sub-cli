@@ -15,6 +15,14 @@ import { winShimArgv } from "./dispatch.js";
 
 export const SETTINGS_NS = "dsh-sub-cli";
 
+export function stripTrailingV1(baseURL) {
+	return typeof baseURL === "string" ? baseURL.replace(/\/v1\/?$/i, "") : baseURL;
+}
+
+export function joinApiPath(baseURL, endpoint) {
+	return `${String(baseURL || "").replace(/\/+$/, "")}/${String(endpoint || "").replace(/^\/+/, "")}`;
+}
+
 /** Deterministic short fingerprint of a model route + supplier. */
 export function fingerprint(provider, model, effort, baseURL) {
 	const s = `${provider}|${model}|${effort || ""}|${baseURL || ""}`;
@@ -53,6 +61,9 @@ export async function providerConfig(ctx, provider) {
 		return null;
 	}
 	if (!entry) return null;
+	// Configurable providers live under their own settings namespace (e.g.
+	// `llm-pi-ai`), each provider at `providers.<id>`. Read the live section so
+	// a route change is picked up without a restart (settings-file watches disk).
 	try {
 		const desc = settings.describe({ redactSecrets: true });
 		const ai = desc.find((x) => x.ns === entry.settingsNs);
@@ -73,7 +84,18 @@ export async function cliEnv(ctx, cliId, dir) {
 		const pc = await providerConfig(ctx, route.provider);
 		if (pc && pc.apiKeyEnv) {
 			const key = await credentialKey(ctx, pc.apiKeyEnv);
-			if (key) env[pc.apiKeyEnv] = key;
+			if (key) {
+				env[pc.apiKeyEnv] = key;
+				if (cliId === "claude") {
+					env.ANTHROPIC_BASE_URL = stripTrailingV1(pc.baseURL);
+					env.ANTHROPIC_API_KEY = key;
+					env.ANTHROPIC_AUTH_TOKEN = key;
+					env.ANTHROPIC_MODEL = route.model;
+					env.ANTHROPIC_DEFAULT_OPUS_MODEL = route.model;
+					env.ANTHROPIC_DEFAULT_SONNET_MODEL = route.model;
+					env.ANTHROPIC_DEFAULT_HAIKU_MODEL = route.model;
+				}
+			}
 		}
 	}
 	return env;
@@ -218,25 +240,27 @@ async function readGateFingerprint(ctx, cfgPath, fs) {
  * gate that makes "stale wrong supplier" impossible by construction.
  */
 export async function ensureCliProviderConfig(ctx, entry, route) {
-	if (entry.id !== "codex") return { supported: false };
 	if (!route || !route.provider || !route.model) return { supported: true, ok: false, error: "未为该 CLI 配置 Provider 和 Model。" };
 	const pc = await providerConfig(ctx, route.provider);
 	if (!pc) return { supported: true, ok: false, error: `找不到 Provider「${route.provider}」的配置（baseURL/apiKeyEnv）。` };
 	const dir = currentDir(ctx);
 	const cfgDir = path.join(dir, entry.configDir);
-	const cfgPath = path.join(cfgDir, "config.toml");
 	const fp = fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 	const fs = ctx.get("fs");
-	const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
-	if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
+	if (entry.id === "claude") return { supported: true, ok: true, uptodate: true, cfgPath: cfgDir };
+	const cfgPath = path.join(cfgDir, entry.id === "qwen" ? "settings.json" : "config.toml");
+	if (entry.id === "codex") {
+		const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
+		if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
+	}
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
 	}
-	const toml = gateToml(codexToml(route, pc), route, pc, fp);
+	const content = entry.id === "qwen" ? qwenSettings(route, pc) : gateToml(codexToml(route, pc), route, pc, fp);
 	try {
 		await runEnsureDir(ctx, cfgDir);
 		const target = await fs.resolve(cfgPath, {}, undefined);
-		await fs.writeText(target, toml, undefined, undefined);
+		await fs.writeText(target, content, undefined, undefined);
 		return { supported: true, ok: true, uptodate: false, cfgPath };
 	} catch (error) {
 		return { supported: true, ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -276,6 +300,16 @@ export function currentDir(ctx) {
 	const raw = section && section.cliDir;
 	const d = raw && raw.length ? raw : "~/dsh-clis";
 	return d.indexOf("~") === 0 ? os.homedir() + d.slice(1) : d;
+}
+
+/** Render Qwen Code settings for one OpenAI-compatible provider. */
+export function qwenSettings(route, pc) {
+	return JSON.stringify({
+		selectedAuthType: "openai",
+		modelProviders: {
+			openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }]
+		}
+	}, null, 2);
 }
 
 /** Render the Codex config.toml that points Codex at a supplier. Pure/testable. */
@@ -370,7 +404,7 @@ export async function probeAnthropicContinuation({ httpPost, baseURL, apiKey, mo
 	const tool = { name: "get_time", description: "returns current time", input_schema: { type: "object", properties: {} } };
 	let r1;
 	try {
-		r1 = await httpPost({ url: `${baseURL}/v1/messages`, body: { model, max_tokens: 256, tools: [tool], messages: [{ role: "user", content: "现在几点？请调用 get_time 工具" }] } });
+		r1 = await httpPost({ url: joinApiPath(stripTrailingV1(baseURL), "v1/messages"), body: { model, max_tokens: 256, tools: [tool], messages: [{ role: "user", content: "现在几点？请调用 get_time 工具" }] } });
 	} catch (error) {
 		return { toolContinuation: false, step: 1, reason: error instanceof Error ? error.message : String(error) };
 	}
@@ -381,7 +415,7 @@ export async function probeAnthropicContinuation({ httpPost, baseURL, apiKey, mo
 	let r2;
 	try {
 		r2 = await httpPost({
-			url: `${baseURL}/v1/messages`,
+			url: joinApiPath(stripTrailingV1(baseURL), "v1/messages"),
 			body: {
 				model, max_tokens: 256,
 				messages: [
@@ -477,6 +511,58 @@ async function runSpawnJson(ctx, argv) {
 	}
 }
 
+/** Convert common external-CLI diagnostics into consistent Simplified Chinese. */
+export function localizeCliError(cliId, message) {
+	const raw = typeof message === "string" ? message.trim() : String(message || "").trim();
+	if (!raw) return "CLI 执行失败，但未返回具体原因。";
+	if (/not logged in|please run \/login/i.test(raw)) return `${cliById(cliId)?.name || cliId} 尚未登录。请先在插件隔离配置中完成登录认证。`;
+	if (/no auth type is selected|configure an auth type|--auth-type/i.test(raw)) return `${cliById(cliId)?.name || cliId} 尚未配置认证方式。请先为该 CLI 选择并配置认证类型。`;
+	if (/unauthorized|authentication|invalid api key|api key|\b401\b/i.test(raw)) return `${cliById(cliId)?.name || cliId} 认证失败。请检查当前供应商的 API Key 或登录状态。`;
+	return `CLI 执行失败：${raw}`;
+}
+
+/** Extract the actual assistant reply from a CLI's stdout. */
+export function extractCliReply(cliId, stdout) {
+	if (typeof stdout !== "string") return "";
+	if (cliId !== "codex") return stdout.trim();
+	const replies = [];
+	for (const line of stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		let event;
+		try { event = JSON.parse(line); } catch { continue; }
+		const item = event && event.type === "item.completed" ? event.item : null;
+		if (item && item.type === "agent_message" && typeof item.text === "string") replies.push(item.text);
+	}
+	return replies.join("\n").trim();
+}
+
+/** Extract actionable Codex JSONL errors when the assistant reply is empty. */
+export function extractCodexError(stdout) {
+	if (typeof stdout !== "string") return "";
+	const errors = [];
+	for (const line of stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		let event;
+		try { event = JSON.parse(line); } catch { continue; }
+		const item = event && event.type === "item.completed" ? event.item : null;
+		if (item && item.type === "error" && typeof item.message === "string" && !isCodexMetadataWarning(item.message)) errors.push(item.message);
+		if (event && event.type === "turn.failed" && event.error && typeof event.error.message === "string") errors.push(event.error.message);
+	}
+	return errors.join("；").trim();
+}
+
+/**
+ * Codex 0.149.1 在模型 catalog 缺少目标模型（如 `deepseek-v4-flash`）时，会在
+ * `item.completed` 里发一条 `type:"error"` 的 warning：模型元数据未命中、回退到
+ * fallback metadata。这条信息不是致命错误——Codex 仍会向供应商发 `/responses`
+ * 请求并完成 turn（exitCode=0）。它只影响上下文窗口/输出上限等能力提示，不
+ * 应被当成「CLI 验证失败」的原因反向呈现给用户。识别并过滤它，让真正的问题
+ * （如 agent_message 为空、turn.failed、非零退出）才走失败分支。
+ */
+export function isCodexMetadataWarning(message) {
+	return /model metadata .* not found|defaulting to fallback metadata/i.test(String(message || ""));
+}
+
 /**
  * Probe one CLI: write its supplier config, resolve key, run the CLI once, and
  * confirm it answers. Returns { ok, reply, version } or { ok:false, error }.
@@ -491,24 +577,29 @@ export async function testCli(ctx, cliId, signal) {
 	const pc = await providerConfig(ctx, route.provider);
 	const key = await credentialKey(ctx, pc && pc.apiKeyEnv);
 	const dir = currentDir(ctx);
-	const env = envFor(entry, dir);
-	if (key && pc && pc.apiKeyEnv) env[pc.apiKeyEnv] = key;
+	const env = await cliEnv(ctx, cliId, dir);
 	const bin = binPath(dir, entry.bin, PLATFORM);
 	const resolved = await ctx.subprocess.resolveExecutable(bin, env, signal).catch(() => null);
 	if (!resolved) return { ok: false, error: `未找到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
 	const argv = winShimArgv(resolved, entry.argv("Reply with exactly: OK"), PLATFORM);
 	let reply = "";
+	let stdout = "";
 	try {
 		const handle = ctx.subprocess.spawn({ argv, cwd: dir, env, signal, stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 60000 });
 		const outcome = await handle.done;
 		const out = handle.collected && handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : "";
+		stdout = out;
 		const err = handle.collected && handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : "";
-		if (outcome.exitCode !== 0) return { ok: false, error: err.trim() || out.trim() || `CLI 退出码 ${outcome.exitCode}` };
-		reply = out.trim();
+		if (outcome.exitCode !== 0) return { ok: false, error: localizeCliError(cliId, err.trim() || extractCodexError(out) || out.trim() || `退出码 ${outcome.exitCode}`) };
+		reply = extractCliReply(cliId, out);
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		return { ok: false, error: localizeCliError(cliId, error instanceof Error ? error.message : String(error)) };
 	}
-	if (!reply.toUpperCase().includes("OK")) return { ok: false, error: `该代理/中转商的模型未返回预期（含 OK），实际：${reply.slice(0, 80) || "（空）"}。` };
+	if (reply.trim().toUpperCase() !== "OK") {
+		const codexError = cliId === "codex" ? extractCodexError(stdout) : "";
+		if (codexError) return { ok: false, error: localizeCliError(cliId, codexError) };
+		return { ok: false, error: `该代理/中转商的模型未返回预期的 OK，实际：${reply.slice(0, 80) || "（空）"}。` };
+	}
 	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
 	// tool continuation to actually work (Codex=responses, Claude=anthropic
 	// tool_use, Qwen=openai chat tool_calls). A provider that only answers plain
@@ -523,8 +614,8 @@ export async function testCli(ctx, cliId, signal) {
 			model: route.model,
 			protocol: entry.protocol
 		});
-		capabilities = { toolContinuation: gate.ok, protocol: entry.protocol };
-		if (!gate.ok) {
+		capabilities = { toolContinuation: gate.toolContinuation, protocol: entry.protocol };
+		if (!gate.toolContinuation) {
 			return {
 				ok: false,
 				error: `当前供应商（${route.provider}）不支持 ${entry.name} 所需的 ${entry.protocolLabel}，CLI 无法运行工具/联网任务（${gate.reason}）。请更换支持该协议的供应商（Codex 可试 modelflare），或联系供应商支持。`,

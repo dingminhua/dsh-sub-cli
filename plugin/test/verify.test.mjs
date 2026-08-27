@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
 	fingerprint,
 	codexToml,
+	qwenSettings,
+	stripTrailingV1,
+	joinApiPath,
 	providerConfig,
 	credentialKey,
 	isVerifiedCurrentAsync,
@@ -14,7 +17,11 @@ import {
 	findChatToolCallId,
 	probeAnthropicContinuation,
 	probeOpenaiChatContinuation,
-	probeProtocolContinuation
+	probeProtocolContinuation,
+	extractCliReply,
+	extractCodexError,
+	isCodexMetadataWarning,
+	localizeCliError
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
@@ -37,9 +44,85 @@ function sampleCtx({ value, providerCfg, credKey } = {}) {
 	return { get: (key) => services[key], ...services };
 }
 
+test("localizeCliError translates Claude login errors into Simplified Chinese", () => {
+	assert.equal(localizeCliError("claude", "Not logged in · Please run /login"), "Claude Code 尚未登录。请先在插件隔离配置中完成登录认证。");
+});
+
+test("localizeCliError translates Qwen auth-type errors into Simplified Chinese", () => {
+	assert.equal(localizeCliError("qwen", "No auth type is selected. Please configure an auth type (e.g. via settings or `--auth-type`) before running in non-interactive mode."), "Qwen Code 尚未配置认证方式。请先为该 CLI 选择并配置认证类型。");
+});
+
+test("localizeCliError prefixes unknown external diagnostics consistently", () => {
+	assert.equal(localizeCliError("codex", "upstream exploded"), "CLI 执行失败：upstream exploded");
+});
+
+test("extractCliReply reads only Codex agent_message text", () => {
+	const stdout = [
+		JSON.stringify({ type: "thread.started", thread_id: "contains-OK-but-is-not-a-reply" }),
+		JSON.stringify({ type: "item.completed", item: { type: "error", message: "fallback OK metadata" } }),
+		JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "OK" } })
+	].join("\n");
+	assert.equal(extractCliReply("codex", stdout), "OK");
+});
+
+test("extractCliReply does not accept OK outside a Codex agent message", () => {
+	const stdout = [
+		JSON.stringify({ type: "thread.started", thread_id: "OK" }),
+		JSON.stringify({ type: "item.completed", item: { type: "error", message: "OK" } }),
+		JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "" } })
+	].join("\n");
+	assert.equal(extractCliReply("codex", stdout), "");
+});
+
+test("extractCodexError exposes JSONL error events when reply is empty", () => {
+	const stdout = [
+		JSON.stringify({ type: "item.completed", item: { type: "error", message: "Model metadata missing" } }),
+		JSON.stringify({ type: "turn.failed", error: { message: "upstream rejected request" } })
+	].join("\n");
+	assert.equal(extractCodexError(stdout), "Model metadata missing；upstream rejected request");
+});
+
+test("extractCodexError ignores the Codex metadata fallback warning", () => {
+	// Real Codex 0.149.1 output when the supplier model is absent from its
+	// catalog: an item.completed "error" warning + an empty agent_message that
+	// still completes the turn with exitCode=0. The warning is not a failure;
+	// the empty reply is reported separately by testCli.
+	const stdout = [
+		JSON.stringify({ type: "thread.started", thread_id: "01a" }),
+		JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "error", message: "Model metadata for `deepseek-v4-flash` not found. Defaulting to fallback metadata; this can degrade performance and cause issues." } }),
+		JSON.stringify({ type: "turn.started" }),
+		JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "" } }),
+		JSON.stringify({ type: "turn.completed", usage: { output_tokens: 2 } })
+	].join("\n");
+	assert.equal(isCodexMetadataWarning("Model metadata for `deepseek-v4-flash` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."), true);
+	assert.equal(extractCodexError(stdout), "");
+	assert.equal(extractCliReply("codex", stdout), "");
+});
+
+test("extractCliReply preserves plain text output for other CLIs", () => {
+	assert.equal(extractCliReply("claude", "  OK\n"), "OK");
+});
+
 test("fingerprint is stable and reflects the route", () => {
 	assert.equal(fingerprint("k3-baoyue", "kimi-k3", "max", "https://api.supxh.xin/v1"), fingerprint("k3-baoyue", "kimi-k3", "max", "https://api.supxh.xin/v1"));
 	assert.notEqual(fingerprint("k3-baoyue", "kimi-k3", "max", "https://api.supxh.xin/v1"), fingerprint("other", "kimi-k3", "max", "https://api.supxh.xin/v1"));
+});
+
+test("protocol URL helpers avoid duplicated v1 segments", () => {
+	assert.equal(stripTrailingV1("https://api.aixforge.com/v1"), "https://api.aixforge.com");
+	assert.equal(joinApiPath(stripTrailingV1("https://api.aixforge.com/v1"), "v1/messages"), "https://api.aixforge.com/v1/messages");
+});
+
+test("qwenSettings selects an OpenAI-compatible provider without persisting a key", () => {
+	const value = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" }
+	));
+	assert.equal(value.selectedAuthType, "openai");
+	assert.equal(value.modelProviders.openai[0].id, "deepseek-v4-flash");
+	assert.equal(value.modelProviders.openai[0].baseUrl, "https://api.aixforge.com/v1");
+	assert.equal(value.modelProviders.openai[0].envKey, "AIXFORGE_API_KEY");
+	assert.equal(JSON.stringify(value).includes("sk-"), false);
 });
 
 test("codexToml points Codex at the supplier with responses wire", () => {
