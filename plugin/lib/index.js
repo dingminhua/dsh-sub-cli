@@ -22,7 +22,7 @@ import { registerManagedCliProviders } from "./provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
-import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv } from "./verify.js";
+import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf } from "./verify.js";
 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
@@ -46,6 +46,7 @@ const VERIFIED_ENTRY = z.object({
 const SCHEMA = z.object({
 	cliDir: z.string().default(""),
 	models: z.dict(MODEL_ENTRY).default({}),
+	permissions: z.dict(z.string()).default({}),
 	verified: z.dict(VERIFIED_ENTRY).default({})
 }).default({});
 
@@ -218,7 +219,7 @@ export function apply(ctx) {
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
 			const dir = currentDir();
-			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined), signal: exec.signal });
+			return dispatch({ spawn: ctx.subprocess, dir, entry, argv: entry.argv(task, model || undefined, permissionOf(ctx, cliId)), signal: exec.signal });
 		}
 	}));
 
@@ -282,7 +283,7 @@ export function apply(ctx) {
 	// `cli_test`: verify the CLI itself can run with the configured model/supplier.
 	ctx.tools.register(defineTool({
 		name: "cli_test",
-		description: "真正验证某个外部 Agent CLI 能否用当前配置的模型/供应商跑通。实现：把所选供应商（baseURL + 最新 API key + wire_api）写进该 CLI 自己的配置（如 Codex 的 config-codex/config.toml），然后用该配置无头运行一次「Reply with exactly: OK」，能回来含 OK 即判定该 CLI 真实可用（不是只测 DSH 模型路由）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model，并且该中转商支持对应 CLI 的协议（如 Codex 需要 responses 协议）。当用户说「测一下 / 验证一下某 CLI 能不能正常用、通不通」时调用。参数 cli 取值：codex / claude / qwen。成功则写入该 CLI 的「已通过验证」记录（含配置指纹），失败则清除并说明原因。",
+		description: "真正验证某个外部 Agent CLI 能否用当前配置的模型/供应商跑通。实现：把所选供应商（baseURL + 最新 API key + wire_api）写进该 CLI 自己的配置（如 Codex 的 config-codex/config.toml），用该配置无头运行一次「Reply with exactly: OK」确认可连通，然后按该 CLI 所需协议做一次真实工具续接探测，判定该供应商是否支持。各 CLI 所测协议：Codex=OpenAI Responses（含工具续接）；Claude Code=Anthropic Messages（含 tool_use 续接）；Qwen Code=Chat Completions（含 tool_calls）。若该供应商不支持所需协议，测试判失败并说明原因（如 Codex 可试 modelflare）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model。当用户说「测一下 / 验证一下某 CLI 能不能正常用、通不通」时调用。参数 cli 取值：codex / claude / qwen。成功则写入「已通过验证」记录（含配置指纹），失败则写入失败原因（配置变更后消失）。",
 		parameters: {
 			cli: { type: "string", required: true, description: "要测试的 CLI 标识：codex / claude / qwen" }
 		},

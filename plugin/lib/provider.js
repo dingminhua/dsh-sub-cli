@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { binPath, envFor } from "./paths.js";
 import { cliById } from "./registry.js";
 import { MAX_OUTPUT_BYTES, GRACE_MS, winShimArgv } from "./dispatch.js";
+import { permissionOf } from "./verify.js";
 
 const NO_START_CAPABILITIES = Object.freeze({
 	outputSchema: false,
@@ -28,12 +29,13 @@ function textPrompt(prompt) {
 }
 
 export class ManagedCliProvider {
-	constructor({ name, cli, dirSource, spawn, prepare }) {
+	constructor({ name, cli, dirSource, spawn, prepare, ctx }) {
 		this.name = name;
 		this.cli = cli;
 		this.dirSource = dirSource;
 		this.spawn = spawn;
 		this.prepare = prepare; // optional (cliId, dir) => { ok, env, reason } — run gate
+		this.ctx = ctx; // settings access for the live permission tier
 		this.capabilities = NO_START_CAPABILITIES;
 		this.inheritsParentContext = false;
 	}
@@ -68,8 +70,12 @@ export class ManagedCliProvider {
 				} else {
 					mergedEnv = envFor(entry, dir);
 				}
+				// Live permission tier from settings (default workspace-write), passed
+				// into the per-CLI argv mapping.
+				let permission;
+				try { permission = permissionOf(this.ctx, this.cli); } catch { permission = undefined; }
 				handle = this.spawn.spawn({
-					argv: winShimArgv(resolved, entry.argv(task)),
+					argv: winShimArgv(resolved, entry.argv(task, undefined, permission)),
 					cwd: dir,
 					env: mergedEnv,
 					signal: controller.signal,
@@ -108,7 +114,8 @@ export function registerManagedCliProviders(ctx, dirSource, envForEntry) {
 			cli: spec.cli,
 			dirSource,
 			spawn: ctx.subprocess,
-			envFor: envForEntry
+			prepare: envForEntry,
+			ctx
 		}));
 	}
 }

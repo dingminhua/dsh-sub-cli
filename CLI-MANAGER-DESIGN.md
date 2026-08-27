@@ -346,6 +346,34 @@ Codex 0.149 已移除 `wire_api="chat"`（官方讨论 7782：2026-02 完全移�
 - **Claude / Qwen 保持纯文本检测**（各自协议不同，不以 responses 续接为准）；
 - **免代理首选**：`cli_test` 用续接探测选供应商——原生支持 responses 续接的（实测 **modelflare** `openai-responses`，step1+step2 全通）直连、零转换、零端口；chat 型供应商要跑工具任务才需代理，非默认路径。
 
+### CLI 会话续接能力调研（2026-08-27 实测，Codex 原生支持"真续接"）
+
+**结论：Codex 不是"每轮新进程"——它原生支持会话级续接，进程内部上下文完整保留。** 这推翻了早期"one-shot、不支持产品进程续接"的假设，方案 A（continuable 子代理）因此可以做到**真正的进程级续接**，不只是对话记录兜底。
+
+**Codex 三种模式（实测 `codex --help` / `exec --help` / `queue --help`）**：
+
+| 模式 | 命令 | 说明 |
+|---|---|---|
+| 一次性（headless） | `codex exec --json <task>` | 每次新会话，`--no-persist` 可不落盘 |
+| 交互式 TUI | `codex`（无参数，需 TTY） | 全屏界面，会话持续保持；`agents` 浏览本地 app-server 上的会话 |
+| **接续已有会话** | `codex exec resume <SESSION_ID> [PROMPT]` / `--last`；`codex queue --thread <id> --message <text>`；`codex exec fork <id>` | **headless 下也能续接**，上下文完整恢复 |
+
+**实测验证（k3-baoyue / kimi-k3）**：
+1. 第 1 轮 `codex exec --json -m kimi-k3 "记住秘密数字 42，只回复 DONE"` → 拿 `thread_id=01a040d1-…`；
+2. 第 2 轮 `codex exec resume <thread_id> "秘密数字是多少?只回答数字"` → 返回 **`42`** ✅；
+3. 上下文确证：第 1 轮 `input_tokens=2505`，第 2 轮 `input_tokens=9096`（历史消息被完整回放入新请求）。
+
+**会话存储位置（与隔离目录兼容）**：`CODEX_HOME/sessions/YYYY/MM/DD/rollout-<thread_id>.jsonl` + `thread_history_*.sqlite`（含 goals/logs/memories/queue/state 多个 sqlite）。`CODEX_HOME` 正是我们隔离到 `config-codex/` 的目录——**会话与配置一起隔离，resume 天然可用**，无需额外路径。
+
+**Claude / Qwen（本机未装，据文档）**：
+- Claude Code：`--resume` / `--continue` / `--session-id`，headless `-p` 支持会话接续（官方 agent-sdk sessions 文档）；
+- Qwen Code：headless 模式 + session resume（`--resume`，QwenLM/qwen-code PR #1714）。
+
+**对方案 A 的设计影响**：
+- continuable 子代理保存 CLI 的 `thread_id`，用户续按时 `codex exec resume <thread_id> <新消息>`（或 `queue` 后台排队续跑），不再是每次新起空会话；
+- `queue` 依赖本地 app-server 常驻守护（TUI 模式），无 TTY 环境需验证；`exec resume` 已验证在 headless 下可用；
+- 会话隔离在 `config-<cli>/sessions/` 下，卸载/迁移目录时随目录一起迁移，不会串到用户系统默认会话。
+
 ### 参考实现：codex-bridge（2026-08-27 记录，备选）
 
 - 仓库：`https://github.com/wujfeng712-ui/codex-bridge`（MIT，Node 单文件零依赖，约 2000 行）。

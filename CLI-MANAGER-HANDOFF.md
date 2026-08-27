@@ -335,6 +335,7 @@ DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、�
 - **Codex 0.149 只认 `wire_api="responses"`**（不再支持 `chat`，官方讨论 7782 已于 2026-02 移除）；k3-baoyue 单轮 OK 但续接 500；aixforge chat 型续接 400；**modelflare 原生 responses 续接实测通过**；
 - **Codex 测试改为"必须支持续接" + 失败原因随配置消失**：`cli_test` 对 Codex 额外做工具续接探测，纯文本通过但续接不支持 → **判失败**并写失败记录（`ok:false` + error 原因 + fingerprint）；设置卡按指纹匹配分三态显示——通过（绿）/失败原因（红）/未验证（换配置后旧结论消失）；Claude/Qwen 保持纯文本检测；
 - **免代理首选**：续接探测通过的供应商（modelflare）直连，零转换零端口；chat 型供应商跑工具任务才需代理，非默认路径；
+- **Token 顺序陷阱 + 会话接续（实测）**：Codex 顶层 model 键必须在所有 `[xxx]` 段之前；**Codex 原生支持会话级续接**——`codex exec resume <thread_id> [prompt]`（headless 可用）、`codex queue --thread <id> --message`（依赖 app-server 常驻）、`codex exec fork`；会话存 `CODEX_HOME/sessions/YYYY/MM/DD/rollout-<thread_id>.jsonl`（`CODEX_HOME` 即隔离的 `config-codex/`，天然随目录迁移）。实测 kimi-k3：第 1 轮记秘密数字 42，resume 验证返回 42、input_tokens 从 2505→9096（历史完整回放）。**方案 A 用 resume 实现真续接**，不再"每轮新空会话"；Claude 有 `--resume/--session-id`，Qwen 有 `--resume`（本机未装，据文档）；
 - **参考实现 codex-bridge（记录备选）**：`https://github.com/wujfeng712-ui/codex-bridge`（MIT、Node 单文件零依赖）——本地协议代理，Responses↔Chat 双向转换 + `previous_response_id` 会话续接；对比 `completion-to-response`（Go，无状态，续接 bug）。**需开端口起服务**，仅当用户执意用 chat 型供应商且要工具任务时才启用；
 - **核对签名纪律（教训）**：派发/测试前实时读当前 `models.<cli>`→provider `baseURL`/`apiKeyEnv`→credentials 最新 key，并核对 `verified.<cli>.fingerprint`；不得沿用历史会话缓存的供应商/key；
 - **目录自动迁移**：Host 监听 `cliDir` 变化，把旧目录的 `bin/`、`config-<cli>/`、`vendor/` 移到新目录，目标存在则不覆盖；macOS `mv` / Windows `cmd move`；

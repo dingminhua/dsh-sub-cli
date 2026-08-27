@@ -9,7 +9,7 @@
 
 import path from "node:path";
 import os from "node:os";
-import { cliById } from "./registry.js";
+import { cliById, DEFAULT_PERMISSION } from "./registry.js";
 import { binPath, envFor, PLATFORM } from "./paths.js";
 import { winShimArgv } from "./dispatch.js";
 
@@ -26,9 +26,13 @@ export function fingerprint(provider, model, effort, baseURL) {
 /** Read the current `dsh-sub-cli` settings section (value). */
 export function currentSection(ctx) {
 	// The plugin registers this namespace and lifecycle-owns the source; read
-	// it through the settings service for the live value.
+	// it through the settings service for the live value. `settings`, `llm`,
+	// and `credentials` are optional host services — always read them with
+	// ctx.get() (they are NOT declared on the plugin's inject list).
+	const settings = ctx.get("settings");
+	if (!settings) return null;
 	try {
-		const desc = ctx.settings.describe({ redactSecrets: true });
+		const desc = settings.describe({ redactSecrets: true });
 		const ns = desc.find((x) => x.ns === SETTINGS_NS);
 		return (ns && ns.value) || null;
 	} catch {
@@ -39,15 +43,18 @@ export function currentSection(ctx) {
 /** Resolve the provider's { baseURL, apiKeyEnv } from DSH configurable-provider settings. */
 export async function providerConfig(ctx, provider) {
 	if (!provider) return null;
+	const llm = ctx.get("llm");
+	const settings = ctx.get("settings");
+	if (!llm || !settings) return null;
 	let entry = null;
 	try {
-		entry = ctx.llm.listConfigurableProviders().find((p) => p.provider === provider);
+		entry = llm.listConfigurableProviders().find((p) => p.provider === provider);
 	} catch {
 		return null;
 	}
 	if (!entry) return null;
 	try {
-		const desc = ctx.settings.describe({ redactSecrets: true });
+		const desc = settings.describe({ redactSecrets: true });
 		const ai = desc.find((x) => x.ns === entry.settingsNs);
 		const p = ai && ai.value && ai.value.providers && ai.value.providers[provider];
 		if (!p) return null;
@@ -74,9 +81,10 @@ export async function cliEnv(ctx, cliId, dir) {
 
 /** Resolve the latest API key from DSH credentials (never cached). */
 export async function credentialKey(ctx, apiKeyEnv) {
-	if (!apiKeyEnv || !ctx.credentials) return null;
+	const credentials = ctx.get("credentials");
+	if (!apiKeyEnv || !credentials) return null;
 	try {
-		const r = await ctx.credentials.resolve(apiKeyEnv);
+		const r = await credentials.resolve(apiKeyEnv);
 		return r && typeof r.value === "string" ? r.value : null;
 	} catch {
 		return null;
@@ -95,6 +103,13 @@ export async function currentFingerprint(ctx, cliId) {
 	if (!route || !route.provider || !route.model) return null;
 	const pc = await providerConfig(ctx, route.provider);
 	return fingerprint(route.provider, route.model, route.reasoningEffort, pc && pc.baseURL);
+}
+
+/** Read the stored permission for a CLI (default workspace-write). */
+export function permissionOf(ctx, cliId) {
+	const section = currentSection(ctx);
+	const p = section && section.permissions && section.permissions[cliId];
+	return p || DEFAULT_PERMISSION;
 }
 
 /** Read the stored verified record for a CLI. */
@@ -147,8 +162,10 @@ export async function writeVerified(ctx, cliId, { ok = true, version, error, cap
 	};
 	if (!ok && error) value.error = error;
 	if (capabilities) value.capabilities = capabilities;
+	const settings = ctx.get("settings");
+	if (!settings) return value;
 	try {
-		await ctx.settings.mutate(SETTINGS_NS, [{ op: "set", path: ["verified", cliId], value }]);
+		await settings.mutate(SETTINGS_NS, [{ op: "set", path: ["verified", cliId], value }]);
 		return value;
 	} catch {
 		return value;
@@ -157,8 +174,10 @@ export async function writeVerified(ctx, cliId, { ok = true, version, error, cap
 
 /** Clear the stored verified record for a CLI. */
 export async function clearVerified(ctx, cliId) {
+	const settings = ctx.get("settings");
+	if (!settings) return;
 	try {
-		await ctx.settings.mutate(SETTINGS_NS, [{ op: "unset", path: ["verified", cliId] }]);
+		await settings.mutate(SETTINGS_NS, [{ op: "unset", path: ["verified", cliId] }]);
 	} catch {
 		// best-effort
 	}
@@ -321,10 +340,120 @@ export function findCallId(body) {
 	return null;
 }
 
+/** Find the first Anthropic `tool_use` block's id. Pure/testable. */
+export function findAnthropicToolUseId(body) {
+	if (!body || typeof body !== "object") return null;
+	const content = Array.isArray(body.content) ? body.content : [];
+	for (const block of content) {
+		if (block && block.type === "tool_use" && typeof block.id === "string") return block.id;
+	}
+	return null;
+}
+
+/** Find the first Chat-Completions `tool_calls[].id`. Pure/testable. */
+export function findChatToolCallId(body) {
+	if (!body || typeof body !== "object") return null;
+	const choices = Array.isArray(body.choices) ? body.choices : [];
+	for (const c of choices) {
+		const tcs = c && c.message && Array.isArray(c.message.tool_calls) ? c.message.tool_calls : [];
+		for (const tc of tcs) if (tc && typeof tc.id === "string") return tc.id;
+	}
+	return null;
+}
+
+/**
+ * Probe an Anthropic Messages supplier for tool_use continuation (Claude Code
+ * needs it for real tool work). Two steps: step1 must return a `tool_use` block
+ * with an id; step2 sends `tool_result` and must return a 2xx.
+ */
+export async function probeAnthropicContinuation({ httpPost, baseURL, apiKey, model }) {
+	const tool = { name: "get_time", description: "returns current time", input_schema: { type: "object", properties: {} } };
+	let r1;
+	try {
+		r1 = await httpPost({ url: `${baseURL}/v1/messages`, body: { model, max_tokens: 256, tools: [tool], messages: [{ role: "user", content: "现在几点？请调用 get_time 工具" }] } });
+	} catch (error) {
+		return { toolContinuation: false, step: 1, reason: error instanceof Error ? error.message : String(error) };
+	}
+	const toolUseId = findAnthropicToolUseId(r1 && r1.body);
+	if (!toolUseId) {
+		return { toolContinuation: false, step: 1, status: r1 && r1.status, reason: "step1 未返回 tool_use（供应商不支持 Anthropic 工具输出）" };
+	}
+	let r2;
+	try {
+		r2 = await httpPost({
+			url: `${baseURL}/v1/messages`,
+			body: {
+				model, max_tokens: 256,
+				messages: [
+					{ role: "user", content: "现在几点？请调用 get_time 工具" },
+					{ role: "assistant", content: [{ type: "tool_use", id: toolUseId, name: "get_time", input: {} }] },
+					{ role: "user", content: [{ type: "tool_result", tool_use_id: toolUseId, content: "当前时间是 2026-08-27 12:00 UTC" }] }
+				]
+			}
+		});
+	} catch (error) {
+		return { toolContinuation: false, step: 2, reason: error instanceof Error ? error.message : String(error) };
+	}
+	return { toolContinuation: (r2 && r2.status) >= 200 && (r2 && r2.status) < 400, step: 2, step1Status: r1.status, step2Status: r2 && r2.status };
+}
+
+/**
+ * Probe an OpenAI Chat-Completions supplier for tool_calls continuation (Qwen
+ * Code needs it). Step1 must return `tool_calls` with an id; step2 sends a
+ * `tool` role message and must return a 2xx.
+ */
+export async function probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model }) {
+	const tool = { type: "function", function: { name: "get_time", description: "returns current time", parameters: { type: "object", properties: {} } } };
+	let r1;
+	try {
+		r1 = await httpPost({ url: `${baseURL}/chat/completions`, body: { model, tools: [tool], messages: [{ role: "user", content: "现在几点？请调用 get_time 工具" }] } });
+	} catch (error) {
+		return { toolContinuation: false, step: 1, reason: error instanceof Error ? error.message : String(error) };
+	}
+	const toolCallId = findChatToolCallId(r1 && r1.body);
+	if (!toolCallId) {
+		return { toolContinuation: false, step: 1, status: r1 && r1.status, reason: "step1 未返回 tool_calls（供应商不支持 Chat 工具输出）" };
+	}
+	let r2;
+	try {
+		r2 = await httpPost({
+			url: `${baseURL}/chat/completions`,
+			body: {
+				model,
+				messages: [
+					{ role: "user", content: "现在几点？请调用 get_time 工具" },
+					{ role: "assistant", content: null, tool_calls: [{ id: toolCallId, type: "function", function: { name: "get_time", arguments: "{}" } }] },
+					{ role: "tool", tool_call_id: toolCallId, content: "当前时间是 2026-08-27 12:00 UTC" }
+				]
+			}
+		});
+	} catch (error) {
+		return { toolContinuation: false, step: 2, reason: error instanceof Error ? error.message : String(error) };
+	}
+	return { toolContinuation: (r2 && r2.status) >= 200 && (r2 && r2.status) < 400, step: 2, step1Status: r1.status, step2Status: r2 && r2.status };
+}
+
 /** Interpret findCallId returning null: is tool-call absent or unsupported? */
 function callIdMeaning(body) {
 	if (body && body.error && typeof body.error.message === "string") return false;
 	return null;
+}
+
+/**
+ * Probe the CLI's own protocol tool-continuation. Routes by entry.protocol:
+ * responses -> probeToolContinuation, anthropic -> probeAnthropicContinuation,
+ * openai-chat -> probeOpenaiChatContinuation. Pure/testable via injected httpPost.
+ */
+export async function probeProtocolContinuation({ httpPost, baseURL, apiKey, model, protocol }) {
+	switch (protocol) {
+		case "anthropic":
+			return probeAnthropicContinuation({ httpPost, baseURL, apiKey, model });
+		case "openai-chat":
+			return probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model });
+		case "responses":
+		default:
+			return probeToolContinuation({ httpPost, baseURL, apiKey, model });
+	}
 }
 
 /** A simple POST via the DSH subprocess (curl), shaped like the injected httpPost. */
@@ -380,22 +509,30 @@ export async function testCli(ctx, cliId, signal) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
 	if (!reply.toUpperCase().includes("OK")) return { ok: false, error: `该代理/中转商的模型未返回预期（含 OK），实际：${reply.slice(0, 80) || "（空）"}。` };
-	// Tool-continuation capability: Codex needs it for real tool/web tasks.
-	// A provider that only answers plain text cannot drive Codex's tools, so the
-	// Codex test must fail (not pass) and tell the user the new interface is
-	// unsupported. claude/qwen keep the text-only check.
+	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
+	// tool continuation to actually work (Codex=responses, Claude=anthropic
+	// tool_use, Qwen=openai chat tool_calls). A provider that only answers plain
+	// text can't drive the CLI's tools, so these are hard failures with a
+	// user-facing reason — not a pass.
 	let capabilities = null;
-	if (entry.id === "codex" && pc && pc.baseURL && key) {
-		const probe = await probeToolContinuation({ httpPost: curlHttpPost(ctx, key), baseURL: pc.baseURL, apiKey: key, model: route.model });
-		if (probe.toolContinuation !== true) {
-			const why = probe.reason || (probe.step === 1 ? "供应商未返回 function_call" : "供应商未支持 responses 工具续接");
+	if (pc && pc.baseURL && key) {
+		const gate = await probeProtocolContinuation({
+			httpPost: curlHttpPost(ctx, key),
+			baseURL: pc.baseURL,
+			apiKey: key,
+			model: route.model,
+			protocol: entry.protocol
+		});
+		capabilities = { toolContinuation: gate.ok, protocol: entry.protocol };
+		if (!gate.ok) {
 			return {
 				ok: false,
-				error: `当前供应商（${route.provider}）不支持 Codex 所需的 responses 工具续接新接口，Codex 无法运行工具/联网任务（${why}）。请更换支持该接口的供应商（如 modelflare），或联系供应商支持。`,
-				capabilities: { toolContinuation: false, probeReason: why }
+				error: `当前供应商（${route.provider}）不支持 ${entry.name} 所需的 ${entry.protocolLabel}，CLI 无法运行工具/联网任务（${gate.reason}）。请更换支持该协议的供应商（Codex 可试 modelflare），或联系供应商支持。`,
+				capabilities
 			};
 		}
-		capabilities = { toolContinuation: true };
+	} else {
+		capabilities = { toolContinuation: false, protocol: entry.protocol };
 	}
 	// Version
 	let version = null;

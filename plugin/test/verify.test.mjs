@@ -9,14 +9,19 @@ import {
 	writeVerified,
 	currentFingerprint,
 	probeToolContinuation,
-	findCallId
+	findCallId,
+	findAnthropicToolUseId,
+	findChatToolCallId,
+	probeAnthropicContinuation,
+	probeOpenaiChatContinuation,
+	probeProtocolContinuation
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
 	const providers = providerCfg
 		? [{ provider: "k3-baoyue", settingsNs: "llm-pi-ai", settingsPath: ["providers", "k3-baoyue"] }]
 		: [];
-	return {
+	const services = {
 		settings: {
 			describe: () => [
 				{ ns: "dsh-sub-cli", value: value || { models: {}, verified: {} } },
@@ -27,6 +32,9 @@ function sampleCtx({ value, providerCfg, credKey } = {}) {
 		llm: { listConfigurableProviders: () => providers },
 		credentials: { resolve: async () => (credKey ? { value: credKey } : { value: undefined }) }
 	};
+	// Optional services are read via ctx.get() in the plugin (never declared on
+	// the inject list), so the test ctx must expose the same accessor.
+	return { get: (key) => services[key], ...services };
 }
 
 test("fingerprint is stable and reflects the route", () => {
@@ -165,4 +173,55 @@ test("writeVerified stores a failure record with ok:false + error + fingerprint"
 	assert.equal(written[0].value.error, "当前供应商不支持 Codex 所需的新接口");
 	assert.ok(written[0].value.fingerprint);
 	assert.ok(written[0].value.provider);
+});
+
+test("findAnthropicToolUseId extracts tool_use id", () => {
+	const body = { content: [{ type: "text", text: "hi" }, { type: "tool_use", id: "toolu_123", name: "get_time", input: {} }] };
+	assert.equal(findAnthropicToolUseId(body), "toolu_123");
+	assert.equal(findAnthropicToolUseId({ content: [] }), null);
+});
+
+test("findChatToolCallId extracts tool_calls id", () => {
+	const body = { choices: [{ message: { tool_calls: [{ id: "call_zz", type: "function" }] } }] };
+	assert.equal(findChatToolCallId(body), "call_zz");
+	assert.equal(findChatToolCallId({ choices: [{ message: {} }] }), null);
+});
+
+test("probeAnthropicContinuation passes on tool_use + tool_result", async () => {
+	let calls = 0;
+	const httpPost = async () => {
+		calls += 1;
+		if (calls === 1) return { status: 200, body: { content: [{ type: "tool_use", id: "toolu_1", name: "get_time", input: {} }] } };
+		return { status: 200, body: { content: [{ type: "text", text: "现在 12:00 UTC" }] } };
+	};
+	const r = await probeAnthropicContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m" });
+	assert.equal(r.toolContinuation, true);
+	assert.equal(calls, 2);
+});
+
+test("probeAnthropicContinuation fails without tool_use", async () => {
+	const httpPost = async () => ({ status: 200, body: { content: [{ type: "text", text: "现在 12:00" }] } });
+	const r = await probeAnthropicContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m" });
+	assert.equal(r.toolContinuation, false);
+	assert.equal(r.step, 1);
+});
+
+test("probeOpenaiChatContinuation passes on tool_calls + tool message", async () => {
+	let calls = 0;
+	const httpPost = async () => {
+		calls += 1;
+		if (calls === 1) return { status: 200, body: { choices: [{ message: { tool_calls: [{ id: "call_a", type: "function" }] } }] } };
+		return { status: 200, body: { choices: [{ message: { content: "现在 12:00 UTC" } }] } };
+	};
+	const r = await probeOpenaiChatContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m" });
+	assert.equal(r.toolContinuation, true);
+	assert.equal(calls, 2);
+});
+
+test("probeProtocolContinuation routes by protocol", async () => {
+	let seen = null;
+	const httpPost = async () => { seen = "called"; return { status: 200, body: {} }; };
+	const r = await probeProtocolContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m", protocol: "anthropic" });
+	assert.equal(r.step, 1); // anthropic probe returns step 1 with no tool_use
+	assert.equal(seen, "called");
 });
