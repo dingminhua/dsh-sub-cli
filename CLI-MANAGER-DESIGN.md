@@ -374,6 +374,14 @@ Codex 0.149 已移除 `wire_api="chat"`（官方讨论 7782：2026-02 完全移�
 - `queue` 依赖本地 app-server 常驻守护（TUI 模式），无 TTY 环境需验证；`exec resume` 已验证在 headless 下可用；
 - 会话隔离在 `config-<cli>/sessions/` 下，卸载/迁移目录时随目录一起迁移，不会串到用户系统默认会话。
 
+### 参考实现：dsh-agent-conductor（2026-08-27 记录，外部 CLI 派发）
+
+- 仓库：`https://github.com/MJorgin/dsh-agent-conductor`（DSH 指挥家，动态插件/热更新版）。
+- 定位：在 DSH 会话里把自包含任务派活给 **11 种外部 Agent CLI**（Codex、Claude Code、Trae、OpenCode、Gemini、Cursor、Kimi、Qwen、Copilot、WorkBuddy、Grok），无头模式执行并把 stdout 回传的工具 `conductor_dispatch`。
+- 实现：用 `subprocess.spawn` 调用外部 CLI；`skills/conductor/scripts/dispatch.py` 是零依赖版，`index.js` 是 bundle 版；Agent 注册表按 `{ id, name, argv }` 模板渲染 `{task}`。
+- 特点：host-only，无 client UI；卡片是 `presentCall: { card: 'generic', title: '指挥家 → codex' }`（默认文本卡片）。
+- 与 dsh-sub-cli 的差异化（本插件补上的能力）：Conductor **不管理统一目录**（直接用系统 PATH）、**不隔离配置**（不设 `CODEX_HOME`/`CLAUDE_CONFIG_DIR` 等）、**不能独立配模型**、**无 Web 面板**、**模型策略不轮换**。dsh-sub-cli 的设计正是补全这几点。conductor 作为外部派发参考，验证了「用 subprocess.spawn 调外部 CLI 并回传 stdout」的可行性。
+
 ### 参考实现：codex-bridge（2026-08-27 记录，备选）
 
 - 仓库：`https://github.com/wujfeng712-ui/codex-bridge`（MIT，Node 单文件零依赖，约 2000 行）。
@@ -381,7 +389,15 @@ Codex 0.149 已移除 `wire_api="chat"`（官方讨论 7782：2026-02 完全移�
 - 对比：`completion-to-response`（Go）无状态、`previous_response_id` 续接未实现（step2 报 `messages cannot be empty`）；codex-bridge 带 LRU 响应存储 + `resolveResponseChain`，续接实测成功。
 - 集成方式：作为**可选**本地代理，按当前所选 provider 动态生成 env（`DEEPSEEK_BASE_URL`/`DEEPSEEK_API_KEY`/`DEEPSEEK_MODELS` 指向该 provider 的 base_url + 最新 key + model），Codex `base_url` 指向 `127.0.0.1:PORT/v1`，`auth.json` 写入站 key。**需开端口、起常驻服务**，故仅当用户执意用 chat 型供应商且要工具任务时才启用，不进默认链路。
 
-## 已确认事项与剩余决策
+### 未解决的运行时问题（2026-08-27）
+
+本地代码和 DSH GUI 运行时目前不能视为一致，存在两个未闭环问题：
+
+1. Human 将所有 CLI 路由故意设置为 `aixforge / deepseek-v4-flash / high` 后，重启并执行 `cli_test(codex)`。Provider 配置读取问题已修复，但曾出现 `value is not lossless JSON`；根因是 probe 返回 `toolContinuation` 而调用侧读取了不存在的 `gate.ok`，已修复，仍需运行时复测。
+2. `~/dsh-clis/bin/codex`、`bin/claude`、`bin/qwen` 实际存在，但设置卡仍显示「未安装」。Client 已改用 Host `remote.cli.check()`，由 Host 的 `resolveDir()` 和 `fs.lstat()` 判定；尚未确认当前 GUI 是否加载了该版本，亦未确认 remote 返回 envelope 的 Client 解包路径。
+
+**接手要求**：先确认 DSH 当前进程实际加载的 plugin/client bundle 和版本，再取得 `remote.cli.check()` 原始返回（至少包括 `dir`、`results[].installed`），核对 `CliService.check`、Typert remote binder、Client 解包三层；最后再验证 `cli_test` 的失败记录和 UI 文案。62/62 是本地单元测试结果，不代表 GUI 问题已解决。
+
 
 - [x] 首批产品方向为 Codex、Claude Code、Qwen Code；Codex 与 Claude Code 为核心。
 - [x] 用户只向主控 AI 提需求，不手工创建 CLI 任务。

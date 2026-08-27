@@ -110,9 +110,17 @@ plugin/
 - **`cli_test` 必须测工具续接，不只是纯文本**：实测 `aixforge` 对 Codex 是半兼容——单轮 `Reply OK` 通过，但联网/工具类任务 `turn.failed`（`function_call_output requires call_id … only supported on Responses WebSocket v2`）。验证必须加一次**工具续接探测**（两步 responses：先让模型返回 `function_call` 拿 `call_id`，再带 `function_call_output` 续接），结果记入 `verified.<cli>.capabilities.toolContinuation`；纯文本通过≠可用于 Codex 工具任务。**Codex 的 `cli_test` 对续接不通过的供应商直接判失败**，告知「不支持新接口，请换如 modelflare」。Claude/Qwen 保持纯文本检测。
 - **按 CLI 协议做单一探测**：每个 CLI 只测它自己那个协议链路的工具续接——`registry.js` 里 `entry.protocol` 标注（codex=`responses`、claude=`anthropic`、qwen=`openai-chat`），`probeProtocolContinuation` 按它路由到 `probeToolContinuation` / `probeAnthropicContinuation` / `probeOpenaiChatContinuation`。**用户填 Provider/Model 时不感知协议**（设置卡不过滤供应商），但每 CLI 卡片下方小字写明"测试将验证该供应商是否支持 <协议>"，`cli_test` 失败按协议说人话（Codex 可试 modelflare）。
 - **Codex 会话续接（实测，真续接）**：`codex exec resume <thread_id> [prompt]` 在 headless 下可续接已有会话，完整保留进程内部上下文（实测：第 1 轮记 42，`input_tokens=2505`；resume 问秘密数字得 `42`，`input_tokens=9096`——历史回放）。会话存 `CODEX_HOME/sessions/…/rollout-<thread_id>.jsonl`，`CODEX_HOME` 即隔离的 `config-codex/`，随目录迁移。`codex queue --thread` 需 app-server 常驻（TUI 依赖），无 TTY 时优先用 `exec resume`。Claude：`--resume/--session-id/--continue`；Qwen：`--resume`（本机未装，据文档）。方案 A 续按时保存 CLI `thread_id`，用 resume 续接而非每次新进程。
+- **参考实现：dsh-agent-conductor**（`https://github.com/MJorgin/dsh-agent-conductor`，DSH 指挥家）——在会话里把任务派发给 11 种外部 Agent CLI（Codex/Claude Code/Trae/OpenCode/Gemini/Cursor/Kimi/Qwen/Copilot/WorkBuddy/Grok），用 `subprocess.spawn` 无头执行并回传 stdout，工具名 `conductor_dispatch`，host-only 无 client UI。用作「外部 CLI 派发」的可行性参考；但它不管理统一目录、不隔离配置（不设 `CODEX_HOME` 等）、不能独立配模型、无 Web 面板、模型策略不轮换——dsh-sub-cli 正是补齐这些短板。
 - **参考实现：codex-bridge**（`https://github.com/wujfeng712-ui/codex-bridge`，MIT，Node 单文件零依赖）——本地协议代理，Responses API ↔ Chat Completions 双向转换，带 `previous_response_id` 会话续接。**需开端口起常驻服务**，仅当用户执意用 chat 型供应商且要工具任务时才启用，不进默认链路。
 
-## 可复用模式
+## 当前未解决问题（2026-08-27）
+
+- **真实运行时验证仍未完成**：用户将 `dsh-sub-cli` 的三个 CLI 路由故意设为 `aixforge / deepseek-v4-flash / high` 后，重启 DSH 并调用 `cli_test(codex)`。此前曾报「找不到 Provider 配置」，修正 `verify.js` 的可选服务访问和 `llm-pi-ai.providers.<id>` 读取后，错误进入下一阶段，但随后出现 `tool "cli_test" returned invalid output: value is not lossless JSON`。
+- **该错误已定位到一个已修复的字段错误**：`probeProtocolContinuation()` 返回字段是 `toolContinuation`，旧代码误读为 `gate.ok`，会把 `undefined` 写入 `capabilities`，违反 DSH Tool 的 lossless JSON 约束。源码已改为 `gate.toolContinuation`，本地 **62/62** 单元测试通过；但修复后的运行时结果尚未确认，必须在 DSH 重新加载最新 bundle 后复测。
+- **设置卡安装状态仍显示异常**：实际文件存在于 `~/dsh-clis/bin/codex`、`bin/claude`、`bin/qwen`，但 UI 仍显示「未安装」。当前 Client 已改为调用 Host `remote.cli.check()`，由 Host 使用和安装/执行相同的 `resolveDir()` + `fs.lstat(<dir>/bin/<cli>)` 判断；然而运行时仍未确认是否加载了该 Client 版本，或 `remote.cli.check()` 的实际返回 envelope 与 Client 读取路径是否一致。
+- **后续排查顺序**：①确认当前 DSH 运行实例实际加载的 plugin/client bundle 版本；②直接读取运行时 `remote.cli.check()` 返回值（包括 `dir` 和每个 `installed`）；③核对 Host `CliService.check`、Typert remote Client binder 和 Client 解析 envelope；④再复测 `cli_test`，确认 aixforge 的真实失败原因能否落入设置记录。
+- **本地验证范围**：源码语法检查通过，`plugin/test` 当前 62/62 通过；以上通过不等价于当前 DSH GUI 运行时已加载并验证成功。
+
 
 旧参考实现中最值得移植的部分：
 

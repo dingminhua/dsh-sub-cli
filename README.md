@@ -63,6 +63,12 @@ CLI 工作应复用 DSH 的 subagent 子会话体验：当前主控会话下展�
 6. `MIGRATION-INVENTORY.md`：旧项目资料迁移清单；
 7. `reference/dsh-subagent-default-model/`：旧项目参考实现，不作为发布入口。
 
+## 参考项目
+
+- [dsh-agent-conductor](https://github.com/MJorgin/dsh-agent-conductor)：DSH 指挥家，在会话里派活给 11 种外部 Agent CLI（Codex/Claude Code/Trae/OpenCode/Gemini/Cursor/Kimi/Qwen/Copilot/WorkBuddy/Grok），`subprocess.spawn` 无头执行并回传 stdout。用作「外部 CLI 派发」的可行性参考；本插件在其基础上补齐统一目录、配置隔离、独立配模型、Web 面板与模型策略轮换。
+- [codex-bridge](https://github.com/wujfeng712-ui/codex-bridge)：本地协议代理，Responses API ↔ Chat Completions 双向转换（含 `previous_response_id` 续接）。仅当执意用 chat 型供应商且要工具任务时启用，需开端口起常驻服务。
+- Cindy：本机 DSH Desktop 类应用（非公开仓库，安装于 `/Applications/Cindy.app`），用于 Codex 配置隔离参考。
+
 ## 开发与验证
 
 ```bash

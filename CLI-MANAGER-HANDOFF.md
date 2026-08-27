@@ -353,7 +353,14 @@ DSH 原生 subagent API 已提供父子目录、history、prompt、interrupt、�
 3. **真实“更新”对比新版本**：`cli_install` 复用 npm latest 即更新；如需“是否有新版本”的显式判断可后续加；
 4. **设置卡「打开即读验证状态」路径核验**：当前通过 settings `verified` 读到并显示；刷新/重开设置卡即可看到，无 host RPC。
 
-### 关键文件
+### 当前交还状态（2026-08-27，未解决）
+
+- Human 已重启 DSH 并要求真实测试。当前路由由 Human 故意设置为 `aixforge / deepseek-v4-flash / high`，不是缺省配置。
+- `cli_test(codex)` 先暴露 Provider 读取问题；已修正为 `ctx.get("settings")` / `ctx.get("llm")` / `ctx.get("credentials")`，并按 configurable provider 的 `settingsNs + settingsPath` 读取 `llm-pi-ai.providers.aixforge`。
+- 修复后曾出现 `value is not lossless JSON`：原因是 probe 返回 `toolContinuation`，代码误读 `gate.ok` 造成 `undefined` capability；源码已修复为 `gate.toolContinuation`，但 DSH 运行时需重新加载后复测。
+- UI 仍将实际存在的 `~/dsh-clis/bin/codex` 显示为「未安装」。Client 已从直接拼接路径改为调用 Host 的 `remote.cli.check()`，Host 的 `CliService.check` 使用 `resolveDir()` + `fs.lstat()`；该修复尚未在 GUI 中确认生效。注意 `cliDir: ""` 必须解析为默认 `~/dsh-clis`，不能由浏览器直接把空字符串拼成 `/bin`。
+- 用户选择暂时切换其他 AI 继续排查；后续接手者先核实运行时 bundle、remote 返回 envelope 与实际 `dir/results`，不得把 62/62 单测通过写成 GUI 问题已解决。
+
 
 - `plugin/lib/index.js`：Host（设置、工具、迁移、验证记录、`CliService`）；
 - `plugin/lib/provider.js`：托管 CLI `SubagentProvider`；
