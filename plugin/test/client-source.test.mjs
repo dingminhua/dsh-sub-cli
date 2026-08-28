@@ -4,6 +4,18 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
+test("settings footer includes the documented encourage link", () => {
+	assert.match(source, /DSC_GITHUB_URL = "https:\/\/github\.com\/dingminhua\/dsh-sub-cli"/);
+	assert.match(source, /"row\.cheer": "鼓励一下"/);
+	assert.match(source, /"row\.cheer": "Star on GitHub"/);
+	assert.match(source, /className: "dsc-cheer"/);
+	assert.match(source, /target: "_blank"/);
+	assert.match(source, /rel: "noopener noreferrer"/);
+	assert.match(source, /className: "dsc-cheer-star"/);
+	assert.match(source, /"aria-hidden": "true"/);
+	assert.match(source, /className: "dsc-footer-left"/);
+});
+
 test("registers a session-scoped monitor tab for every managed CLI job kind", () => {
 	assert.match(source, /conversation\.view/);
 	assert.match(source, /id: "dsh-sub-cli-jobs"/);
