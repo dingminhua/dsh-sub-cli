@@ -346,7 +346,8 @@ window.__ModuleLoader__.load({
           var stateText;
           var hasRec = !!(verifiedState[0][cli.id]);
           if (v) {
-            stateText = t("row.connPassed") + (v.version ? " · " + cleanVersion(v.version) : "");
+            // 测试通过时右上角只显示版本号；底部引导句已表达"测试通过"。
+            stateText = v.version ? cleanVersion(v.version) : t("row.connPassed");
             stateCls += " dsc-conn-ok";
           } else if (f) {
             stateText = t("row.connFailed");

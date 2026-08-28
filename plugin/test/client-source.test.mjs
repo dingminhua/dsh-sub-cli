@@ -22,10 +22,11 @@ test("right-side title status shows the four states", () => {
 	assert.match(source, /"row\.connNotTested":\s*"已安装·未测试"/);
 	assert.match(source, /"row\.connPassed":\s*"测试通过"/);
 	assert.match(source, /"row\.connFailed":\s*"测试失败"/);
-	assert.match(source, /stateText = t\("row\.connPassed"\) \+ \(v\.version \? " · " \+ cleanVersion\(v\.version\)/);
+	// 测试通过时右上角只显示版本号（"测试通过"由底部引导句表达）。
+	assert.match(source, /stateText = v\.version \? cleanVersion\(v\.version\) : t\("row\.connPassed"\)/);
 	// Only the bare version number is shown — strip trailing "(Claude Code)"
 	// and any WARNING: prefix, never echo the CLI name back.
-			assert.match(source, /function cleanVersion\(raw\)/);
+	assert.match(source, /function cleanVersion\(raw\)/);
 	assert.match(source, /WARNING/);
 	// Trailing parenthetical "(Claude Code)" is stripped so only the version shows.
 	assert.match(source, /replace\(.*\\\(/);
