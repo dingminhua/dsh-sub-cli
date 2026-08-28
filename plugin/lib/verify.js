@@ -598,7 +598,9 @@ export async function testCli(ctx, cliId, signal) {
 	if (reply.trim().toUpperCase() !== "OK") {
 		const codexError = cliId === "codex" ? extractCodexError(stdout) : "";
 		if (codexError) return { ok: false, error: localizeCliError(cliId, codexError) };
-		return { ok: false, error: `该代理/中转商的模型未返回预期的 OK，实际：${reply.slice(0, 80) || "（空）"}。` };
+		// 模型没有按预期返回 OK。对用户最实用的提示是：当前代理/中转商可能不提供
+		// 该 CLI 所需的能力（或模型配置不对），引导其更换代理商再重测。
+		return { ok: false, error: `当前代理/中转商（${route.provider}）未返回预期的 OK（实际：${reply.slice(0, 40) || "空"}）。可能不提供 ${entry.name} 所需的能力或模型配置有误，请更换代理/中转商后重试。` };
 	}
 	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
 	// tool continuation to actually work (Codex=responses, Claude=anthropic
@@ -618,7 +620,7 @@ export async function testCli(ctx, cliId, signal) {
 		if (!gate.toolContinuation) {
 			return {
 				ok: false,
-				error: `当前供应商（${route.provider}）不支持 ${entry.name} 所需的 ${entry.protocolLabel}，CLI 无法运行工具/联网任务（${gate.reason}）。请更换支持该协议的供应商（Codex 可试 modelflare），或联系供应商支持。`,
+				error: `当前代理/中转商（${route.provider}）不提供 ${entry.name} 所需的 ${entry.protocolLabel.split("（")[0]}工具续接能力，CLI 无法运行工具/联网任务。请更换支持该协议的代理商（Codex 可试 modelflare）。`,
 				capabilities
 			};
 		}

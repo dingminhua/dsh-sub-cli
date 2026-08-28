@@ -4,10 +4,13 @@ import { CLI_SUBAGENT_TOOLS, registerCliSubagentTools } from "../lib/subagent-to
 
 function context() {
 	const tools = new Map();
+	const services = new Map();
 	const ctx = {
 		subagents: { start: async () => { throw new Error("start not configured"); } },
-		tools: { register(definition) { tools.set(definition.name, definition); return () => tools.delete(definition.name); } }
+		tools: { register(definition) { tools.set(definition.name, definition); return () => tools.delete(definition.name); } },
+		get(name) { return services.get(name); }
 	};
+	ctx.services = services;
 	return { ctx, tools };
 }
 
@@ -40,6 +43,39 @@ test("delegates through its one-shot managed provider and returns CLI text", asy
 	assert.equal(seen.request.parent, agent);
 	assert.equal(seen.request.signal, signal);
 	assert.equal(result.output, "found issues");
+});
+
+test("all three CLI tools support the same background job contract", async () => {
+	for (const toolName of ["cli_codex", "cli_claude_code", "cli_qwen"]) {
+		const fixture = context();
+		let spec;
+		fixture.ctx.services.set("jobs", {
+			start(value) { spec = value; return `${value.kind}-1`; }
+		});
+		fixture.ctx.subagents.start = async () => ({
+			id: "run-bg",
+			result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "background done" }] }),
+			dispose: async () => {}
+		});
+		registerCliSubagentTools(fixture.ctx);
+		const tool = fixture.tools.get(toolName);
+		const agent = { id: "parent" };
+		const value = await tool.execute({ description: "后台检查", prompt: "检查项目", run_in_background: true }, { agent, signal: new AbortController().signal });
+		assert.equal(value.kind, "background");
+		assert.match(value.jobId, /^cli-(codex|claude|qwen)-1$/);
+		assert.equal(spec.owner, agent);
+		assert.equal(spec.label, "后台检查");
+		const hooks = spec.run();
+		assert.equal(typeof hooks.cancel, "function");
+		assert.deepEqual(await hooks.done, { status: "completed", output: "background done" });
+	}
+});
+
+test("background mode fails clearly when the jobs service is absent", async () => {
+	const fixture = context();
+	registerCliSubagentTools(fixture.ctx);
+	const tool = fixture.tools.get("cli_codex");
+	await assert.rejects(() => tool.execute({ description: "后台检查", prompt: "检查项目", run_in_background: true }, { agent: { id: "parent" }, signal: new AbortController().signal }), /后台任务不可用/);
 });
 
 test("surfaces a non-completed provider result as a tool error", async () => {

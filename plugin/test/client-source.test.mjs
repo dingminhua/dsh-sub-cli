@@ -4,6 +4,14 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
+test("registers a session-scoped monitor tab for every managed CLI job kind", () => {
+	assert.match(source, /conversation\.view/);
+	assert.match(source, /id: "dsh-sub-cli-jobs"/);
+	assert.match(source, /\^cli-\(codex\|claude\|qwen\)\$/);
+	assert.match(source, /jobsBySession/);
+	assert.match(source, /run_in_background:true/);
+});
+
 test("install/connectivity state is derived purely from settings, no filesystem probe", () => {
 	// No cli/check RPC probe remains in the settings card.
 	assert.doesNotMatch(source, /callCliCheck/);
