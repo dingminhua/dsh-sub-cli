@@ -44,6 +44,31 @@ export class ManagedCliAgentsService {
 		return { permissionMode: mode, approvalPolicy: "on-request", sandbox: mode };
 	}
 
+	// Single permission path shared by dispatch, followup and reattach: snapshot
+	// the pending request, ask the bound approval seam, then record the decision.
+	async resolvePermission(record, request, { agent = null, childId = null, signal = null } = {}) {
+		const sessionId = record.sessionId;
+		if (record.pendingPermission) throw errorOf("PERMISSION_REQUEST_BUSY", `managed CLI session ${sessionId} already has a pending permission request`);
+		const contextual = Object.freeze({ ...request, pluginSessionId: sessionId, childId });
+		record.pendingPermission = {
+			requestId: contextual.requestId, remoteRequestId: contextual.remoteRequestId,
+			turnId: contextual.turnId, itemId: contextual.itemId, capability: contextual.capability,
+			operation: contextual.operation, target: contextual.target, reason: contextual.reason,
+			createdAt: contextual.createdAt
+		};
+		record.status = "awaiting_permission";
+		record.updatedAt = now();
+		try {
+			const outcome = await this.approvalRequest(contextual, { agent, signal });
+			record.lastPermissionDecision = { requestId: contextual.requestId, turnId: contextual.turnId, capability: contextual.capability, outcome, decidedAt: now() };
+			return outcome;
+		} finally {
+			if (record.pendingPermission?.requestId === contextual.requestId) record.pendingPermission = null;
+			if (record.status === "awaiting_permission") record.status = "running";
+			record.updatedAt = now();
+		}
+	}
+
 	async dispatch({ cli = "codex", cwd, prompt, signal, agent = null, childId = null }) {
 		if (cli !== "codex") throw errorOf("CLI_UNSUPPORTED", `managed session CLI ${cli} is not supported yet`);
 		if (typeof cwd !== "string" || !cwd) throw errorOf("SESSION_CWD_REQUIRED", "managed CLI session requires cwd");
@@ -64,27 +89,7 @@ export class ManagedCliAgentsService {
 			record.run = await this.drivers.codex.start({
 				cwd, prompt, model: record.model || undefined, reasoningEffort: record.reasoningEffort || undefined,
 				approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox, signal,
-				onPermissionRequest: async (request) => {
-					if (record.pendingPermission) throw errorOf("PERMISSION_REQUEST_BUSY", `managed CLI session ${sessionId} already has a pending permission request`);
-					const contextual = Object.freeze({ ...request, pluginSessionId: sessionId, childId });
-					record.pendingPermission = {
-						requestId: contextual.requestId, remoteRequestId: contextual.remoteRequestId,
-						turnId: contextual.turnId, itemId: contextual.itemId, capability: contextual.capability,
-						operation: contextual.operation, target: contextual.target, reason: contextual.reason,
-						createdAt: contextual.createdAt
-					};
-					record.status = "awaiting_permission";
-					record.updatedAt = now();
-					try {
-						const outcome = await this.approvalRequest(contextual, { agent, signal });
-						record.lastPermissionDecision = { requestId: contextual.requestId, turnId: contextual.turnId, capability: contextual.capability, outcome, decidedAt: now() };
-						return outcome;
-					} finally {
-						if (record.pendingPermission?.requestId === contextual.requestId) record.pendingPermission = null;
-						if (record.status === "awaiting_permission") record.status = "running";
-						record.updatedAt = now();
-					}
-				}
+				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
 			});
 			if (!record.pendingPermission) record.status = "running";
 			record.updatedAt = now();
@@ -109,8 +114,9 @@ export class ManagedCliAgentsService {
 		const record = this.require(sessionId);
 		if (TERMINAL.has(record.status)) throw errorOf("SESSION_CLOSED", `managed CLI session ${sessionId} is closed`);
 		if (record.activeTurn) throw errorOf("SESSION_BUSY", `managed CLI session ${sessionId} already has an active turn`);
-		if (!record.run || typeof record.run.followup !== "function") throw errorOf("SESSION_NOT_LIVE", `managed CLI session ${sessionId} is not live in this Host`);
 		if (typeof prompt !== "string" || !prompt.trim()) throw errorOf("SESSION_PROMPT_REQUIRED", "follow-up prompt must not be empty");
+		// A released session keeps its remote thread id; reattach before turning.
+		if (!record.run || typeof record.run.followup !== "function") await this.reattach(record, { agent, childId, signal });
 		record.activeTurn = true;
 		record.status = "running";
 		record.lastError = null;
@@ -119,27 +125,7 @@ export class ManagedCliAgentsService {
 		signal?.addEventListener("abort", onAbort, { once: true });
 		try {
 			const result = await record.run.followup(prompt, {
-				onPermissionRequest: async (request) => {
-					if (record.pendingPermission) throw errorOf("PERMISSION_REQUEST_BUSY", `managed CLI session ${sessionId} already has a pending permission request`);
-					const contextual = Object.freeze({ ...request, pluginSessionId: sessionId, childId });
-					record.pendingPermission = {
-						requestId: contextual.requestId, remoteRequestId: contextual.remoteRequestId,
-						turnId: contextual.turnId, itemId: contextual.itemId, capability: contextual.capability,
-						operation: contextual.operation, target: contextual.target, reason: contextual.reason,
-						createdAt: contextual.createdAt
-					};
-					record.status = "awaiting_permission";
-					record.updatedAt = now();
-					try {
-						const outcome = await this.approvalRequest(contextual, { agent, signal });
-						record.lastPermissionDecision = { requestId: contextual.requestId, turnId: contextual.turnId, capability: contextual.capability, outcome, decidedAt: now() };
-						return outcome;
-					} finally {
-						if (record.pendingPermission?.requestId === contextual.requestId) record.pendingPermission = null;
-						if (record.status === "awaiting_permission") record.status = "running";
-						record.updatedAt = now();
-					}
-				}
+				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
 			});
 			record.remoteSessionId = result.threadId ?? record.run.remoteSessionId ?? record.remoteSessionId;
 			record.status = "ready";
@@ -156,6 +142,41 @@ export class ManagedCliAgentsService {
 		} finally {
 			signal?.removeEventListener("abort", onAbort);
 		}
+	}
+
+	// Reopen a released session: a fresh app-server process reattaches the same
+	// remote Codex thread. Used so idle sessions do not hold a live subprocess.
+	async reattach(record, { agent = null, childId = null, signal = null } = {}) {
+		if (!record.remoteSessionId) throw errorOf("SESSION_NOT_LIVE", `managed CLI session ${record.sessionId} has no remote thread to reattach`);
+		if (record.activeTurn) throw errorOf("SESSION_BUSY", `managed CLI session ${record.sessionId} already has an active turn`);
+		record.status = "starting";
+		record.updatedAt = now();
+		record.run = await this.drivers.codex.start({
+			cwd: record.cwd,
+			attachOnly: true,
+			resumeThreadId: record.remoteSessionId,
+			model: record.model || undefined,
+			reasoningEffort: record.reasoningEffort || undefined,
+			approvalPolicy: this.permissionSpec(record.cli).approvalPolicy,
+			sandbox: record.permissionMode,
+			signal,
+			onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+		});
+		record.status = "ready";
+		record.updatedAt = now();
+		return record.run;
+	}
+
+	// Drop the live subprocess but keep the session record and remote thread id,
+	// so a later turn can reattach. Never touches a session with an active turn.
+	async release(sessionId) {
+		const record = this.require(sessionId);
+		if (record.activeTurn || !record.run) return { released: false, session: snapshot(record) };
+		await record.run.dispose?.().catch(() => {});
+		record.run = null;
+		record.pendingPermission = null;
+		record.updatedAt = now();
+		return { released: true, session: snapshot(record) };
 	}
 
 	async interrupt(sessionId) {
@@ -202,6 +223,15 @@ export class ManagedCliAgentsService {
 		const binding = this.requireChild(childId);
 		binding.cwd = cwd;
 		binding.updatedAt = now();
+	}
+
+	// Called when a Relay child's residency epoch ends: free the app-server
+	// subprocess while keeping the bound thread id for the next send_message.
+	async releaseChild(childId) {
+		let binding;
+		try { binding = this.requireChild(childId); } catch { return { released: false }; }
+		if (!binding.sessionId) return { released: false };
+		try { return await this.release(binding.sessionId); } catch { return { released: false }; }
 	}
 
 	childCanReport(childId) { return this.requireChild(childId).epochSubmits > 0; }

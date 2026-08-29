@@ -146,7 +146,7 @@ export class JsonRpcLineWire {
 }
 
 class CodexAppServerSession {
-	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, onPermissionRequest, timeoutMs = 1800000 }) {
+	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, onPermissionRequest, resumeThreadId = null, timeoutMs = 1800000 }) {
 		this.wire = wire;
 		this.cwd = cwd;
 		this.model = model;
@@ -154,6 +154,7 @@ class CodexAppServerSession {
 		this.approvalPolicy = approvalPolicy;
 		this.sandbox = sandbox;
 		this.onPermissionRequest = typeof onPermissionRequest === "function" ? onPermissionRequest : null;
+		this.resumeThreadId = resumeThreadId;
 		this.timeoutMs = timeoutMs;
 		this.threadId = null;
 		this.activeTurn = null;
@@ -183,9 +184,38 @@ class CodexAppServerSession {
 		this.state.transition("running");
 	}
 
+	// Attach the thread without running a turn. Used when reopening a released
+	// session: `prompt` is empty on purpose, and starting a turn here would
+	// throw on the empty input and leave a rejected promise nobody awaits.
+	async attach() {
+		if (this.threadId) return this.threadId;
+		if (this.resumeThreadId) return this.resumeThread();
+		return this.startThread();
+	}
+
 	async start(prompt) {
-		if (!this.threadId) await this.startThread();
+		if (!this.threadId) {
+			if (this.resumeThreadId) await this.resumeThread();
+			else await this.startThread();
+		}
 		return this.startTurn(prompt);
+	}
+
+	// Reattach an existing Codex thread onto this fresh wire. Lets a Host drop
+	// the app-server process while idle and still continue the same thread.
+	async resumeThread() {
+		if (!this.resumeThreadId) throw new Error("Codex thread resume requires a resumeThreadId");
+		const result = await this.wire.request("thread/resume", {
+			threadId: this.resumeThreadId,
+			...(this.cwd ? { cwd: this.cwd } : {}),
+			...(this.model ? { model: this.model } : {}),
+			...(this.approvalPolicy ? { approvalPolicy: this.approvalPolicy } : {}),
+			...(this.sandbox ? { sandbox: this.sandbox } : {}),
+			...(this.reasoningEffort ? { config: { model_reasoning_effort: this.reasoningEffort } } : {})
+		});
+		this.threadId = result?.thread?.id ?? this.resumeThreadId;
+		this.state.transition("running");
+		return this.threadId;
 	}
 
 	async startThread() {
@@ -350,11 +380,14 @@ export class CodexAppServerDriver {
 			approvalPolicy: request.approvalPolicy ?? "never",
 			sandbox: request.sandbox ?? "readOnly",
 			onPermissionRequest: request.onPermissionRequest,
+			resumeThreadId: request.resumeThreadId ?? null,
 			timeoutMs: request.timeoutMs ?? this.turnTimeoutMs
 		});
 		try {
 			await session.initialize(this.clientInfo);
-			const result = session.start(request.prompt);
+			// `attachOnly` reopens a released session: bind the thread now, run
+			// the turn later through followup.
+			const result = request.attachOnly ? session.attach() : session.start(request.prompt);
 			return {
 				id: randomUUID(),
 				product: "codex",

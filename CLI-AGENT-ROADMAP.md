@@ -572,19 +572,62 @@ deny
 - `managedCliAgents`：pending permission 快照、`PERMISSION_REQUEST_BUSY`、Direct/Relay 共用审批、父主控路由、interrupt 清理；
 - 插件显式依赖 DSH `approval` service；Relay child 不持有自批能力；
 - 自动测试覆盖 structured permissions、command、file change、允许、拒绝、取消、重复请求、父 Agent 路由和等待审批时 interrupt；
-- 当前完整测试为 `134 passed / 0 failed`；语法、diff 和 `npm pack --dry-run` 已通过。
+- 当前完整测试为 `145 passed / 0 failed`；语法、diff 和 `npm pack --dry-run` 已通过。
 - 已按产品决定增加简单降级提示：当权限申请被拒绝、不可用或当前会话禁用审批时，Direct、Relay 以及 Claude/Qwen one-shot 路径不再重复申请，而是返回 `CLI_PERMISSION_CONFIGURATION_REQUIRED`，提示用户前往“设置 → 插件 → 外部 Agent CLI 管理器 → 对应 CLI → 权限”，将权限调整为“完全”，保存后重新执行。
 
-真实 Host 验收进展：
+#### 真实 Host 验收清单（逐项勾选，未完成不得宣称通过）
 
-1. ✅ 已重启 DSH Desktop 并加载工作区链接插件的新 Host 模块；
-2. ✅ Direct 模式能触发真实 Codex 权限请求并在主控显示审批；拒绝后命令未执行，原任务收到拒绝；
-3. ✅ Subagent 模式能通过 Relay 触发真实请求，审批卡片归属父主控；Relay 无法自批，拒绝后忠实报告；
-4. ✅ 已多次验证拒绝路径，临时测试文件均未创建，未发现静默提权或重跑绕过；
-5. ⏳ 批准路径尚未取得证据：持久审计日志显示所有真实请求均为 `approval/asked` 后约 1ms 立即写入 `approval/decided: rejected`。当前会话运行时策略是 `approval policy: never`，请求在进入人工 UI 前即被确定性拒绝；必须在启用 `ask` 的新会话中验收 `allowed-once`。用户在聊天中表达“同意允许一次”不能替代对具体 `requestId` 的审批决定；
-6. ⚠️ 一次真实任务中 Codex 在审批被拒绝、验证命令未执行的情况下错误报告 `DIRECT_APPROVAL_OK`。独立文件检查和同-thread 追问证实这是 CLI 文本误报；插件已新增 `lastPermissionDecision { requestId, turnId, capability, outcome, decidedAt }` 作为权威状态，验收不得只相信 CLI 自述；
-7. ⏳ 需在 `approval policy: ask` 的新会话中点击审批卡片“允许一次”，然后核对 `lastPermissionDecision.outcome === "allowed-once"`、实际副作用、原 turn 继续、`approval/asked` / `approval/decided` 审计、Session 状态和进程清理；
-8. ⏳ 修复 Claude Provider/模型/认证后再抓取 `manual + stream-json` 权限协议；Qwen 在无反证前保持 `interactivePermissions: false`。
+批准路径（当前唯一真正阻塞项）：
+
+- [ ] **新开一个 `approval policy: ask` 的会话**（当前会话是 `never`，请求在进入人工 UI 前即被确定性拒绝；聊天里说“同意允许一次”不能替代对具体 `requestId` 的审批决定）
+- [ ] 运行一个会触发 Codex 权限申请的任务（例如让 Codex 执行一条受限命令）
+- [ ] 在审批卡片上点击“允许一次”
+- [ ] 核对 `lastPermissionDecision.outcome === "allowed-once"`
+- [ ] 核对实际副作用是否发生（那个临时/目标文件真的被创建了）
+- [ ] 核对原 turn 继续，而不是重跑任务（比对 `turnId` 与 `requestId`）
+- [ ] 核对 `approval/asked` / `approval/decided` 审计事件均已写入
+- [ ] 核对 Session 最终状态与进程清理
+
+拒绝路径与负向验收：
+
+- [x] Direct 模式能触发真实 Codex 权限请求并在主控显示审批；拒绝后命令未执行，原任务收到拒绝
+- [x] Subagent 模式能通过 Relay 触发真实请求，审批卡片归属父主控；Relay 无法自批，拒绝后忠实报告
+- [x] 已多次验证拒绝路径，临时测试文件均未创建，未发现静默提权或重跑绕过
+- [ ] 真实环境验证 report guard：Relay 未调用 `managed_cli_submit` 时 `report` 被拒（离线测试已覆盖）
+- [ ] 核对点击 Relay child 后 Transcript 的完整内容
+
+其他：
+
+- [x] 已重启 DSH Desktop 并加载工作区链接插件的新 Host 模块
+- [ ] 修复 Claude Provider/模型/认证后再抓取 `manual + stream-json` 权限协议；Qwen 在无反证前保持 `interactivePermissions: false`
+
+#### 已知陷阱
+
+- 一次真实任务中 Codex 在审批被拒绝、验证命令未执行的情况下错误报告 `DIRECT_APPROVAL_OK`。独立文件检查和同-thread 追问证实这是 CLI 文本误报；插件已新增 `lastPermissionDecision { requestId, turnId, capability, outcome, decidedAt }` 作为权威状态，**验收不得只相信 CLI 自述**。
+
+### 9.8.1 app-server 进程驻留与释放（2026-08-30 已修复，待真实验收）
+
+现象：`ps` 观察到 4 对（8 个）`codex app-server --stdio` 进程驻留 1.2–2 小时，全部挂在 DSH host 下，每个约 54MB RSS。
+
+根因：session 创建后从不 dispose。Direct 模式要留着给 followup 用；Relay 模式 epoch 结束也没有释放钩子。
+
+关键前提：Codex 0.149.1 协议含 **`thread/resume`（只需 `threadId`）**。这让「空闲释放进程」与「同 thread 续接」可以兼得——空闲时杀掉进程，下次 turn 重新起 app-server 再挂载同一个 thread。
+
+修复：
+
+- Driver 新增 `resumeThreadId` 入参与 `thread/resume` 调用；未传时仍走 `thread/start`
+- `managedCliAgents.release(sessionId)`：无活动 turn 时 dispose 子进程，保留 record 与 `remoteSessionId`
+- `managedCliAgents.reattach(record, ...)`：follow-up 时若 run 已释放，用 `thread/resume` 重新挂载
+- `managedCliAgents.releaseChild(childId)` + `subagent/end` 监听：Relay 每个 residency epoch 结束时释放；注意 `subagent/end` 按 epoch 触发而非 child 销毁，因此不会误杀可续接 child
+- 权限处理路径去重为 `resolvePermission(record, request, ctx)`，dispatch / followup / reattach 共用
+
+验收：
+
+- [ ] 重启 DSH Desktop 加载新 Host 模块
+- [ ] 清理当前残留的 8 个 app-server 进程
+- [ ] 跑一轮 Relay 任务，确认 epoch 结束后进程数归零
+- [ ] 对同一 child `send_message`，确认 `thread/resume` 重挂成功且 thread id 不变
+- [ ] 确认 Direct 模式 followup 在释放后仍能续接同一 thread
 
 ### 9.9 验收标准
 

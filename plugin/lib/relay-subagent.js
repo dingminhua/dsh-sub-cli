@@ -12,6 +12,15 @@ export function attachRelayLifecycle(ctx, service) {
 		if (!info?.id) return;
 		try { service.beginChildEpoch(String(info.id)); } catch {}
 	});
+	// `subagent/end` fires per residency epoch, not when the child is destroyed:
+	// a continuable Relay child emits it every time it goes idle. Free the
+	// app-server subprocess here; the bound thread id survives, so a later
+	// send_message reattaches the same Codex thread via thread/resume.
+	ctx.on("subagent/end", (info) => {
+		const childId = info?.id;
+		if (!childId || typeof service.releaseChild !== "function") return;
+		void service.releaseChild(String(childId)).catch(() => {});
+	});
 	if (typeof ctx.subagents?.registerContinuableSetup === "function") {
 		ctx.subagents.registerContinuableSetup((childCtx) => {
 			const guard = childCtx.tools.guard((exec) => {

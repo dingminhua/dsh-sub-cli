@@ -180,3 +180,64 @@ test("interrupt delegates to active run and close disposes it", async () => {
 	await service.close(first.session.sessionId);
 	assert.equal(disposed, 1);
 });
+
+test("release drops the subprocess but keeps the session and remote thread id", async () => {
+	let disposed = 0;
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "thread-rel", result: Promise.resolve({ threadId: "thread-rel", text: "first" }), followup: async () => ({ threadId: "thread-rel", text: "later" }), dispose: async () => { disposed++; } }; } } } });
+	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
+	const released = await service.release(first.session.sessionId);
+	assert.equal(released.released, true);
+	assert.equal(disposed, 1);
+	assert.equal(released.session.remoteSessionId, "thread-rel");
+	assert.notEqual(released.session.status, "closed");
+});
+
+test("release refuses while a turn is active", async () => {
+	const gate = deferred();
+	let disposed = 0;
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, dispose: async () => { disposed++; } }; } } } });
+	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
+	const pending = service.followup(first.session.sessionId, "slow");
+	await new Promise((r) => setImmediate(r));
+	const released = await service.release(first.session.sessionId);
+	assert.equal(released.released, false);
+	assert.equal(disposed, 0);
+	gate.resolve({ threadId: "t", text: "done" });
+	await pending;
+});
+
+test("followup after release reattaches the same remote thread", async () => {
+	const calls = [];
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start(input) {
+		calls.push(input);
+		return { remoteSessionId: input.resumeThreadId ?? "thread-new", result: Promise.resolve({ threadId: input.resumeThreadId ?? "thread-new", text: "first" }), followup: async () => ({ threadId: input.resumeThreadId ?? "thread-new", text: "reattached" }), dispose: async () => {} };
+	} } } });
+	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
+	assert.equal(calls.length, 1);
+	await service.release(first.session.sessionId);
+	const next = await service.followup(first.session.sessionId, "second");
+	assert.equal(calls.length, 2);
+	assert.equal(calls[1].resumeThreadId, "thread-new");
+	assert.equal(next.session.remoteSessionId, "thread-new");
+	assert.equal(next.output, "reattached");
+});
+
+test("releaseChild frees the bound session when a relay epoch ends", async () => {
+	let disposed = 0;
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "thread-child", result: Promise.resolve({ threadId: "thread-child", text: "first" }), followup: async () => ({ threadId: "thread-child", text: "next" }), dispose: async () => { disposed++; } }; } } } });
+	service.bindChild("child-1", { cli: "codex", parentAgent: null });
+	service.setChildCwd("child-1", "/repo");
+	const first = await service.submitFromChild("child-1", "first", null, null);
+	assert.equal(first.session.remoteSessionId, "thread-child");
+	const released = await service.releaseChild("child-1");
+	assert.equal(released.released, true);
+	assert.equal(disposed, 1);
+	// The next epoch reattaches rather than starting a fresh thread.
+	const second = await service.submitFromChild("child-1", "second", null, null);
+	assert.equal(second.session.remoteSessionId, "thread-child");
+});
+
+test("releaseChild is a no-op for an unknown child", async () => {
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), dispose: async () => {} }; } } } });
+	assert.deepEqual(await service.releaseChild("never-bound"), { released: false });
+});

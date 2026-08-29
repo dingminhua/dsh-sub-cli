@@ -242,3 +242,77 @@ test("parallel Codex runs use independent transports", async () => {
 	assert.equal(rb.text, "delta-1");
 	await Promise.all([a.dispose(), b.dispose()]);
 });
+
+test("Codex driver resumes an existing thread instead of starting a new one", async () => {
+	const transport = new FakeTransport((message, self) => {
+		if (message.method === "initialize") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
+			return;
+		}
+		if (message.method === "thread/resume") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: message.params.threadId }, model: "m1", cwd: "/repo" } });
+			return;
+		}
+		if (message.method === "turn/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-resumed" } } });
+			queueMicrotask(() => {
+				self.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { delta: "resumed" } });
+				self.emit({ jsonrpc: "2.0", method: "turn/completed", params: { turn: { id: "turn-resumed", status: "completed" } } });
+			});
+		}
+	});
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
+	const run = await driver.start({ cwd: "/repo", prompt: "again", resumeThreadId: "thread-orig", model: "m1", reasoningEffort: "high" });
+	const result = await run.result;
+	assert.equal(result.threadId, "thread-orig");
+	assert.equal(result.text, "resumed");
+	assert.equal(run.remoteSessionId, "thread-orig");
+	// No thread/start: the remote thread was reattached, not recreated.
+	assert.equal(transport.requests.some((entry) => entry.method === "thread/start"), false);
+	const resume = transport.requests.find((entry) => entry.method === "thread/resume");
+	assert.equal(resume.params.threadId, "thread-orig");
+	assert.equal(resume.params.model, "m1");
+	assert.equal(resume.params.config.model_reasoning_effort, "high");
+	await run.dispose();
+});
+
+test("Codex driver without resumeThreadId starts a fresh thread", async () => {
+	const transport = new FakeTransport(responder());
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
+	const run = await driver.start({ cwd: "/repo", prompt: "first" });
+	await run.result;
+	assert.equal(transport.requests.some((entry) => entry.method === "thread/start"), true);
+	assert.equal(transport.requests.some((entry) => entry.method === "thread/resume"), false);
+	await run.dispose();
+});
+
+test("Codex driver attachOnly binds the thread without starting a turn", async () => {
+	const transport = new FakeTransport((message, self) => {
+		if (message.method === "initialize") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
+			return;
+		}
+		if (message.method === "thread/resume") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: message.params.threadId } } });
+			return;
+		}
+		if (message.method === "turn/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-attached" } } });
+			queueMicrotask(() => {
+				self.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { delta: "attached-turn" } });
+				self.emit({ jsonrpc: "2.0", method: "turn/completed", params: { turn: { id: "turn-attached", status: "completed" } } });
+			});
+		}
+	});
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
+	const run = await driver.start({ cwd: "/repo", attachOnly: true, resumeThreadId: "thread-idle" });
+	assert.equal(await run.result, "thread-idle");
+	// No turn/start: an empty prompt here would have thrown into an unawaited promise.
+	assert.equal(transport.requests.some((entry) => entry.method === "turn/start"), false);
+	assert.equal(transport.requests.some((entry) => entry.method === "thread/resume"), true);
+	// The reattached session can still run a real turn afterwards.
+	const followed = await run.followup("later");
+	assert.equal(followed.threadId, "thread-idle");
+	assert.equal(followed.text, "attached-turn");
+	await run.dispose();
+});

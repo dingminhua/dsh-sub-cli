@@ -46,3 +46,25 @@ test("relay lifecycle installs submit-before-report guard with disposer",()=>{
 	assert.equal(guard({name:"managed_cli_submit",agent:{session:{id:"blocked"}}}),undefined);
 	startListener({id:"allowed"});
 });
+
+test("relay lifecycle releases the CLI subprocess when a residency epoch ends", async () => {
+	const released = [];
+	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {} };
+	const listeners = {};
+	attachRelayLifecycle(ctx, { beginChildEpoch: () => {}, releaseChild: async (id) => { released.push(id); return { released: true }; } });
+	assert.equal(typeof listeners["subagent/end"], "function");
+	listeners["subagent/end"]({ id: "child-epoch-1" });
+	// releaseChild is fired without awaiting; let the microtask settle.
+	await new Promise((r) => setImmediate(r));
+	assert.deepEqual(released, ["child-epoch-1"]);
+});
+
+test("relay lifecycle ignores epoch end without a child id", async () => {
+	const released = [];
+	const listeners = {};
+	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {} };
+	attachRelayLifecycle(ctx, { beginChildEpoch: () => {}, releaseChild: async (id) => { released.push(id); } });
+	listeners["subagent/end"]({});
+	await new Promise((r) => setImmediate(r));
+	assert.deepEqual(released, []);
+});
