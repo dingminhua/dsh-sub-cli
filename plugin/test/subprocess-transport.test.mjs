@@ -95,5 +95,5 @@ test("driver assembly exposes a validated experimental Codex driver", () => {
 	const drivers = createManagedCliDrivers({ subprocess, dirSource: () => "/managed" });
 	assert.equal(drivers.codex.id, "codex-app-server");
 	assert.equal(drivers.codex.capabilities.continuable, true);
-	assert.equal(drivers.codex.capabilities.interactivePermissions, false);
+	assert.equal(drivers.codex.capabilities.interactivePermissions, true);
 });

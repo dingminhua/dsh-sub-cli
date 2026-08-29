@@ -14,11 +14,11 @@ function context() {
 	return { ctx, tools };
 }
 
-test("registers all three CLI tools globally without any LLM provider", () => {
+test("registers Codex direct plus compatibility alias and other CLI tools", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
-	assert.deepEqual([...fixture.tools.keys()], ["cli_codex", "cli_claude_code", "cli_qwen"]);
-	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
+	assert.deepEqual([...fixture.tools.keys()], ["cli_codex_direct", "cli_codex", "cli_claude_code", "cli_qwen"]);
+	assert.equal(CLI_SUBAGENT_TOOLS.length, 4);
 });
 
 test("delegates Codex through managed session service and returns sessionId", async () => {
@@ -26,7 +26,7 @@ test("delegates Codex through managed session service and returns sessionId", as
 	let seen;
 	const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: "session-1", status: "ready" }, output: "found issues" }; } };
 	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
-	const tool = fixture.tools.get("cli_codex");
+	const tool = fixture.tools.get("cli_codex_direct");
 	const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
 	const signal = new AbortController().signal;
 	const result = await tool.execute({ description: "检查测试", prompt: "完整检查项目测试" }, { agent, signal });
@@ -36,6 +36,30 @@ test("delegates Codex through managed session service and returns sessionId", as
 	assert.equal(seen.signal, signal);
 	assert.equal(result.sessionId, "session-1");
 	assert.equal(result.output, "found issues");
+});
+
+test("Codex direct shows full-settings guidance after permission rejection", async () => {
+	const fixture = context();
+	registerCliSubagentTools(fixture.ctx, { managedCliAgents: { async dispatch() { throw new Error("permission request was denied"); } } });
+	const tool = fixture.tools.get("cli_codex_direct");
+	await assert.rejects(
+		tool.execute({ description: "联网调查", prompt: "调查新闻" }, { agent: { session: { header: { cwd: "/repo" } } }, signal: new AbortController().signal }),
+		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /“完全”/.test(error.message)
+	);
+});
+
+test("cli_codex compatibility alias dispatches through the direct path", async () => {
+	const fixture = context();
+	let seen;
+	const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: "session-alias", status: "ready" }, output: "alias ok" }; } };
+	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
+	const tool = fixture.tools.get("cli_codex");
+	const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
+	const result = await tool.execute({ description: "兼容别名", prompt: "task" }, { agent, signal: new AbortController().signal });
+	assert.equal(seen.cwd, "/repo");
+	assert.match(tool.description, /兼容别名/);
+	assert.equal(result.sessionId, "session-alias");
+	assert.equal(result.output, "alias ok");
 });
 
 test("Claude and Qwen keep the background job contract", async () => {

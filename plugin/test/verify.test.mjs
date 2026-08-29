@@ -143,6 +143,23 @@ test("providerConfig resolves baseURL + apiKeyEnv from DSH provider settings", a
 	assert.deepEqual(pc, { baseURL: "https://api.supxh.xin/v1", apiKeyEnv: "K3_BAOYUE_API_KEY", displayName: "k3包月" });
 });
 
+test("providerConfig rejects incomplete provider connection settings", async () => {
+	assert.equal(await providerConfig(sampleCtx({ providerCfg: { baseURL: "", apiKeyEnv: "KEY" } }), "k3-baoyue"), null);
+	assert.equal(await providerConfig(sampleCtx({ providerCfg: { baseURL: "https://api.example/v1", apiKeyEnv: "" } }), "k3-baoyue"), null);
+});
+
+test("provider config loss invalidates an old successful verification", async () => {
+	const ctx = sampleCtx({
+		providerCfg: { baseURL: "", apiKeyEnv: "" },
+		value: {
+			models: { codex: { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "max" } },
+			verified: { codex: { ok: true, provider: "k3-baoyue", model: "kimi-k3", fingerprint: fingerprint("k3-baoyue", "kimi-k3", "max", "https://old.example/v1") } }
+		}
+	});
+	assert.equal(await currentFingerprint(ctx, "codex"), null);
+	assert.equal(await isVerifiedCurrentAsync(ctx, "codex"), false);
+});
+
 test("credentialKey returns the live credential value (never cached)", async () => {
 	const ctx = sampleCtx({ credKey: "sk-live-key" });
 	assert.equal(await credentialKey(ctx, "K3_BAOYUE_API_KEY"), "sk-live-key");

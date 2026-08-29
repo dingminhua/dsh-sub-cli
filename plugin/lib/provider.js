@@ -8,6 +8,7 @@ import { binPath, envFor } from "./paths.js";
 import { cliById } from "./registry.js";
 import { MAX_OUTPUT_BYTES, GRACE_MS, winShimArgv } from "./dispatch.js";
 import { permissionOf } from "./verify.js";
+import { isPermissionRejection, permissionConfigurationMessage } from "./permission-guidance.js";
 
 const NO_START_CAPABILITIES = Object.freeze({
 	outputSchema: false,
@@ -85,7 +86,10 @@ export class ManagedCliProvider {
 				const outcome = await handle.done;
 				const out = handle.collected?.stdout ? handle.collected.stdout.readFrom(0).text : "";
 				const err = handle.collected?.stderr ? handle.collected.stderr.readFrom(0).text : "";
-				if (outcome.exitCode !== 0) return { output: [], stopReason: controller.signal.aborted ? "aborted" : "error", diagnostic: err.trim() || `CLI exited ${String(outcome.exitCode)}` };
+				if (outcome.exitCode !== 0) {
+					const diagnostic = err.trim() || `CLI exited ${String(outcome.exitCode)}`;
+					return { output: [], stopReason: controller.signal.aborted ? "aborted" : "error", diagnostic: isPermissionRejection(diagnostic) ? permissionConfigurationMessage(this.cli) : diagnostic };
+				}
 				const text = out.trim();
 				return { output: text ? [{ type: "text", text }] : [], stopReason: "completed" };
 			} catch (error) {

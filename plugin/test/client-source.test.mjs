@@ -16,12 +16,12 @@ test("settings footer includes the documented encourage link", () => {
 	assert.match(source, /className: "dsc-footer-left"/);
 });
 
-test("registers a session-scoped monitor tab for every managed CLI job kind", () => {
-	assert.match(source, /conversation\.view/);
-	assert.match(source, /id: "dsh-sub-cli-jobs"/);
-	assert.match(source, /\^cli-\(codex\|claude\|qwen\)\$/);
-	assert.match(source, /jobsBySession/);
-	assert.match(source, /run_in_background:true/);
+test("does not register a redundant CLI background-task conversation tab", () => {
+	assert.doesNotMatch(source, /conversation\.view/);
+	assert.doesNotMatch(source, /dsh-sub-cli-jobs/);
+	assert.doesNotMatch(source, /CliJobsView/);
+	assert.doesNotMatch(source, /jobsBySession/);
+	assert.doesNotMatch(source, /dsc-jobs-/);
 });
 
 test("install/connectivity state is derived purely from settings, no filesystem probe", () => {
@@ -64,16 +64,14 @@ test("verified record only counts while its fingerprint matches the live route",
 	assert.match(source, /var f = fpOk\(failed\) \? failed : null;/);
 });
 
-test("failed state shows the guidance line, not a raw technical error", () => {
-	// The test-hint line renders the guidance text in every state; a failed CLI
-	// shows the guideFailed prompt (change the provider, then retest) instead of
-	// the raw host error string.
+test("failed state shows its persisted reason and fallback guidance", () => {
+	// A matching failed record displays its specific persisted reason; older
+	// records without an error fall back to the generic provider-change hint.
 	assert.match(source, /className: "dsc-cli-test-hint" \+ \(f \? " dsc-cli-test-hint-error" : ""\)/);
 	// The hint line renders the guidance text (guideText) in every state.
 	assert.match(source, /dsc-cli-test-hint" \+ \(f \? " dsc-cli-test-hint-error" : ""\) \},\s*guideText\s*\)/);
 	assert.match(source, /stateCls \+= " dsc-conn-fail"/);
-	// No technical localizeError is injected into the failed-state line anymore.
-	assert.doesNotMatch(source, /localizeError\(cli\.name, f\.error\)/);
+	assert.match(source, /guideText = f\.error \|\| fillCli\(t\("row\.guideFailed"\)\)/);
 });
 
 test("guidance line sits under the route selects and is per-state", () => {
@@ -83,7 +81,7 @@ test("guidance line sits under the route selects and is per-state", () => {
 	assert.match(source, /"row\.guidePassed":/);
 	assert.match(source, /guideText = fillCli\(t\("row\.guideInstall"\)\)/);
 	assert.match(source, /guideText = fillCli\(t\("row\.guideNotTested"\)\)/);
-	assert.match(source, /guideText = fillCli\(t\("row\.guideFailed"\)\)/);
+	assert.match(source, /guideText = f\.error \|\| fillCli\(t\("row\.guideFailed"\)\)/);
 	assert.match(source, /guideText = fillCli\(t\("row\.guidePassed"\)\)/);
 	assert.match(source, /React\.createElement\("div", \{ className: "dsc-cli-test-hint"/);
 });

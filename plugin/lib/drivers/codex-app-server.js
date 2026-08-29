@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createRunState, defineDriverCapabilities } from "./types.js";
+import { codexApprovalResponse, normalizeCodexPermissionRequest } from "../permissions.js";
 
 export const CODEX_APP_SERVER_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -12,7 +13,8 @@ export const CODEX_APP_SERVER_CAPABILITIES = defineDriverCapabilities({
 	modelOverride: true,
 	reasoningEffort: true,
 	cwd: true,
-	interrupt: true
+	interrupt: true,
+	interactivePermissions: true
 });
 
 function asError(value) {
@@ -58,6 +60,7 @@ export class JsonRpcLineWire {
 		this.sequence = 0;
 		this.pending = new Map();
 		this.listeners = new Set();
+		this.inboundListeners = new Set();
 		this.closed = false;
 		this.offLine = transport.onLine((line) => this.receive(line));
 		this.offClose = typeof transport.onClose === "function" ? transport.onClose((error) => this.close(error)) : null;
@@ -66,6 +69,11 @@ export class JsonRpcLineWire {
 	onNotification(listener) {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
+	}
+
+	onRequest(listener) {
+		this.inboundListeners.add(listener);
+		return () => this.inboundListeners.delete(listener);
 	}
 
 	receive(line) {
@@ -78,6 +86,17 @@ export class JsonRpcLineWire {
 			clearTimeout(pending.timer);
 			if (message.error) pending.reject(new Error(`Codex RPC ${message.error.code ?? ""} ${message.error.message ?? "error"}`.trim()));
 			else pending.resolve(message.result);
+			return;
+		}
+		if (typeof message.method === "string" && message.id !== undefined) {
+			const respond = (result) => this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`);
+			const reject = (error) => this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: asError(error).message } })}\n`);
+			for (const listener of [...this.inboundListeners]) {
+				try {
+					if (listener(message.method, message.params ?? {}, { respond, reject }) === true) return;
+				} catch (error) { void reject(error); return; }
+			}
+			void reject(new Error(`Unsupported Codex server request ${message.method}`));
 			return;
 		}
 		if (typeof message.method === "string") {
@@ -117,6 +136,7 @@ export class JsonRpcLineWire {
 		}
 		this.pending.clear();
 		this.listeners.clear();
+		this.inboundListeners.clear();
 	}
 
 	async dispose() {
@@ -126,13 +146,14 @@ export class JsonRpcLineWire {
 }
 
 class CodexAppServerSession {
-	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, timeoutMs = 1800000 }) {
+	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, onPermissionRequest, timeoutMs = 1800000 }) {
 		this.wire = wire;
 		this.cwd = cwd;
 		this.model = model;
 		this.reasoningEffort = reasoningEffort;
 		this.approvalPolicy = approvalPolicy;
 		this.sandbox = sandbox;
+		this.onPermissionRequest = typeof onPermissionRequest === "function" ? onPermissionRequest : null;
 		this.timeoutMs = timeoutMs;
 		this.threadId = null;
 		this.activeTurn = null;
@@ -140,6 +161,21 @@ class CodexAppServerSession {
 		this.usage = null;
 		this.state = createRunState("starting");
 		this.disposed = false;
+		this.offRequest = this.wire.onRequest((method, params, reply) => this.handleServerRequest(method, params, reply));
+	}
+
+	handleServerRequest(method, params, reply) {
+		const request = normalizeCodexPermissionRequest(method, params, { remoteRequestId: params?.approvalId ?? params?.itemId });
+		if (!request) return false;
+		const decide = this.onPermissionRequest
+			? Promise.resolve().then(() => this.onPermissionRequest(request))
+			: Promise.resolve("unavailable");
+		this.state.transition("awaiting_permission");
+		decide.then(
+			(outcome) => reply.respond(codexApprovalResponse(request, outcome)).then(() => this.state.transition("running")),
+			(error) => reply.reject(error).then(() => this.state.transition("failed", asError(error).message))
+		).catch(() => {});
+		return true;
 	}
 
 	async initialize(clientInfo = { name: "dsh-sub-cli", version: "0.1.0" }) {
@@ -256,9 +292,12 @@ class CodexAppServerSession {
 		return promise;
 	}
 
-	async followup(prompt) {
+	async followup(prompt, options = {}) {
 		if (!this.threadId) throw new Error("Codex followup requires an existing thread");
-		return this.startTurn(prompt);
+		const previous = this.onPermissionRequest;
+		if (typeof options.onPermissionRequest === "function") this.onPermissionRequest = options.onPermissionRequest;
+		try { return await this.startTurn(prompt); }
+		finally { this.onPermissionRequest = previous; }
 	}
 
 	async interrupt() {
@@ -282,6 +321,7 @@ class CodexAppServerSession {
 		if (this.disposed) return;
 		this.disposed = true;
 		await this.interrupt();
+		this.offRequest?.();
 		await this.wire.dispose();
 	}
 }
@@ -309,6 +349,7 @@ export class CodexAppServerDriver {
 			reasoningEffort: request.reasoningEffort,
 			approvalPolicy: request.approvalPolicy ?? "never",
 			sandbox: request.sandbox ?? "readOnly",
+			onPermissionRequest: request.onPermissionRequest,
 			timeoutMs: request.timeoutMs ?? this.turnTimeoutMs
 		});
 		try {
@@ -320,7 +361,7 @@ export class CodexAppServerDriver {
 				capabilities: this.capabilities,
 				get remoteSessionId() { return session.threadId; },
 				result,
-				followup: (prompt) => session.followup(prompt),
+				followup: (prompt, options) => session.followup(prompt, options),
 				interrupt: () => session.interrupt(),
 				status: () => session.snapshot(),
 				dispose: () => session.dispose()

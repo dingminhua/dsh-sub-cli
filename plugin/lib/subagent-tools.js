@@ -5,9 +5,11 @@
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { MANAGED_PROVIDERS } from "./provider.js";
+import { withPermissionGuidance } from "./permission-guidance.js";
 
 export const CLI_SUBAGENT_TOOLS = [
-	{ cli: "codex", toolName: "cli_codex", displayName: "Codex", provider: "managed-codex-app-server" },
+	{ cli: "codex", toolName: "cli_codex_direct", displayName: "Codex", mode: "direct", provider: "managed-codex-app-server" },
+	{ cli: "codex", toolName: "cli_codex", displayName: "Codex", mode: "direct", compatibilityAlias: true, provider: "managed-codex-app-server" },
 	{ cli: "claude", toolName: "cli_claude_code", displayName: "Claude Code", provider: "managed-claude" },
 	{ cli: "qwen", toolName: "cli_qwen", displayName: "Qwen Code", provider: "managed-qwen" }
 ];
@@ -47,9 +49,14 @@ async function settleBackground(start, signal) {
 
 function definition(spec, ctx, opts) {
 	const isSessionCli = spec.cli === "codex" && opts.managedCliAgents;
+	const naming = spec.compatibilityAlias
+		? "兼容别名：行为等同 cli_codex_direct；新调用优先使用 cli_codex_direct。"
+		: spec.mode === "direct"
+			? "Direct 模式：由当前主控直接调用外部 CLI，不创建 DSH Relay 子代理。"
+			: "";
 	return defineTool({
 		name: spec.toolName,
-		description: `把一段自包含任务交给 ${spec.displayName} 执行，以原生子代理方式无头运行并返回其输出。任务必须完整、自包含，因为外部 CLI 看不到父会话上下文。当用户说「用 ${spec.displayName} 看/检查/重构/评审/处理……某事」时调用。参数：description 是主界面显示的简短标题（3-5 个词）；prompt 是完整、自包含的任务说明。无需指定模型——该 CLI 用它在插件里配置的模型。长任务可传 run_in_background:true，立即返回后台 jobId；之后用 job_output 增量读取、用 job_kill 取消。所有托管 CLI 都使用同一套后台任务机制。
+		description: `${naming}\n\n把一段自包含任务交给 ${spec.displayName} 执行，以原生子代理方式无头运行并返回其输出。任务必须完整、自包含，因为外部 CLI 看不到父会话上下文。当用户说「用 ${spec.displayName} 看/检查/重构/评审/处理……某事」时调用。参数：description 是主界面显示的简短标题（3-5 个词）；prompt 是完整、自包含的任务说明。无需指定模型——该 CLI 用它在插件里配置的模型。长任务可传 run_in_background:true，立即返回后台 jobId；之后用 job_output 增量读取、用 job_kill 取消。所有托管 CLI 都使用同一套后台任务机制。
 
 本工具会在执行前自动检查该 CLI 的配置是否已验证（所选中转商/模型能跑通）：指纹有效则直接执行，配置有变或未验证则先用当前配置实测一次，通过才执行，失败会拦截并说明原因。若返回「认证 / 401 / API key / 未配置模型 / 代理不支持」类错误，说明该 CLI 或中转商未配置好，请如实告诉用户并建议其在插件设置里配置，**不要改用 shell 直接运行 codex/claude/qwen 绕过本工具**。Codex 的测试还会额外检查供应商是否支持 responses 工具续接新接口，不支持的供应商会直接告知「该供应商不支持 Codex 所需的新接口，请更换如 modelflare」。`,
 		parameters: {
@@ -76,13 +83,17 @@ function definition(spec, ctx, opts) {
 				if (args.run_in_background === true) throw new Error("Codex 持续会话暂不使用 jobs；请前台创建会话，再用 cli_codex_followup 继续同一 thread。");
 				await preflight();
 				const cwd = exec.agent.session?.header?.cwd;
-				const value = await opts.managedCliAgents.dispatch({ cli: "codex", cwd, prompt, signal: exec.signal });
-				return {
-					kind: "session",
-					sessionId: value.session.sessionId,
-					status: value.session.status,
-					output: value.output
-				};
+				try {
+					const value = await opts.managedCliAgents.dispatch({ cli: "codex", cwd, prompt, signal: exec.signal, agent: exec.agent });
+					return {
+						kind: "session",
+						sessionId: value.session.sessionId,
+						status: value.session.status,
+						output: value.output
+					};
+				} catch (error) {
+					throw withPermissionGuidance(error, "codex");
+				}
 			}
 			const request = (signal) => ctx.subagents.start(spec.provider, {
 				label: description,

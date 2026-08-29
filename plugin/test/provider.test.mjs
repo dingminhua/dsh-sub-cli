@@ -45,6 +45,25 @@ test("maps a missing binary to an error result, not a throw", async () => {
 	await run.dispose();
 });
 
+test("one-shot Claude and Qwen permission rejection diagnostics point to full settings", async () => {
+	for (const [cli, name] of [["claude", "Claude Code"], ["qwen", "Qwen Code"]]) {
+		const provider = new ManagedCliProvider({
+			name: `managed-${cli}`,
+			cli,
+			dirSource: () => "/managed",
+			spawn: {
+				resolveExecutable: async (path) => path,
+				spawn: () => ({ done: Promise.resolve({ exitCode: 1 }), collected: { stdout: output(""), stderr: output("Permission request was denied") } })
+			}
+		});
+		const run = await provider.start({ prompt: [{ type: "text", text: "task" }], signal: new AbortController().signal });
+		const result = await run.result;
+		assert.equal(result.stopReason, "error");
+		assert.match(result.diagnostic, new RegExp(`${name} → 权限`));
+		assert.match(result.diagnostic, /“完全”/);
+	}
+});
+
 test("uses the prepared env from the run gate when provided", async () => {
 	let calledWith = null;
 	const provider = new ManagedCliProvider({

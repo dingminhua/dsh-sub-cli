@@ -68,8 +68,8 @@ export async function providerConfig(ctx, provider) {
 		const desc = settings.describe({ redactSecrets: true });
 		const ai = desc.find((x) => x.ns === entry.settingsNs);
 		const p = ai && ai.value && ai.value.providers && ai.value.providers[provider];
-		if (!p) return null;
-		return { baseURL: p.baseURL, apiKeyEnv: p.apiKeyEnv, displayName: p.displayName || provider };
+		if (!p || typeof p.baseURL !== "string" || !p.baseURL.trim() || typeof p.apiKeyEnv !== "string" || !p.apiKeyEnv.trim()) return null;
+		return { baseURL: p.baseURL.trim(), apiKeyEnv: p.apiKeyEnv.trim(), displayName: p.displayName || provider };
 	} catch {
 		return null;
 	}
@@ -122,12 +122,13 @@ export function routeOf(ctx, cliId) {
 	return (section && section.models && section.models[cliId]) || null;
 }
 
-/** Current fingerprint of a CLI's live route (needs provider baseURL). */
+/** Current fingerprint of a runnable CLI route. Missing provider connection fields are not fingerprintable. */
 export async function currentFingerprint(ctx, cliId) {
 	const route = routeOf(ctx, cliId);
 	if (!route || !route.provider || !route.model) return null;
 	const pc = await providerConfig(ctx, route.provider);
-	return fingerprint(route.provider, route.model, route.reasoningEffort, pc && pc.baseURL);
+	if (!pc || !pc.baseURL || !pc.apiKeyEnv) return null;
+	return fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 }
 
 /** Read the stored permission for a CLI (default workspace-write). */
@@ -175,7 +176,10 @@ export async function isVerifiedCurrentAsync(ctx, cliId) {
 export async function writeVerified(ctx, cliId, { ok = true, version, error, capabilities }) {
 	const route = routeOf(ctx, cliId);
 	const pc = route && route.provider ? await providerConfig(ctx, route.provider) : null;
-	const fp = fingerprint(route && route.provider, route && route.model, route && route.reasoningEffort, pc && pc.baseURL);
+	// Failed records still carry a deterministic route marker so the settings UI
+	// can display the failure for the exact selected Provider/Model. A success
+	// record is only meaningful when a complete provider connection exists.
+	const fp = fingerprint(route && route.provider, route && route.model, route && route.reasoningEffort, pc?.baseURL || "<provider-config-missing>");
 	const value = {
 		ok: !!ok,
 		version: version || "",
@@ -245,7 +249,7 @@ async function readGateFingerprint(ctx, cfgPath, fs) {
 export async function ensureCliProviderConfig(ctx, entry, route) {
 	if (!route || !route.provider || !route.model) return { supported: true, ok: false, error: "未为该 CLI 配置 Provider 和 Model。" };
 	const pc = await providerConfig(ctx, route.provider);
-	if (!pc) return { supported: true, ok: false, error: `找不到 Provider「${route.provider}」的配置（baseURL/apiKeyEnv）。` };
+	if (!pc) return { supported: true, ok: false, error: `找不到 Provider「${route.provider}」的完整配置（需要 baseURL 和 apiKeyEnv）。请在 DSH Provider 设置中补齐，或为该 CLI 选择另一个已配置的 Provider。` };
 	const dir = currentDir(ctx);
 	const cfgDir = path.join(dir, entry.configDir);
 	const fp = fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);

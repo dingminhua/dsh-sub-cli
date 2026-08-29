@@ -22,13 +22,17 @@ import { registerManagedCliProviders } from "./provider.js";
 import { createManagedCliDrivers, registerExperimentalCodexProvider } from "./drivers/index.js";
 import { ManagedCliAgentsService } from "./managed-cli-agents.js";
 import { registerManagedSessionTools } from "./session-tools.js";
+import { registerRelaySubmitTool } from "./relay-tools.js";
+import { permissionReason } from "./permissions.js";
+import { attachRelayLifecycle, registerCodexSubagentTool } from "./relay-subagent.js";
+import { registerManagedCodexRelayProvider } from "./relay-provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
 import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf, prepareManagedRun } from "./verify.js";
 
 export const name = "dsh-sub-cli";
-export const inject = ["tools", "subprocess", "subagents"];
+export const inject = ["tools", "subprocess", "subagents", "approval"];
 
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
@@ -222,7 +226,11 @@ export function apply(ctx) {
 	const managedCliAgents = new ManagedCliAgentsService({
 		drivers,
 		routeSource: (cliId) => currentSection()?.models?.[cliId] ?? {},
-		permissionSource: (cliId) => permissionOf(ctx, cliId)
+		permissionSource: (cliId) => permissionOf(ctx, cliId),
+		approvalRequest: (request, { agent, signal }) => {
+			if (!agent || !ctx.approval || typeof ctx.approval.request !== "function") return "unavailable";
+			return ctx.approval.request({ agent, signal, toolName: "managed_cli_submit", reason: permissionReason(request) });
+		}
 	});
 	if (typeof ctx.provide === "function") ctx.provide("managedCliAgents", managedCliAgents);
 	ctx.effect(() => () => managedCliAgents.dispose());
@@ -231,6 +239,10 @@ export function apply(ctx) {
 		managedCliAgents
 	});
 	registerManagedSessionTools({ tools: ctx.tools }, managedCliAgents);
+	registerManagedCodexRelayProvider({ subagents: ctx.subagents }, managedCliAgents);
+	registerRelaySubmitTool({ tools: ctx.tools }, managedCliAgents);
+	attachRelayLifecycle(ctx, managedCliAgents);
+	registerCodexSubagentTool({ subagents: ctx.subagents, tools: ctx.tools }, managedCliAgents, (cliId) => preflightCli(ctx, cliId));
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
