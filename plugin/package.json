@@ -33,6 +33,13 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
+    "./managed-cli-agents": "./lib/managed-cli-agents.js",
+    "./session-tools": "./lib/session-tools.js",
+    "./drivers": "./lib/drivers/index.js",
+    "./drivers/types": "./lib/drivers/types.js",
+    "./drivers/codex-app-server": "./lib/drivers/codex-app-server.js",
+    "./drivers/codex-provider": "./lib/drivers/codex-provider.js",
+    "./drivers/subprocess-transport": "./lib/drivers/subprocess-transport.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },

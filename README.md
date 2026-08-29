@@ -60,8 +60,11 @@ CLI 工作应复用 DSH 的 subagent 子会话体验：当前主控会话下展�
 3. `DEVELOPMENT.md`：本地开发原则与建议布局；
 4. `RELEASING.md`：发布流程；
 5. `CLI-MANAGER-HANDOFF.md` / `CLI-MANAGER-DESIGN.md`：需求与技术调研（历史）；
-6. `MIGRATION-INVENTORY.md`：旧项目资料迁移清单；
-7. `reference/dsh-subagent-default-model/`：旧项目参考实现，不作为发布入口。
+6. `CLI-AGENT-REFERENCE-RESEARCH.md`：首轮四个外部 CLI Agent 项目的架构对比、权限交互结论与演进建议；
+7. `CLI-AGENT-FRAMEWORK-RESEARCH.md`：通用子代理框架、角色目录、外部 Engine、官方 Claude Provider 与 DAG 编排的增量调研；
+8. `CLI-AGENT-ROADMAP.md`：CLI Agent 最终目标、架构、能力合同、实施阶段与当前验收标准；
+9. `MIGRATION-INVENTORY.md`：旧项目资料迁移清单；
+10. `reference/dsh-subagent-default-model/`：旧项目参考实现，不作为发布入口。
 
 ## 参考项目
 

@@ -21,32 +21,25 @@ test("registers all three CLI tools globally without any LLM provider", () => {
 	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
 });
 
-test("delegates through its one-shot managed provider and returns CLI text", async () => {
+test("delegates Codex through managed session service and returns sessionId", async () => {
 	const fixture = context();
 	let seen;
-	fixture.ctx.subagents.start = async (provider, request) => {
-		seen = { provider, request };
-		return {
-			id: "run-1",
-			result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "found issues" }] }),
-			dispose: async () => {}
-		};
-	};
-	registerCliSubagentTools(fixture.ctx);
+	const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: "session-1", status: "ready" }, output: "found issues" }; } };
+	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 	const tool = fixture.tools.get("cli_codex");
-	const agent = { id: "parent" };
+	const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
 	const signal = new AbortController().signal;
 	const result = await tool.execute({ description: "检查测试", prompt: "完整检查项目测试" }, { agent, signal });
-	assert.equal(seen.provider, "managed-codex");
-	assert.equal(seen.request.label, "检查测试");
-	assert.deepEqual(seen.request.prompt, [{ type: "text", text: "完整检查项目测试" }]);
-	assert.equal(seen.request.parent, agent);
-	assert.equal(seen.request.signal, signal);
+	assert.equal(seen.cli, "codex");
+	assert.equal(seen.cwd, "/repo");
+	assert.equal(seen.prompt, "完整检查项目测试");
+	assert.equal(seen.signal, signal);
+	assert.equal(result.sessionId, "session-1");
 	assert.equal(result.output, "found issues");
 });
 
-test("all three CLI tools support the same background job contract", async () => {
-	for (const toolName of ["cli_codex", "cli_claude_code", "cli_qwen"]) {
+test("Claude and Qwen keep the background job contract", async () => {
+	for (const toolName of ["cli_claude_code", "cli_qwen"]) {
 		const fixture = context();
 		let spec;
 		fixture.ctx.services.set("jobs", {
@@ -62,7 +55,7 @@ test("all three CLI tools support the same background job contract", async () =>
 		const agent = { id: "parent" };
 		const value = await tool.execute({ description: "后台检查", prompt: "检查项目", run_in_background: true }, { agent, signal: new AbortController().signal });
 		assert.equal(value.kind, "background");
-		assert.match(value.jobId, /^cli-(codex|claude|qwen)-1$/);
+		assert.match(value.jobId, /^cli-(claude|qwen)-1$/);
 		assert.equal(spec.owner, agent);
 		assert.equal(spec.label, "后台检查");
 		const hooks = spec.run();

@@ -19,6 +19,9 @@ import { dispatch } from "./dispatch.js";
 import { detectInstalled } from "./status.js";
 import { registerCliSubagentTools } from "./subagent-tools.js";
 import { registerManagedCliProviders } from "./provider.js";
+import { createManagedCliDrivers, registerExperimentalCodexProvider } from "./drivers/index.js";
+import { ManagedCliAgentsService } from "./managed-cli-agents.js";
+import { registerManagedSessionTools } from "./session-tools.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
@@ -206,7 +209,28 @@ export function apply(ctx) {
 		return { ok: true, env: prep.env };
 	};
 	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir, envForEntry);
-	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, { preflight: (cliId) => preflightCli(ctx, cliId) });
+	const drivers = createManagedCliDrivers({ subprocess: ctx.subprocess, dirSource: currentDir, prepare: envForEntry });
+	// Keep the validated one-shot Provider for DSH child presentation and
+	// compatibility; the session service below owns persistent Codex threads.
+	registerExperimentalCodexProvider({ subagents: ctx.subagents, subprocess: ctx.subprocess }, {
+		drivers,
+		dirSource: currentDir,
+		prepare: envForEntry,
+		routeSource: () => currentSection()?.models?.codex ?? {},
+		permissionSource: () => permissionOf(ctx, "codex")
+	});
+	const managedCliAgents = new ManagedCliAgentsService({
+		drivers,
+		routeSource: (cliId) => currentSection()?.models?.[cliId] ?? {},
+		permissionSource: (cliId) => permissionOf(ctx, cliId)
+	});
+	if (typeof ctx.provide === "function") ctx.provide("managedCliAgents", managedCliAgents);
+	ctx.effect(() => () => managedCliAgents.dispose());
+	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, {
+		preflight: (cliId) => preflightCli(ctx, cliId),
+		managedCliAgents
+	});
+	registerManagedSessionTools({ tools: ctx.tools }, managedCliAgents);
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.

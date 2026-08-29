@@ -94,6 +94,9 @@ export async function cliEnv(ctx, cliId, dir) {
 					env.ANTHROPIC_DEFAULT_OPUS_MODEL = route.model;
 					env.ANTHROPIC_DEFAULT_SONNET_MODEL = route.model;
 					env.ANTHROPIC_DEFAULT_HAIKU_MODEL = route.model;
+					// Claude Code 拒绝推进未识别的模型 id（中转商模型名任意）。警告仍会
+					// 出现在 stderr，但强制行为不能阻塞运行。
+					env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = "1";
 				}
 			}
 		}
