@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ManagedCliAgentsService } from "../lib/managed-cli-agents.js";
+import { ManagedCliAgentsService, looksPrematureOutput, AUTO_CONTINUE_MAX, AUTO_CONTINUE_PROMPT } from "../lib/managed-cli-agents.js";
 
 // Permission profile that grants every capability with approval=ask, so tests
 // that exercise the approval seam actually reach it (the default read-only
@@ -362,4 +362,99 @@ test("resolvePermission decision matrix never prompts for gate/allow/never", asy
 		assert.equal(approvalCalls, 0, `no prompt ${d.label}`);
 		assert.equal(done.session.lastPermissionDecision.outcome, d.expected, `recorded ${d.label}`);
 	}
+});
+
+// ── Auto-continue for premature turn stops ───────────────────────────────────
+
+test("looksPrematureOutput flags an early stop whose last sentence commits to future work", () => {
+	// Premature stops: the model ends right after a plan/commitment sentence.
+	assert.equal(looksPrematureOutput("我会并行抓取多个 RSS/新闻源，再按时间戳筛选近 24 小时内容。抓取成功。现在解析时间戳，并按北京时间最近 24 小时筛选。", 3), true);
+	assert.equal(looksPrematureOutput("`date` 已执行；现在实际运行第二条命令。", 1), true);
+	assert.equal(looksPrematureOutput("抓取成功。现在解析各源的时间戳。", 2), true);
+	// The model may stop even before running any tool (only stated its plan).
+	assert.equal(looksPrematureOutput("我会先用 `curl` 拉取三个 RSS，再按最近 24 小时筛选、去重并整理中文摘要。", 0), true);
+	assert.equal(looksPrematureOutput("现在我来解释一下这个函数的作用。", 0), true);
+	// Already-complete answers are not flagged, regardless of tool work.
+	assert.equal(looksPrematureOutput("Mon Aug 31 03:18:06 CST 2026", 1), false);
+	assert.equal(looksPrematureOutput("全部真实场景通过", 5), false);
+	assert.equal(looksPrematureOutput("这是一个完整的最终报告。\n1. 第一点\n2. 第二点", 4), false);
+	assert.equal(looksPrematureOutput("OK", 1), false);
+	// Empty output always deserves a nudge.
+	assert.equal(looksPrematureOutput("", 1), true);
+});
+
+test("dispatch auto-continues an early-stopped turn and returns the cleaned answer", async () => {
+	const followupPrompts = [];
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-ac",
+		result: Promise.resolve({ threadId: "thread-ac", text: "抓取成功。现在解析各源的时间戳。", toolRounds: 2, stopReason: "completed" }),
+		async followup(prompt) {
+			followupPrompts.push(prompt);
+			followupCount++;
+			// First nudge yields a substantial final report (>100 chars so the
+			// cleaning branch replaces the progress noise).
+			const report = "最终报告：今天有三条重要新闻。第一条是 A 公司发布新品，市场反响热烈，分析师认为将重塑行业格局；第二条是 B 行业监管新规出台，影响深远，多家企业正在评估应对方案；第三条是 C 研究取得突破性进展。以上内容均来自已验证来源，详情见下文。";
+			return { threadId: "thread-ac", text: followupCount === 1 ? report : "已无更多内容。", toolRounds: 0, stopReason: "completed" };
+		},
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, routeSource: () => ({ provider: "p", model: "m", reasoningEffort: "high" }), permissionSource: () => "workspace-write" });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "调查新闻" });
+	assert.equal(followupCount, 1);
+	assert.deepEqual(followupPrompts, [AUTO_CONTINUE_PROMPT]);
+	// A complete, substantial nudge answer replaces the progress-fragment noise.
+	assert.match(done.output, /最终报告：今天有三条重要新闻/);
+	assert.equal(done.output.includes("抓取成功。现在解析各源的时间戳。"), false);
+	assert.equal(done.session.status, "ready");
+});
+
+test("dispatch never auto-continues a turn that already looks complete", async () => {
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-c",
+		result: Promise.resolve({ threadId: "thread-c", text: "这是完整的最终报告。\n- 要点一\n- 要点二", toolRounds: 4, stopReason: "completed" }),
+		async followup() { followupCount++; return { threadId: "thread-c", text: "不应发生", toolRounds: 0, stopReason: "completed" }; },
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(followupCount, 0);
+	assert.equal(done.output, "这是完整的最终报告。\n- 要点一\n- 要点二");
+});
+
+test("auto-continue stops at the bound when every nudge still looks premature", async () => {
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-loop",
+		result: Promise.resolve({ threadId: "thread-loop", text: "第一步完成。现在继续第二步。", toolRounds: 1, stopReason: "completed" }),
+		async followup() {
+			followupCount++;
+			return { threadId: "thread-loop", text: "继续推进中。现在做下一步。", toolRounds: 1, stopReason: "completed" };
+		},
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(followupCount, AUTO_CONTINUE_MAX);
+	assert.equal(done.session.status, "ready");
+});
+
+test("followup also auto-continues a premature early-stop", async () => {
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-fa",
+		result: Promise.resolve({ threadId: "thread-fa", text: "第一次回答", toolRounds: 0, stopReason: "completed" }),
+		async followup(prompt) {
+			followupCount++;
+			return { threadId: "thread-fa", text: prompt === "second" ? "工具已执行。现在汇总结果。" : "最终汇总：全部完成。", toolRounds: 1, stopReason: "completed" };
+		},
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
+	const next = await service.followup(first.session.sessionId, "second");
+	// dispatch: toolRounds 0 → no nudge; followup: premature → one nudge.
+	assert.equal(followupCount, 2);
+	assert.match(next.output, /最终汇总/);
 });

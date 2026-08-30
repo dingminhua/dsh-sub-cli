@@ -317,3 +317,62 @@ test("Codex driver attachOnly binds the thread without starting a turn", async (
 	assert.equal(followed.text, "attached-turn");
 	await run.dispose();
 });
+
+test("Codex driver counts commandExecution rounds for auto-continue decisions", async () => {
+	const transport = new FakeTransport((message, self) => {
+		if (message.method === "initialize") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
+			return;
+		}
+		if (message.method === "thread/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: "thread-tools" } } });
+			return;
+		}
+		if (message.method === "turn/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-tools" } } });
+			queueMicrotask(() => {
+				self.emit({ jsonrpc: "2.0", method: "item/started", params: { item: { id: "cmd-1", type: "commandExecution", thread_id: "thread-tools", turn_id: "turn-tools" } } });
+				self.emit({ jsonrpc: "2.0", method: "item/completed", params: { item: { id: "cmd-1", type: "commandExecution" } } });
+				self.emit({ jsonrpc: "2.0", method: "item/started", params: { item: { id: "msg-1", type: "agentMessage", thread_id: "thread-tools", turn_id: "turn-tools" } } });
+				self.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { text: "抓取成功。现在解析时间戳。" } });
+				self.emit({ jsonrpc: "2.0", method: "item/completed", params: { item: { id: "msg-1", type: "agentMessage", text: "抓取成功。现在解析时间戳。" } } });
+				self.emit({ jsonrpc: "2.0", method: "turn/completed", params: { turn: { id: "turn-tools", status: "completed" } } });
+			});
+		}
+	});
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
+	const run = await driver.start({ cwd: "/repo", prompt: "调查" });
+	const result = await run.result;
+	assert.equal(result.toolRounds, 1);
+	assert.match(result.text, /现在解析时间戳/);
+	await run.dispose();
+});
+
+test("Codex driver resolves text from completed agent messages, falling back to delta progress", async () => {
+	const transport = new FakeTransport((message, self) => {
+		if (message.method === "initialize") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
+			return;
+		}
+		if (message.method === "thread/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: "thread-fb" } } });
+			return;
+		}
+		if (message.method === "turn/start") {
+			self.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-fb" } } });
+			queueMicrotask(() => {
+				// Only deltas stream; no item/completed agentMessage arrives before
+				// turn/completed — the fallback path must still surface progress.
+				self.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { text: "正在生成" } });
+				self.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { text: "…最终报告。" } });
+				self.emit({ jsonrpc: "2.0", method: "turn/completed", params: { turn: { id: "turn-fb", status: "completed" } } });
+			});
+		}
+	});
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
+	const run = await driver.start({ cwd: "/repo", prompt: "调查" });
+	const result = await run.result;
+	assert.equal(result.toolRounds, 0);
+	assert.equal(result.text, "正在生成…最终报告。");
+	await run.dispose();
+});

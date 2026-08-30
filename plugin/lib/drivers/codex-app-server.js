@@ -261,6 +261,7 @@ class CodexAppServerSession {
 	awaitTurn(turnId) {
 		let settled = false;
 		let finalText = "";
+		let toolRounds = 0;
 		let timer;
 		const finish = (resolve, reject, outcome) => {
 			if (settled) return;
@@ -278,11 +279,17 @@ class CodexAppServerSession {
 				threadId: this.threadId,
 				turnId,
 				text: finalText || this.progress,
+				toolRounds,
 				usage: this.usage,
 				stopReason: "completed"
 			});
 		};
 		const off = this.wire.onNotification((method, params) => {
+			if (method === "item/started") {
+				const type = params?.item?.type ?? params?.type;
+				if (type === "commandExecution" || type === "command_execution") toolRounds++;
+				return;
+			}
 			if (method === "item/agentMessage/delta") {
 				const delta = messageDelta(params);
 				if (delta) this.progress += delta;

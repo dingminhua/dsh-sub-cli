@@ -8,6 +8,32 @@ import { DEFAULT_PERMISSION } from "./registry.js";
 
 const TERMINAL = new Set(["closed"]);
 
+// Auto-continue: some supplier-paired models (e.g. glm-5.2 through a
+// responses-proxy) end a turn early on long tool-driven tasks — the turn
+// completes with a "I will now do X" commitment instead of the final result.
+// The driver faithfully waits for turn/completed; to still return a complete
+// answer from a single cli_codex call we nudge the same thread (bounded).
+export const AUTO_CONTINUE_MAX = 3;
+export const AUTO_CONTINUE_PROMPT = "请继续完成你的任务，把最终结果完整输出给我。不要只描述计划或过程。";
+// An "intent tail": the last sentence still commits to future work (will do /
+// about to / now I) instead of delivering the result. We look at the final
+// sentence, because these models often stop right after stating a plan.
+const INTENT_TAIL = /(?:我会|我将|我先|让我|现在|接下来|然后|继续|准备|马上|即将|随后|正在|打算|稍后|先)(?:[^。！？!?]{0,60})[。！？!?]?$/;
+
+/**
+ * Decide whether a finished turn looks like a premature stop that deserves an
+ * auto-continue nudge. A premature stop typically ends with an "I will do X /
+ * now I'll do X" commitment instead of the deliverable — no tool work required
+ * (the model may stop right after stating its plan). Pure.
+ */
+export function looksPrematureOutput(text, toolRounds) {
+	const trimmed = String(text ?? "").trim();
+	if (!trimmed) return true; // empty result → nudge
+	const sentences = trimmed.split(/[。！？!?]/).map((s) => s.trim()).filter(Boolean);
+	const last = sentences[sentences.length - 1] || trimmed;
+	return INTENT_TAIL.test(last);
+}
+
 function now() { return new Date().toISOString(); }
 function errorOf(code, message) { const error = new Error(message); error.code = code; return error; }
 function snapshot(record) {
@@ -54,6 +80,41 @@ export class ManagedCliAgentsService {
 	// Single permission path shared by dispatch, followup and reattach: enforce
 	// the capability gate first, then either auto-decide (allow/never) or ask
 	// the bound approval seam, and record the decision.
+	//
+	// Auto-continue nudge loop: when a finished turn looks like a premature stop
+	// (tool work happened but the text ends with a continuation commitment), push
+	// the same thread a bounded number of times so a single dispatch returns a
+	// complete answer. Each nudge is a real followup turn on the same thread.
+	async settleWithAutoContinue(record, result, { agent = null, childId = null, signal = null } = {}) {
+		let text = result.text || "";
+		let toolRounds = Number.isInteger(result.toolRounds) ? result.toolRounds : 0;
+		let last = result;
+		// When nudging, remember the newest block so we can drop progress-fragment
+		// noise once a real (long) answer finally lands.
+		let added = "";
+		for (let i = 0; i < AUTO_CONTINUE_MAX; i++) {
+			if (!looksPrematureOutput(text, toolRounds)) break;
+			record.updatedAt = now();
+			last = await record.run.followup(AUTO_CONTINUE_PROMPT, {
+				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+			});
+			added = (last.text || "").trim();
+			if (!added) break; // nothing new — stop to avoid a useless loop
+			text = `${text}\n\n${added}`.trim();
+			toolRounds = Number.isInteger(last.toolRounds) ? last.toolRounds : 0;
+		}
+		// The loop ended because a nudge produced a non-premature answer: prefer
+		// that final block when it is a substantial deliverable; keep the whole
+		// concatenation otherwise (avoids discarding a report behind a tiny
+		// closing line like "以上就是全部内容。").
+		const cleaning = added.length > 0 && !looksPrematureOutput(text, toolRounds);
+		return {
+			text: cleaning && added.length >= 100 ? added : text,
+			stopReason: last?.stopReason ?? "completed",
+			threadId: last?.threadId ?? record.run?.remoteSessionId ?? null
+		};
+	}
+
 	async resolvePermission(record, request, { agent = null, childId = null, signal = null } = {}) {
 		const sessionId = record.sessionId;
 		const profile = normalizePermission(this.permissionSource(record.cli) || DEFAULT_PERMISSION);
@@ -124,11 +185,14 @@ export class ManagedCliAgentsService {
 			if (!record.pendingPermission) record.status = "running";
 			record.updatedAt = now();
 			const result = await record.run.result;
-			record.remoteSessionId = result.threadId ?? record.run.remoteSessionId ?? null;
+			// Nudge an early-stopped turn (bounded) so one dispatch returns a
+			// complete answer instead of a progress fragment.
+			const settled = await this.settleWithAutoContinue(record, result, { agent, childId, signal });
+			record.remoteSessionId = settled.threadId ?? record.run.remoteSessionId ?? null;
 			record.status = "ready";
 			record.activeTurn = false;
 			record.updatedAt = now();
-			return { session: snapshot(record), output: result.text || "", stopReason: result.stopReason ?? "completed" };
+			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
 			record.pendingPermission = null;
 			record.remoteSessionId = record.run?.remoteSessionId ?? record.remoteSessionId;
@@ -157,11 +221,12 @@ export class ManagedCliAgentsService {
 			const result = await record.run.followup(prompt, {
 				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
 			});
-			record.remoteSessionId = result.threadId ?? record.run.remoteSessionId ?? record.remoteSessionId;
+			const settled = await this.settleWithAutoContinue(record, result, { agent, childId, signal });
+			record.remoteSessionId = settled.threadId ?? record.run.remoteSessionId ?? record.remoteSessionId;
 			record.status = "ready";
 			record.activeTurn = false;
 			record.updatedAt = now();
-			return { session: snapshot(record), output: result.text || "", stopReason: result.stopReason ?? "completed" };
+			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
 			record.pendingPermission = null;
 			record.status = signal?.aborted ? "interrupted" : "failed";
