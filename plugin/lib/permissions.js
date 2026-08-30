@@ -50,7 +50,10 @@ export function normalizePermission(raw) {
 /** Derive the closest coarse CLI sandbox tier from a profile. */
 export function deriveSandboxMode(profile) {
 	const p = normalizePermission(profile);
-	if (p.write && p.exec && p.network) return "danger-full-access";
+	// Codex only opens the network under danger-full-access, so a profile that
+	// enables network must escalate to it (write stays gated by the approval
+	// bridge and the argv mapping, not by the coarse sandbox tier).
+	if (p.network) return "danger-full-access";
 	if (p.write || p.exec) return "workspace-write";
 	return "read-only";
 }

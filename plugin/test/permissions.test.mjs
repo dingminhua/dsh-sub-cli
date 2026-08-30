@@ -73,6 +73,9 @@ test("deriveSandboxMode picks the closest coarse tier for headless argv", () => 
 	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, network: false, approval: "ask" }), "workspace-write");
 	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, network: true, approval: "ask" }), "danger-full-access");
 	assert.equal(deriveSandboxMode({ read: true, write: false, exec: false, network: false, approval: "ask" }), "read-only");
+	// Network alone (even without write) must escalate to full access: Codex's
+	// sandbox only opens the network under danger-full-access.
+	assert.equal(deriveSandboxMode({ read: true, write: false, exec: true, network: true, approval: "allow" }), "danger-full-access");
 });
 
 test("capability gate maps Codex capabilities to profile keys", () => {
