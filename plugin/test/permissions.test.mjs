@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { codexApprovalResponse, normalizeCodexPermissionRequest, permissionReason } from "../lib/permissions.js";
+import { normalizePermission, deriveSandboxMode, allowsCapability, capabilityKey, APPROVAL_MODES, PERMISSION_PRESETS, DEFAULT_PROFILE } from "../lib/permissions.js";
 
 test("normalizes Codex structured permission requests with routing identity", () => {
 	const request = normalizeCodexPermissionRequest("item/permissions/requestApproval", {
@@ -35,4 +36,54 @@ test("maps DSH one-shot outcomes to Codex permission responses", () => {
 	assert.deepEqual(codexApprovalResponse(command, "allowed-once"), { decision: "accept" });
 	assert.deepEqual(codexApprovalResponse(command, "rejected"), { decision: "decline" });
 	assert.deepEqual(codexApprovalResponse(command, "cancelled"), { decision: "cancel" });
+});
+
+// ── Fine-grained permission profile model ────────────────────────────────────
+
+test("presets cover the three legacy tiers with distinct capability profiles", () => {
+	assert.deepEqual(PERMISSION_PRESETS.map((p) => p.id), ["read-only", "workspace-write", "danger-full-access"]);
+	assert.deepEqual(APPROVAL_MODES, ["ask", "allow", "never"]);
+	const [readOnly, workspaceWrite, full] = PERMISSION_PRESETS;
+	assert.deepEqual(readOnly.profile, { read: true, write: false, exec: false, network: false, approval: "ask" });
+	assert.deepEqual(workspaceWrite.profile, { read: true, write: true, exec: true, network: false, approval: "ask" });
+	assert.deepEqual(full.profile, { read: true, write: true, exec: true, network: true, approval: "allow" });
+});
+
+test("normalizePermission maps legacy strings, unknowns, objects and missing values", () => {
+	// Legacy string tiers keep their semantics.
+	assert.deepEqual(normalizePermission("read-only"), { read: true, write: false, exec: false, network: false, approval: "ask" });
+	assert.deepEqual(normalizePermission("workspace-write"), { read: true, write: true, exec: true, network: false, approval: "ask" });
+	assert.deepEqual(normalizePermission("danger-full-access"), { read: true, write: true, exec: true, network: true, approval: "allow" });
+	// Unknown strings and missing values fall back to the default tier.
+	assert.deepEqual(normalizePermission("bogus"), { ...DEFAULT_PROFILE });
+	assert.deepEqual(normalizePermission(undefined), { ...DEFAULT_PROFILE });
+	assert.deepEqual(normalizePermission(null), { ...DEFAULT_PROFILE });
+	// Partial profile objects merge over defaults.
+	assert.deepEqual(normalizePermission({ network: true }), { read: true, write: true, exec: true, network: true, approval: "ask" });
+	// Invalid approval falls back to the default.
+	assert.deepEqual(normalizePermission({ read: true, approval: "always" }).approval, "ask");
+});
+
+test("deriveSandboxMode picks the closest coarse tier for headless argv", () => {
+	assert.equal(deriveSandboxMode("read-only"), "read-only");
+	assert.equal(deriveSandboxMode("workspace-write"), "workspace-write");
+	assert.equal(deriveSandboxMode("danger-full-access"), "danger-full-access");
+	// A profile that writes or executes grants workspace-write; adding network
+	// escalates to full access; read-only profiles stay read-only.
+	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, network: false, approval: "ask" }), "workspace-write");
+	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, network: true, approval: "ask" }), "danger-full-access");
+	assert.equal(deriveSandboxMode({ read: true, write: false, exec: false, network: false, approval: "ask" }), "read-only");
+});
+
+test("capability gate maps Codex capabilities to profile keys", () => {
+	assert.equal(capabilityKey("command"), "exec");
+	assert.equal(capabilityKey("file-change"), "write");
+	assert.equal(capabilityKey("permissions"), "network");
+	assert.equal(capabilityKey("unknown-thing"), null);
+	// The gate enforces each capability independently.
+	assert.equal(allowsCapability({ ...DEFAULT_PROFILE, exec: true }, "command"), true);
+	assert.equal(allowsCapability({ ...DEFAULT_PROFILE, exec: false }, "command"), false);
+	assert.equal(allowsCapability({ ...DEFAULT_PROFILE, network: false }, "permissions"), false);
+	// Unknown capabilities are not hard-blocked.
+	assert.equal(allowsCapability(DEFAULT_PROFILE, "mystery"), true);
 });

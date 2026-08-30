@@ -21,7 +21,8 @@ import {
 	extractCliReply,
 	extractCodexError,
 	isCodexMetadataWarning,
-	localizeCliError
+	localizeCliError,
+	permissionOf
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
@@ -324,4 +325,18 @@ test("probeProtocolContinuation routes by protocol", async () => {
 	const r = await probeProtocolContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m", protocol: "anthropic" });
 	assert.equal(r.step, 1); // anthropic probe returns step 1 with no tool_use
 	assert.equal(seen, "called");
+});
+
+test("permissionOf returns a normalized capability profile for a CLI", () => {
+	// Legacy string tier is expanded to its preset profile.
+	const ctx = sampleCtx({ value: { permissions: { codex: "read-only" } } });
+	assert.deepEqual(permissionOf(ctx, "codex"), { read: true, write: false, exec: false, network: false, approval: "ask" });
+	// Profile objects pass through normalized.
+	const objCtx = sampleCtx({ value: { permissions: { codex: { read: true, write: true, exec: false, network: true, approval: "ask" } } } });
+	assert.deepEqual(permissionOf(objCtx, "codex"), { read: true, write: true, exec: false, network: true, approval: "ask" });
+	// Missing permission falls back to the default tier (workspace-write).
+	const emptyCtx = sampleCtx({ value: { permissions: {} } });
+	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: true, exec: true, network: false, approval: "ask" });
+	// Other CLIs are independent.
+	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: true, exec: true, network: false, approval: "ask" });
 });

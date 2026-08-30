@@ -50,10 +50,19 @@ const VERIFIED_ENTRY = z.object({
 	model: z.string().default("")
 }).default({});
 
+// Permission value: legacy string tier or fine-grained capability profile.
+const PERMISSION_ENTRY = z.object({
+	read: z.boolean().default(true),
+	write: z.boolean().default(false),
+	exec: z.boolean().default(false),
+	network: z.boolean().default(false),
+	approval: z.string().default("ask")
+});
+
 const SCHEMA = z.object({
 	cliDir: z.string().default(""),
 	models: z.dict(MODEL_ENTRY).default({}),
-	permissions: z.dict(z.string()).default({}),
+	permissions: z.dict(z.union([z.string(), PERMISSION_ENTRY])).default({}),
 	verified: z.dict(VERIFIED_ENTRY).default({})
 }).default({});
 

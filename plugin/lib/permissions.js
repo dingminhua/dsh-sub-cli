@@ -8,6 +8,71 @@ export const CODEX_APPROVAL_METHODS = Object.freeze({
 
 export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "rejected", "cancelled", "unavailable"]);
 
+// ── Fine-grained permission profiles ─────────────────────────────────────────
+// Each CLI's permission is stored as a capability object:
+//   { read, write, exec, network, approval }
+// Legacy string tiers are accepted everywhere and normalized to a profile.
+
+export const APPROVAL_MODES = Object.freeze(["ask", "allow", "never"]);
+
+export const PERMISSION_PRESETS = Object.freeze([
+	{ id: "read-only", label: "只读", profile: Object.freeze({ read: true, write: false, exec: false, network: false, approval: "ask" }) },
+	{ id: "workspace-write", label: "工作区可写", profile: Object.freeze({ read: true, write: true, exec: true, network: false, approval: "ask" }) },
+	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true, network: true, approval: "allow" }) }
+]);
+
+export const DEFAULT_PROFILE = Object.freeze({ read: true, write: true, exec: true, network: false, approval: "ask" });
+
+/**
+ * Normalize a stored permission value (legacy string tier, partial object, or
+ * full profile) into a complete profile with defaults applied. Unknown strings
+ * and missing values fall back to the default tier (workspace-write).
+ */
+export function normalizePermission(raw) {
+	if (typeof raw === "string") {
+		const preset = PERMISSION_PRESETS.find((p) => p.id === raw);
+		if (preset) return { ...preset.profile };
+		// Unknown string → default tier (workspace-write), not a new capability.
+		return { ...DEFAULT_PROFILE };
+	}
+	if (raw && typeof raw === "object") {
+		return {
+			read: raw.read !== undefined ? !!raw.read : DEFAULT_PROFILE.read,
+			write: raw.write !== undefined ? !!raw.write : DEFAULT_PROFILE.write,
+			exec: raw.exec !== undefined ? !!raw.exec : DEFAULT_PROFILE.exec,
+			network: raw.network !== undefined ? !!raw.network : DEFAULT_PROFILE.network,
+			approval: APPROVAL_MODES.includes(raw.approval) ? raw.approval : DEFAULT_PROFILE.approval
+		};
+	}
+	return { ...DEFAULT_PROFILE };
+}
+
+/** Derive the closest coarse CLI sandbox tier from a profile. */
+export function deriveSandboxMode(profile) {
+	const p = normalizePermission(profile);
+	if (p.write && p.exec && p.network) return "danger-full-access";
+	if (p.write || p.exec) return "workspace-write";
+	return "read-only";
+}
+
+/** Which capability key gates a Codex permission request capability. */
+export function capabilityKey(capability) {
+	switch (capability) {
+		case "command": return "exec";
+		case "file-change": return "write";
+		case "permissions": return "network";
+		default: return null;
+	}
+}
+
+/** Whether a profile allows the given Codex permission capability. */
+export function allowsCapability(profile, capability) {
+	const p = normalizePermission(profile);
+	const key = capabilityKey(capability);
+	if (key === null) return true; // unknown capability → do not hard-block
+	return p[key] === true;
+}
+
 function freeze(value) { return Object.freeze(value); }
 
 export function normalizeCodexPermissionRequest(method, params = {}, context = {}) {

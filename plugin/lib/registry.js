@@ -6,6 +6,8 @@
 // (~/.codex/config.toml, ~/.claude/settings.json, ...). On dispatch it points
 // each CLI's config dir to <unifiedDir>/config-<cli>/ via that CLI's own env var.
 
+import { deriveSandboxMode } from "./permissions.js";
+
 /** The three permission tiers offered per CLI. Default: workspace-write. */
 export const PERMISSION_TIERS = [
 	{ id: "read-only", label: "只读" },
@@ -14,6 +16,14 @@ export const PERMISSION_TIERS = [
 ];
 
 export const DEFAULT_PERMISSION = "workspace-write";
+
+/**
+ * Resolve the coarse sandbox tier for a headless run from a permission value
+ * (legacy string tier or fine-grained capability profile object).
+ */
+function tierOf(permission) {
+	return deriveSandboxMode(permission) || DEFAULT_PERMISSION;
+}
 
 export const CLI_REGISTRY = [
 	{
@@ -24,12 +34,12 @@ export const CLI_REGISTRY = [
 		configDir: "config-codex",
 		npm: "@openai/codex",
 		// headless argv template: {task} is the self-contained prompt, {model} optional -m,
-		// {permission} one of the PERMISSION_TIERS ids mapped to Codex's -s sandbox mode.
+		// {permission} a legacy tier string or capability profile mapped to Codex's -s sandbox mode.
 		// --skip-git-repo-check: the unified dir is usually not a git repo.
 		// -s <mode>: read-only / workspace-write / danger-full-access — the tier the
 		//   user selected for this CLI (default workspace-write). Unattended (no TTY).
 		argv: (task, model, permission) => {
-			const mode = permission || DEFAULT_PERMISSION;
+			const mode = tierOf(permission);
 			const args = ["exec", "--json", "--skip-git-repo-check", "-s", mode];
 			if (model) args.push("-m", model);
 			args.push(task);
@@ -56,7 +66,7 @@ export const CLI_REGISTRY = [
 				"read-only": "plan",
 				"workspace-write": "acceptEdits",
 				"danger-full-access": "bypassPermissions"
-			}[permission || DEFAULT_PERMISSION] || "acceptEdits";
+			}[tierOf(permission)] || "acceptEdits";
 			const args = ["-p", "--output-format", "text", "--permission-mode", mode];
 			if (model) args.push("--model", model);
 			args.push(task);
@@ -78,7 +88,7 @@ export const CLI_REGISTRY = [
 			// workspace-write / danger-full-access → no flag (Qwen has no finer
 			// granularity; document this limitation).
 			const args = [];
-			if ((permission || DEFAULT_PERMISSION) === "read-only") args.push("--sandbox");
+			if (tierOf(permission) === "read-only") args.push("--sandbox");
 			if (model) args.push("--model", model);
 			args.push("--prompt", task);
 			return args;

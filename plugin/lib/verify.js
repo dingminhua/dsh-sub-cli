@@ -10,6 +10,7 @@
 import path from "node:path";
 import os from "node:os";
 import { cliById, DEFAULT_PERMISSION } from "./registry.js";
+import { normalizePermission } from "./permissions.js";
 import { binPath, envFor, PLATFORM } from "./paths.js";
 import { winShimArgv } from "./dispatch.js";
 
@@ -131,11 +132,11 @@ export async function currentFingerprint(ctx, cliId) {
 	return fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 }
 
-/** Read the stored permission for a CLI (default workspace-write). */
+/** Read the stored permission for a CLI as a normalized capability profile. */
 export function permissionOf(ctx, cliId) {
 	const section = currentSection(ctx);
 	const p = section && section.permissions && section.permissions[cliId];
-	return p || DEFAULT_PERMISSION;
+	return normalizePermission(p || DEFAULT_PERMISSION);
 }
 
 /** Read the stored verified record for a CLI. */

@@ -3,6 +3,8 @@
 // integrations. Initial implementation is in-memory; records contain no keys.
 
 import { randomUUID } from "node:crypto";
+import { normalizePermission, deriveSandboxMode, allowsCapability } from "./permissions.js";
+import { DEFAULT_PERMISSION } from "./registry.js";
 
 const TERMINAL = new Set(["closed"]);
 
@@ -40,14 +42,42 @@ export class ManagedCliAgentsService {
 	}
 
 	permissionSpec(cli) {
-		const mode = this.permissionSource(cli) || "read-only";
-		return { permissionMode: mode, approvalPolicy: "on-request", sandbox: mode };
+		const profile = normalizePermission(this.permissionSource(cli) || DEFAULT_PERMISSION);
+		const mode = deriveSandboxMode(profile);
+		// `never` asks Codex to deny out-of-scope operations without emitting a
+		// request; every other mode keeps on-request so the capability gate and
+		// approval seam below can decide each request.
+		const approvalPolicy = profile.approval === "never" ? "never" : "on-request";
+		return { permissionMode: mode, approvalPolicy, sandbox: mode, profile };
 	}
 
-	// Single permission path shared by dispatch, followup and reattach: snapshot
-	// the pending request, ask the bound approval seam, then record the decision.
+	// Single permission path shared by dispatch, followup and reattach: enforce
+	// the capability gate first, then either auto-decide (allow/never) or ask
+	// the bound approval seam, and record the decision.
 	async resolvePermission(record, request, { agent = null, childId = null, signal = null } = {}) {
 		const sessionId = record.sessionId;
+		const profile = normalizePermission(this.permissionSource(record.cli) || DEFAULT_PERMISSION);
+		const allowed = allowsCapability(profile, request.capability);
+		const decidedAt = now();
+		// Capability gate: the profile does not grant this capability at all →
+		// reject without surfacing an approval prompt.
+		if (!allowed) {
+			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "rejected", decidedAt };
+			record.updatedAt = now();
+			return "rejected";
+		}
+		// approval=allow: the capability is granted and the profile auto-accepts.
+		if (profile.approval === "allow") {
+			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "allowed-once", decidedAt };
+			record.updatedAt = now();
+			return "allowed-once";
+		}
+		// approval=never: granted but never interactively confirmed → reject.
+		if (profile.approval === "never") {
+			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "rejected", decidedAt };
+			record.updatedAt = now();
+			return "rejected";
+		}
 		if (record.pendingPermission) throw errorOf("PERMISSION_REQUEST_BUSY", `managed CLI session ${sessionId} already has a pending permission request`);
 		const contextual = Object.freeze({ ...request, pluginSessionId: sessionId, childId });
 		record.pendingPermission = {

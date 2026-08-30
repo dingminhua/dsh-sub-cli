@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ManagedCliAgentsService } from "../lib/managed-cli-agents.js";
 
+// Permission profile that grants every capability with approval=ask, so tests
+// that exercise the approval seam actually reach it (the default read-only
+// profile would have the capability gate auto-reject first).
+const ASK_ALL = { read: true, write: true, exec: true, network: true, approval: "ask" };
+
 function deferred() { let resolve, reject; const promise = new Promise((a,b)=>{resolve=a;reject=b}); return {promise,resolve,reject}; }
 function driverFixture() {
 	const calls = [];
@@ -45,7 +50,7 @@ test("dispatch exposes awaiting permission and clears it after an audited decisi
 		})(), dispose: async () => {} };
 	} };
 	const agent = { session: { id: "parent" } };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent, childId: "child-p" });
 	await new Promise((r) => setImmediate(r));
 	const open = service.list()[0];
@@ -72,7 +77,7 @@ test("relay permission approval is routed through the bound parent agent", async
 			return { threadId: "thread-parent", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
 	service.bindChild("child-agent", { cli: "codex", parentAgent });
 	service.setChildCwd("child-agent", "/repo");
 	const value = await service.submitFromChild("child-agent", "task", undefined, childAgent);
@@ -93,7 +98,7 @@ test("a second permission request is rejected while one is pending", async () =>
 			return { threadId: "thread-b", text: "done" };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	assert.equal(secondError.code, "PERMISSION_REQUEST_BUSY");
@@ -154,7 +159,7 @@ test("interrupt clears a pending permission and marks the session interrupted", 
 			async dispose() {}
 		};
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "task", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	const sessionId = service.list()[0].sessionId;
@@ -240,4 +245,65 @@ test("releaseChild frees the bound session when a relay epoch ends", async () =>
 test("releaseChild is a no-op for an unknown child", async () => {
 	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), dispose: async () => {} }; } } } });
 	assert.deepEqual(await service.releaseChild("never-bound"), { released: false });
+});
+
+// ── Fine-grained permission gate + approval modes ────────────────────────────
+
+test("permissionSpec derives sandbox tier and approval policy from the profile", () => {
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => "workspace-write" });
+	assert.deepEqual(service.permissionSpec("codex"), {
+		permissionMode: "workspace-write",
+		approvalPolicy: "on-request",
+		sandbox: "workspace-write",
+		profile: { read: true, write: true, exec: true, network: false, approval: "ask" }
+	});
+	const denied = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, network: false, approval: "never" }) });
+	assert.equal(denied.permissionSpec("codex").approvalPolicy, "never");
+	assert.equal(denied.permissionSpec("codex").sandbox, "read-only");
+});
+
+test("capability gate auto-rejects a request the profile does not grant", async () => {
+	let approvalCalls = 0;
+	const driver = { async start(value) {
+		return { remoteSessionId: "thread-g", result: (async () => {
+			const outcome = await value.onPermissionRequest({ requestId: "req-g", cli: "codex", turnId: "turn-g", itemId: "item-g", capability: "permissions", operation: "one", createdAt: new Date().toISOString() });
+			return { threadId: "thread-g", text: outcome };
+		})(), dispose: async () => {} };
+	} };
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, network: false }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(done.output, "rejected");
+	assert.equal(approvalCalls, 0); // never surfaced a prompt
+	assert.equal(done.session.lastPermissionDecision.capability, "permissions");
+	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
+});
+
+test("approval=allow auto-accepts a granted capability without prompting", async () => {
+	let approvalCalls = 0;
+	const driver = { async start(value) {
+		return { remoteSessionId: "thread-a", result: (async () => {
+			const outcome = await value.onPermissionRequest({ requestId: "req-a", cli: "codex", turnId: "turn-a", itemId: "item-a", capability: "permissions", operation: "one", createdAt: new Date().toISOString() });
+			return { threadId: "thread-a", text: outcome };
+		})(), dispose: async () => {} };
+	} };
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "allow" }), approvalRequest: async () => { approvalCalls++; return "rejected"; } });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(done.output, "allowed-once");
+	assert.equal(approvalCalls, 0);
+	assert.equal(done.session.lastPermissionDecision.outcome, "allowed-once");
+});
+
+test("approval=never auto-rejects a granted capability without prompting", async () => {
+	let approvalCalls = 0;
+	const driver = { async start(value) {
+		return { remoteSessionId: "thread-n", result: (async () => {
+			const outcome = await value.onPermissionRequest({ requestId: "req-n", cli: "codex", turnId: "turn-n", itemId: "item-n", capability: "command", operation: "one", createdAt: new Date().toISOString() });
+			return { threadId: "thread-n", text: outcome };
+		})(), dispose: async () => {} };
+	} };
+	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(done.output, "rejected");
+	assert.equal(approvalCalls, 0);
+	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
 });

@@ -19,7 +19,10 @@ window.__ModuleLoader__.load({
     var DSC_ICON = "data:image/png;base64,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";
 
     // ── CSS ──────────────────────────────────────────────────────────────
-    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-test-hint-error{color:#ef4444}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-cli-install{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap}.dsc-cli-status{font:inherit;line-height:inherit;color:inherit}.dsc-conn-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-conn-fail{color:#ef4444}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 0 0}.dsc-footer-left{display:flex;align-items:center;gap:10px;min-width:0;margin-right:auto}.dsc-cheer{display:inline-flex;align-items:center;gap:4px;flex:none;text-decoration:underline;text-underline-offset:2px;color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5;transition:color .16s}.dsc-cheer-star{font-size:12px;line-height:1;display:inline-flex}.dsc-cheer:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-cheer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}.dsc-footer-status{min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;display:inline-flex;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
+    var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-test-hint-error{color:#ef4444}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-cli-install{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap}.dsc-cli-status{font:inherit;line-height:inherit;color:inherit}.dsc-conn-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-conn-fail{color:#ef4444}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 0 0}.dsc-footer-left{display:flex;align-items:center;gap:10px;min-width:0;margin-right:auto}.dsc-cheer{display:inline-flex;align-items:center;gap:4px;flex:none;text-decoration:underline;text-underline-offset:2px;color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5;transition:color .16s}.dsc-cheer-star{font-size:12px;line-height:1;display:inline-flex}.dsc-cheer:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-cheer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}.dsc-footer-status{min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;display:inline-flex;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
+
+    // Fine-grained permission controls styles (appended to the main sheet).
+    var PERM_CSS = ".dsc-perm-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px}.dsc-perm-preset{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-perm-toggles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.dsc-perm-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3}.dsc-perm-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0}.dsc-perm-approval{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}";
 
     if (typeof document !== "undefined") {
       var cssId = "dsh-sub-cli/client.css";
@@ -27,7 +30,7 @@ window.__ModuleLoader__.load({
         var styleTag = document.createElement("style");
         styleTag.dataset.plugin = "dsh-sub-cli";
         styleTag.dataset.pluginCss = cssId;
-        styleTag.textContent = SETTINGS_CSS;
+        styleTag.textContent = SETTINGS_CSS + PERM_CSS;
         document.head.appendChild(styleTag);
       }
     }
@@ -43,6 +46,17 @@ window.__ModuleLoader__.load({
       "row.model": "模型",
       "row.effort": "推理强度",
       "row.permission": "权限",
+      "row.permHint": "能力开关按需开启；审批模式决定是否需要弹窗确认。",
+      "row.preset": "预设档位",
+      "row.custom": "自定义",
+      "row.read": "读文件",
+      "row.write": "写文件",
+      "row.exec": "执行命令",
+      "row.network": "联网",
+      "row.approval": "审批模式",
+      "row.approvalAsk": "询问",
+      "row.approvalAllow": "自动允许",
+      "row.approvalNever": "自动拒绝",
       "row.inherit": "（继承）",
       "row.save": "保存",
       "row.discard": "放弃修改",
@@ -101,6 +115,17 @@ window.__ModuleLoader__.load({
       "row.model": "Model",
       "row.effort": "Reasoning effort",
       "row.permission": "Permission",
+      "row.permHint": "Enable capabilities as needed; the approval mode decides whether a prompt appears.",
+      "row.preset": "Preset",
+      "row.custom": "Custom",
+      "row.read": "Read files",
+      "row.write": "Write files",
+      "row.exec": "Run commands",
+      "row.network": "Network",
+      "row.approval": "Approval",
+      "row.approvalAsk": "Ask",
+      "row.approvalAllow": "Auto-allow",
+      "row.approvalNever": "Auto-deny",
       "row.inherit": "(inherit)",
       "row.save": "Save",
       "row.discard": "Discard",
@@ -151,12 +176,49 @@ window.__ModuleLoader__.load({
       "guide.dispatchEx": "Have Codex run this task headlessly."
     };
 
-    var PERMISSIONS = [
-      { id: "read-only", label: "只读" },
-      { id: "workspace-write", label: "工作区可写" },
-      { id: "danger-full-access", label: "完全" }
+    // Fine-grained permission presets. Each carries the capability profile it
+    // maps to; `custom` is chosen in the UI when the profile matches none.
+    var PERMISSION_PRESETS = [
+      { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false, network: false, approval: "ask" } },
+      { id: "workspace-write", label: "工作区可写", profile: { read: true, write: true, exec: true, network: false, approval: "ask" } },
+      { id: "danger-full-access", label: "完全", profile: { read: true, write: true, exec: true, network: true, approval: "allow" } }
+    ];
+    var APPROVAL_OPTIONS = [
+      { id: "ask", label: "询问" },
+      { id: "allow", label: "自动允许" },
+      { id: "never", label: "自动拒绝" }
     ];
     var DEFAULT_PERMISSION = "workspace-write";
+    var DEFAULT_PROFILE = { read: true, write: true, exec: true, network: false, approval: "ask" };
+
+    // Normalize a stored permission (legacy string tier or profile object) into
+    // a complete profile for the UI. Mirrors the host's normalizePermission.
+    function normalizePermissionClient(raw) {
+      if (typeof raw === "string") {
+        var preset = null;
+        for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === raw) { preset = PERMISSION_PRESETS[pi].profile; break; }
+        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec, network: preset.network, approval: preset.approval };
+        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec, network: DEFAULT_PROFILE.network, approval: DEFAULT_PROFILE.approval };
+      }
+      var p = raw || {};
+      return {
+        read: p.read !== undefined ? !!p.read : DEFAULT_PROFILE.read,
+        write: p.write !== undefined ? !!p.write : DEFAULT_PROFILE.write,
+        exec: p.exec !== undefined ? !!p.exec : DEFAULT_PROFILE.exec,
+        network: p.network !== undefined ? !!p.network : DEFAULT_PROFILE.network,
+        approval: APPROVAL_OPTIONS.some(function (a) { return a.id === p.approval; }) ? p.approval : DEFAULT_PROFILE.approval
+      };
+    }
+
+    // The preset id whose profile equals `p`, or "custom" when none matches.
+    function presetIdOf(p) {
+      for (var i = 0; i < PERMISSION_PRESETS.length; i++) {
+        var pr = PERMISSION_PRESETS[i].profile;
+        if (pr.read === p.read && pr.write === p.write && pr.exec === p.exec && pr.network === p.network && pr.approval === p.approval) return PERMISSION_PRESETS[i].id;
+      }
+      return "custom";
+    }
+
     var CLIS = [
       { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex", testHint: "测试将验证该供应商是否支持 responses 协议（Codex 所需，含工具续接）" },
       { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude", testHint: "测试将验证该供应商是否支持 Anthropic Messages 协议（含 tool_use 续接）" },
@@ -176,11 +238,18 @@ window.__ModuleLoader__.load({
       return v;
     }
 
+    function normalizePermissions(raw) {
+      var out = {};
+      var keys = Object.keys(raw || {});
+      for (var i = 0; i < keys.length; i++) out[keys[i]] = normalizePermissionClient(raw[keys[i]]);
+      return out;
+    }
+
     function normalize(value) {
       return {
         cliDir: (value && value.cliDir) || "",
         models: (value && value.models) || {},
-        permissions: (value && value.permissions) || {},
+        permissions: normalizePermissions((value && value.permissions) || {}),
         verified: (value && value.verified) || {}
       };
     }
@@ -223,7 +292,7 @@ window.__ModuleLoader__.load({
       var t = props.t;
       var groups = props.groups;
       var route = props.route || {};
-      var permission = props.permission || DEFAULT_PERMISSION;
+      var permission = normalizePermissionClient(props.permission);
       var group = null;
       for (var i = 0; i < groups.length; i++) if (groups[i].id === route.provider) { group = groups[i]; break; }
       var models = group ? (group.models || []) : [];
@@ -249,9 +318,41 @@ window.__ModuleLoader__.load({
             efforts.map(function (e2) { return React.createElement("option", { key: e2.id, value: e2.id }, e2.name || e2.id); })
           )
         ),
-        React.createElement("label", { className: "dsc-field" }, t("row.permission"),
-          React.createElement("select", { className: "dsc-select dsc-perm", value: permission, onChange: function (e) { props.onPermissionChange(e.target.value); } },
-            PERMISSIONS.map(function (p) { return React.createElement("option", { key: p.id, value: p.id }, p.label); })
+        React.createElement("div", { className: "dsc-perm-block", style: { gridColumn: "1 / -1" } },
+          React.createElement("div", { className: "dsc-perm-preset" },
+            React.createElement("label", { className: "dsc-field" }, t("row.preset"),
+              React.createElement("select", { className: "dsc-select dsc-perm", value: presetIdOf(permission), onChange: function (e) {
+                var preset = null;
+                for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === e.target.value) { preset = PERMISSION_PRESETS[pi]; break; }
+                if (preset) props.onPermissionChange({ read: preset.profile.read, write: preset.profile.write, exec: preset.profile.exec, network: preset.profile.network, approval: preset.profile.approval });
+              } },
+                PERMISSION_PRESETS.map(function (p) { return React.createElement("option", { key: p.id, value: p.id }, p.label); }),
+                React.createElement("option", { value: "custom" }, t("row.custom"))
+              )
+            ),
+            React.createElement("label", { className: "dsc-field" }, t("row.approval"),
+              React.createElement("select", { className: "dsc-select dsc-perm", value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: permission.network, approval: e.target.value }); } },
+                APPROVAL_OPTIONS.map(function (a) { return React.createElement("option", { key: a.id, value: a.id }, a.label); })
+              )
+            )
+          ),
+          React.createElement("div", { className: "dsc-perm-toggles" },
+            React.createElement("label", { className: "dsc-perm-toggle" },
+              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("span", null, t("row.read"))
+            ),
+            React.createElement("label", { className: "dsc-perm-toggle" },
+              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("span", null, t("row.write"))
+            ),
+            React.createElement("label", { className: "dsc-perm-toggle" },
+              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("span", null, t("row.exec"))
+            ),
+            React.createElement("label", { className: "dsc-perm-toggle" },
+              React.createElement("input", { type: "checkbox", checked: permission.network, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: e.target.checked, approval: permission.approval }); } }),
+              React.createElement("span", null, t("row.network"))
+            )
           )
         )
       );

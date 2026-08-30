@@ -3,6 +3,7 @@
 // in the live DSH runtime.
 
 import { randomUUID } from "node:crypto";
+import { normalizePermission, deriveSandboxMode } from "../permissions.js";
 
 const NO_START_CAPABILITIES = Object.freeze({
 	outputSchema: false,
@@ -39,15 +40,10 @@ export class CodexAppServerProvider {
 	}
 
 	permissionRequest() {
-		const permission = this.permissionSource("codex");
-		switch (permission) {
-			case "danger-full-access":
-				return { approvalPolicy: "never", sandbox: "danger-full-access" };
-			case "workspace-write":
-				return { approvalPolicy: "never", sandbox: "workspace-write" };
-			default:
-				return { approvalPolicy: "never", sandbox: "read-only" };
-		}
+		const profile = normalizePermission(this.permissionSource("codex"));
+		// Experimental provider has no approval bridge; use the derived sandbox
+		// tier so the capability profile still shapes what Codex may do.
+		return { approvalPolicy: "never", sandbox: deriveSandboxMode(profile) };
 	}
 
 	async start(request) {
