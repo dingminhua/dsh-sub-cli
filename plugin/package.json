@@ -53,7 +53,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:live": "node e2e-live.mjs"
   },
   "dsh": {
     "bundle": {
