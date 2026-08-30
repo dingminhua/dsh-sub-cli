@@ -90,3 +90,79 @@ test("capability gate maps Codex capabilities to profile keys", () => {
 	// Unknown capabilities are not hard-blocked.
 	assert.equal(allowsCapability(DEFAULT_PROFILE, "mystery"), true);
 });
+
+// ── Generalized matrices (shared derivation rules) ───────────────────────────
+// The coarse-tier rule is defined ONCE here and asserted for every capability
+// combination, so a regression like the network→workspace-write bug fails
+// loudly for all CLIs instead of silently only affecting one of them.
+
+// The documented derivation rule. Keeping the expected value next to the
+// implementation makes the intent explicit and the matrix self-checking.
+function expectedTier({ write, exec, network }) {
+	if (network) return "danger-full-access";
+	if (write || exec) return "workspace-write";
+	return "read-only";
+}
+
+// Every combination of the four capability booleans (2^4 = 16), plus a sweep
+// over the approval mode to prove it never influences the sandbox tier.
+const CAPABILITY_COMBOS = (() => {
+	const combos = [];
+	for (const read of [true, false]) {
+		for (const write of [true, false]) {
+			for (const exec of [true, false]) {
+				for (const network of [true, false]) {
+					for (const approval of APPROVAL_MODES) combos.push({ read, write, exec, network, approval });
+				}
+			}
+		}
+	}
+	return combos;
+})();
+
+test("deriveSandboxMode matches the documented rule for all 16 capability combinations", () => {
+	assert.equal(CAPABILITY_COMBOS.length, 16 * APPROVAL_MODES.length);
+	for (const combo of CAPABILITY_COMBOS) {
+		const { read, write, exec, network, approval } = combo;
+		const tier = expectedTier(combo);
+		assert.equal(deriveSandboxMode(combo), tier, `profile ${JSON.stringify(combo)}`);
+		// The approval mode must never change the coarse tier.
+		if (approval === "allow") assert.equal(deriveSandboxMode({ read, write, exec, network, approval: "ask" }), tier, `approval independence ${JSON.stringify(combo)}`);
+	}
+});
+
+test("normalizePermission round-trips every capability combination exactly", () => {
+	for (const combo of CAPABILITY_COMBOS) {
+		const { read, write, exec, network, approval } = combo;
+		assert.deepEqual(normalizePermission({ read, write, exec, network, approval }), { read, write, exec, network, approval }, `round-trip ${JSON.stringify(combo)}`);
+	}
+});
+
+test("normalizePermission coerces partial and malformed inputs to a complete profile", () => {
+	const cases = [
+		[{}, { ...DEFAULT_PROFILE }],
+		[{ read: false }, { ...DEFAULT_PROFILE, read: false }],
+		[{ write: true }, { ...DEFAULT_PROFILE, write: true }],
+		[{ exec: true, network: true }, { ...DEFAULT_PROFILE, exec: true, network: true }],
+		[{ read: 0 }, { ...DEFAULT_PROFILE, read: false }],
+		[{ write: "yes" }, { ...DEFAULT_PROFILE, write: true }],
+		[{ approval: "always" }, { ...DEFAULT_PROFILE }],
+		[{ approval: 42 }, { ...DEFAULT_PROFILE }],
+		["", { ...DEFAULT_PROFILE }],
+		[" ", { ...DEFAULT_PROFILE }],
+		[42, { ...DEFAULT_PROFILE }],
+		[true, { ...DEFAULT_PROFILE }]
+	];
+	for (const [input, expected] of cases) assert.deepEqual(normalizePermission(input), expected, `input ${JSON.stringify(input)}`);
+});
+
+test("capability gate agrees with the derived tier for every combination", () => {
+	// Whatever the coarse tier says, the capability gate must be consistent:
+	// network on ⇒ permissions allowed; exec on ⇒ command allowed; write on ⇒ file-change allowed.
+	for (const combo of CAPABILITY_COMBOS) {
+		const p = normalizePermission(combo);
+		assert.equal(allowsCapability(p, "command"), p.exec === true, `command gate ${JSON.stringify(combo)}`);
+		assert.equal(allowsCapability(p, "file-change"), p.write === true, `file-change gate ${JSON.stringify(combo)}`);
+		assert.equal(allowsCapability(p, "permissions"), p.network === true, `permissions gate ${JSON.stringify(combo)}`);
+	}
+});

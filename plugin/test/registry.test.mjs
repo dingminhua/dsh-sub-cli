@@ -62,3 +62,59 @@ test("qwen uses --prompt for headless task and --model for model", () => {
 	assert.deepEqual(qwen.argv("check", "qwen-max", "workspace-write"), ["--model", "qwen-max", "--prompt", "check"]);
 	assert.deepEqual(qwen.argv("check", "", "workspace-write"), ["--prompt", "check"]);
 });
+
+// ── Generalized argv matrix across every CLI ─────────────────────────────────
+// The same permission value must derive the same coarse tier for codex, claude
+// and qwen, and each CLI's argv template must reflect that tier in its own
+// flag. One table drives all three so a derivation regression (e.g. network
+// no longer escalating to danger-full-access) is caught for every CLI at once.
+
+const CLAUDE_MODE_BY_TIER = {
+	"read-only": "plan",
+	"workspace-write": "acceptEdits",
+	"danger-full-access": "bypassPermissions"
+};
+
+const ARGV_PERMISSION_CASES = [
+	{ label: "legacy read-only", permission: "read-only", tier: "read-only" },
+	{ label: "legacy workspace-write", permission: "workspace-write", tier: "workspace-write" },
+	{ label: "legacy danger-full-access", permission: "danger-full-access", tier: "danger-full-access" },
+	{ label: "unknown string falls back to default", permission: "bogus", tier: "workspace-write" },
+	{ label: "missing permission defaults to workspace-write", permission: undefined, tier: "workspace-write" },
+	{ label: "network alone escalates to full access", permission: { read: true, write: false, exec: false, network: true, approval: "allow" }, tier: "danger-full-access" },
+	{ label: "exec+network escalates to full access", permission: { read: true, write: false, exec: true, network: true, approval: "ask" }, tier: "danger-full-access" },
+	{ label: "exec without network stays workspace-write", permission: { read: true, write: false, exec: true, network: false, approval: "ask" }, tier: "workspace-write" },
+	{ label: "write without exec stays workspace-write", permission: { read: true, write: true, exec: false, network: false, approval: "ask" }, tier: "workspace-write" },
+	{ label: "read-only profile stays read-only", permission: { read: true, write: false, exec: false, network: false, approval: "ask" }, tier: "read-only" }
+];
+
+test("every permission value derives the same coarse tier across all three CLIs", () => {
+	for (const c of ARGV_PERMISSION_CASES) {
+		const codex = cliById("codex").argv("t", "", c.permission);
+		const claude = cliById("claude").argv("t", "", c.permission);
+		const qwen = cliById("qwen").argv("t", "", c.permission);
+		const label = `${c.label} (${JSON.stringify(c.permission)})`;
+		// Codex: explicit -s <tier>.
+		assert.ok(codex.includes("-s") && codex.includes(c.tier), `codex ${label}`);
+		// Claude: --permission-mode mapped from the tier.
+		assert.ok(claude.includes("--permission-mode") && claude.includes(CLAUDE_MODE_BY_TIER[c.tier]), `claude ${label}`);
+		// Qwen: --sandbox only in read-only.
+		assert.equal(qwen.includes("--sandbox"), c.tier === "read-only", `qwen ${label}`);
+	}
+});
+
+test("codex -s flag carries exactly the derived tier (position-sensitive)", () => {
+	for (const c of ARGV_PERMISSION_CASES) {
+		const args = cliById("codex").argv("t", "", c.permission);
+		const at = args.indexOf("-s");
+		assert.ok(at !== -1 && args[at + 1] === c.tier, `${c.label} → ${JSON.stringify(args)}`);
+	}
+});
+
+test("claude permission-mode flag carries exactly the derived tier", () => {
+	for (const c of ARGV_PERMISSION_CASES) {
+		const args = cliById("claude").argv("t", "", c.permission);
+		const at = args.indexOf("--permission-mode");
+		assert.ok(at !== -1 && args[at + 1] === CLAUDE_MODE_BY_TIER[c.tier], `${c.label} → ${JSON.stringify(args)}`);
+	}
+});

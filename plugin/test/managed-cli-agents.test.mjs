@@ -307,3 +307,59 @@ test("approval=never auto-rejects a granted capability without prompting", async
 	assert.equal(approvalCalls, 0);
 	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
 });
+
+// ── Generalized permission matrices ──────────────────────────────────────────
+
+test("permissionSpec matrix derives sandbox and approval policy for every input", () => {
+	const cases = [
+		{ label: "legacy read-only", input: "read-only", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "legacy workspace-write", input: "workspace-write", sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "allow" },
+		{ label: "unknown string defaults", input: "bogus", sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "network alone escalates", input: { read: true, write: false, exec: false, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "allow" },
+		{ label: "exec+network escalates", input: { read: true, write: false, exec: true, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "exec only stays workspace", input: { read: true, write: false, exec: true, network: false, approval: "ask" }, sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "workspace-write", approvalPolicy: "never", approval: "never" }
+	];
+	for (const c of cases) {
+		const service = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => c.input });
+		const spec = service.permissionSpec("codex");
+		assert.equal(spec.sandbox, c.sandbox, `sandbox ${c.label}`);
+		assert.equal(spec.permissionMode, c.sandbox, `permissionMode ${c.label}`);
+		assert.equal(spec.approvalPolicy, c.approvalPolicy, `approvalPolicy ${c.label}`);
+		assert.equal(spec.profile.approval, c.approval, `profile.approval ${c.label}`);
+	}
+});
+
+// The deterministic branches of resolvePermission — capability denied by the
+// gate, approval=allow, and approval=never — must decide without ever calling
+// the approval seam. The "ask" branch (routes to approvalRequest) is covered
+// by the dedicated tests above. This matrix guards every capability × mode.
+const RESOLVE_DECISIONS = [
+	{ label: "denied command", capability: "command", profile: { ...ASK_ALL, exec: false }, expected: "rejected" },
+	{ label: "denied file-change", capability: "file-change", profile: { ...ASK_ALL, write: false }, expected: "rejected" },
+	{ label: "denied permissions", capability: "permissions", profile: { ...ASK_ALL, network: false }, expected: "rejected" },
+	{ label: "allow command", capability: "command", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
+	{ label: "allow file-change", capability: "file-change", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
+	{ label: "allow permissions", capability: "permissions", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
+	{ label: "never command", capability: "command", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" },
+	{ label: "never file-change", capability: "file-change", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" },
+	{ label: "never permissions", capability: "permissions", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" }
+];
+
+test("resolvePermission decision matrix never prompts for gate/allow/never", async () => {
+	for (const d of RESOLVE_DECISIONS) {
+		let approvalCalls = 0;
+		const driver = { async start(value) {
+			return { remoteSessionId: `thread-${d.label}`, result: (async () => {
+				const outcome = await value.onPermissionRequest({ requestId: `req-${d.label}`, cli: "codex", turnId: "turn", itemId: "item", capability: d.capability, operation: "one", createdAt: new Date().toISOString() });
+				return { threadId: `thread-${d.label}`, text: outcome };
+			})(), dispose: async () => {} };
+		} };
+		const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => d.profile, approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+		const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+		assert.equal(done.output, d.expected, `outcome ${d.label}`);
+		assert.equal(approvalCalls, 0, `no prompt ${d.label}`);
+		assert.equal(done.session.lastPermissionDecision.outcome, d.expected, `recorded ${d.label}`);
+	}
+});

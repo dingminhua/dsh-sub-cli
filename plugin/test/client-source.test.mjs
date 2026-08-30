@@ -94,3 +94,31 @@ test("old probe-era labels and second connectivity line are gone", () => {
 	assert.doesNotMatch(source, /installCls/);
 	assert.doesNotMatch(source, /installText/);
 });
+
+test("permission UI renders presets, capability toggles and approval mode", () => {
+	// Fine-grained profile model mirrored in the client.
+	assert.match(source, /var PERMISSION_PRESETS = /);
+	assert.match(source, /var APPROVAL_OPTIONS = /);
+	assert.match(source, /function normalizePermissionClient\(raw\)/);
+	assert.match(source, /function presetIdOf\(p\)/);
+	// The three presets with their capability profiles.
+	assert.match(source, /"read-only"/);
+	assert.match(source, /"workspace-write"/);
+	assert.match(source, /"danger-full-access"/);
+	// The four capability toggles plus the approval select.
+	assert.match(source, /dsc-perm-toggle/);
+	assert.match(source, /"row\.read"/);
+	assert.match(source, /"row\.write"/);
+	assert.match(source, /"row\.exec"/);
+	assert.match(source, /"row\.network"/);
+	assert.match(source, /"row\.approval"/);
+	assert.match(source, /"row\.approvalAsk"/);
+	assert.match(source, /"row\.approvalAllow"/);
+	assert.match(source, /"row\.approvalNever"/);
+	// Permissions persist as profile objects (normalizePermissions), not tiers.
+	assert.match(source, /function normalizePermissions\(raw\)/);
+	assert.match(source, /permissions: normalizePermissions\(/);
+	// The legacy three-tier select is gone.
+	assert.doesNotMatch(source, /var PERMISSIONS = /);
+	assert.doesNotMatch(source, /PERMISSIONS\.map/);
+});
