@@ -306,7 +306,8 @@ test("Codex driver attachOnly binds the thread without starting a turn", async (
 	});
 	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 1000 });
 	const run = await driver.start({ cwd: "/repo", attachOnly: true, resumeThreadId: "thread-idle" });
-	assert.equal(await run.result, "thread-idle");
+	assert.deepEqual(await run.result, { threadId: "thread-idle", text: "", stopReason: "attached" });
+	assert.equal(run.remoteSessionId, "thread-idle");
 	// No turn/start: an empty prompt here would have thrown into an unawaited promise.
 	assert.equal(transport.requests.some((entry) => entry.method === "turn/start"), false);
 	assert.equal(transport.requests.some((entry) => entry.method === "thread/resume"), true);

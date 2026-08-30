@@ -385,9 +385,16 @@ export class CodexAppServerDriver {
 		});
 		try {
 			await session.initialize(this.clientInfo);
-			// `attachOnly` reopens a released session: bind the thread now, run
-			// the turn later through followup.
-			const result = request.attachOnly ? session.attach() : session.start(request.prompt);
+			// `attachOnly` reopens a released session. Await thread/resume before
+			// exposing followup; otherwise callers can race the pending attach and
+			// observe a session whose threadId is still null.
+			let result;
+			if (request.attachOnly) {
+				await session.attach();
+				result = Promise.resolve({ threadId: session.threadId, text: "", stopReason: "attached" });
+			} else {
+				result = session.start(request.prompt);
+			}
 			return {
 				id: randomUUID(),
 				product: "codex",
