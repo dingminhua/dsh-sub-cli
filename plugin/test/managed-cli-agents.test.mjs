@@ -29,7 +29,7 @@ function driverFixture() {
 
 test("dispatch records a real remote thread and returns a stable session", async () => {
 	const f = driverFixture();
-	const service = new ManagedCliAgentsService({ drivers: { codex: f.driver }, routeSource: () => ({ provider: "p", model: "m", reasoningEffort: "high" }), permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: f.driver }, routeSource: () => ({ provider: "p", model: "m", reasoningEffort: "high" }), permissionSource: () => "workspace-write" });
 	const value = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	assert.match(value.session.sessionId, /^cli-codex-/);
 	assert.equal(value.session.remoteSessionId, "thread-1");
@@ -50,7 +50,7 @@ test("dispatch exposes awaiting permission and clears it after an audited decisi
 		})(), dispose: async () => {} };
 	} };
 	const agent = { session: { id: "parent" } };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent, childId: "child-p" });
 	await new Promise((r) => setImmediate(r));
 	const open = service.list()[0];
@@ -77,7 +77,7 @@ test("relay permission approval is routed through the bound parent agent", async
 			return { threadId: "thread-parent", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
 	service.bindChild("child-agent", { cli: "codex", parentAgent });
 	service.setChildCwd("child-agent", "/repo");
 	const value = await service.submitFromChild("child-agent", "task", undefined, childAgent);
@@ -98,7 +98,7 @@ test("a second permission request is rejected while one is pending", async () =>
 			return { threadId: "thread-b", text: "done" };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	assert.equal(secondError.code, "PERMISSION_REQUEST_BUSY");
@@ -109,7 +109,7 @@ test("a second permission request is rejected while one is pending", async () =>
 
 test("followup uses the same live driver run and status/list are secret-free", async () => {
 	const f = driverFixture();
-	const service = new ManagedCliAgentsService({ drivers: { codex: f.driver } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: f.driver } });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const next = await service.followup(first.session.sessionId, "second");
 	assert.equal(next.output, "next:second");
@@ -121,7 +121,7 @@ test("followup uses the same live driver run and status/list are secret-free", a
 
 test("concurrent followup is rejected with SESSION_BUSY", async () => {
 	const gate = deferred();
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, interrupt: async () => true, dispose: async () => {} }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, interrupt: async () => true, dispose: async () => {} }; } } } });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const pending = service.followup(first.session.sessionId, "slow");
 	await new Promise((r) => setImmediate(r));
@@ -132,7 +132,7 @@ test("concurrent followup is rejected with SESSION_BUSY", async () => {
 
 test("relay child binding creates then follows up the same managed session", async () => {
 	const f = driverFixture();
-	const service = new ManagedCliAgentsService({ drivers: { codex: f.driver } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: f.driver } });
 	service.bindChild("child-1", { cli: "codex" });
 	service.setChildCwd("child-1", "/repo");
 	service.beginChildEpoch("child-1");
@@ -159,7 +159,7 @@ test("interrupt clears a pending permission and marks the session interrupted", 
 			async dispose() {}
 		};
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "task", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	const sessionId = service.list()[0].sessionId;
@@ -174,7 +174,7 @@ test("interrupt clears a pending permission and marks the session interrupted", 
 test("interrupt delegates to active run and close disposes it", async () => {
 	const gate = deferred();
 	let interrupts = 0, disposed = 0;
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, interrupt: async () => { interrupts++; return true; }, dispose: async () => { disposed++; } }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, interrupt: async () => { interrupts++; return true; }, dispose: async () => { disposed++; } }; } } } });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const pending = service.followup(first.session.sessionId, "slow");
 	await new Promise((r) => setImmediate(r));
@@ -188,7 +188,7 @@ test("interrupt delegates to active run and close disposes it", async () => {
 
 test("release drops the subprocess but keeps the session and remote thread id", async () => {
 	let disposed = 0;
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "thread-rel", result: Promise.resolve({ threadId: "thread-rel", text: "first" }), followup: async () => ({ threadId: "thread-rel", text: "later" }), dispose: async () => { disposed++; } }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "thread-rel", result: Promise.resolve({ threadId: "thread-rel", text: "first" }), followup: async () => ({ threadId: "thread-rel", text: "later" }), dispose: async () => { disposed++; } }; } } } });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const released = await service.release(first.session.sessionId);
 	assert.equal(released.released, true);
@@ -200,7 +200,7 @@ test("release drops the subprocess but keeps the session and remote thread id", 
 test("release refuses while a turn is active", async () => {
 	const gate = deferred();
 	let disposed = 0;
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, dispose: async () => { disposed++; } }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), followup: () => gate.promise, dispose: async () => { disposed++; } }; } } } });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const pending = service.followup(first.session.sessionId, "slow");
 	await new Promise((r) => setImmediate(r));
@@ -213,7 +213,7 @@ test("release refuses while a turn is active", async () => {
 
 test("followup after release reattaches the same remote thread", async () => {
 	const calls = [];
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start(input) {
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start(input) {
 		calls.push(input);
 		return { remoteSessionId: input.resumeThreadId ?? "thread-new", result: Promise.resolve({ threadId: input.resumeThreadId ?? "thread-new", text: "first" }), followup: async () => ({ threadId: input.resumeThreadId ?? "thread-new", text: "reattached" }), dispose: async () => {} };
 	} } } });
@@ -229,7 +229,7 @@ test("followup after release reattaches the same remote thread", async () => {
 
 test("releaseChild frees the bound session when a relay epoch ends", async () => {
 	let disposed = 0;
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "thread-child", result: Promise.resolve({ threadId: "thread-child", text: "first" }), followup: async () => ({ threadId: "thread-child", text: "next" }), dispose: async () => { disposed++; } }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "thread-child", result: Promise.resolve({ threadId: "thread-child", text: "first" }), followup: async () => ({ threadId: "thread-child", text: "next" }), dispose: async () => { disposed++; } }; } } } });
 	service.bindChild("child-1", { cli: "codex", parentAgent: null });
 	service.setChildCwd("child-1", "/repo");
 	const first = await service.submitFromChild("child-1", "first", null, null);
@@ -243,21 +243,21 @@ test("releaseChild frees the bound session when a relay epoch ends", async () =>
 });
 
 test("releaseChild is a no-op for an unknown child", async () => {
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), dispose: async () => {} }; } } } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "t", result: Promise.resolve({ threadId: "t", text: "x" }), dispose: async () => {} }; } } } });
 	assert.deepEqual(await service.releaseChild("never-bound"), { released: false });
 });
 
 // ── Fine-grained permission gate + approval modes ────────────────────────────
 
 test("permissionSpec derives sandbox tier and approval policy from the profile", () => {
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => "workspace-write" });
 	assert.deepEqual(service.permissionSpec("codex"), {
 		permissionMode: "workspace-write",
 		approvalPolicy: "on-request",
 		sandbox: "workspace-write",
 		profile: { read: true, write: true, exec: true, network: false, approval: "ask" }
 	});
-	const denied = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, network: false, approval: "never" }) });
+	const denied = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, network: false, approval: "never" }) });
 	assert.equal(denied.permissionSpec("codex").approvalPolicy, "never");
 	assert.equal(denied.permissionSpec("codex").sandbox, "read-only");
 });
@@ -270,7 +270,7 @@ test("capability gate auto-rejects a request the profile does not grant", async 
 			return { threadId: "thread-g", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, network: false }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, network: false }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "rejected");
 	assert.equal(approvalCalls, 0); // never surfaced a prompt
@@ -286,7 +286,7 @@ test("approval=allow auto-accepts a granted capability without prompting", async
 			return { threadId: "thread-a", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "allow" }), approvalRequest: async () => { approvalCalls++; return "rejected"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "allow" }), approvalRequest: async () => { approvalCalls++; return "rejected"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "allowed-once");
 	assert.equal(approvalCalls, 0);
@@ -301,7 +301,7 @@ test("approval=never auto-rejects a granted capability without prompting", async
 			return { threadId: "thread-n", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "rejected");
 	assert.equal(approvalCalls, 0);
@@ -322,7 +322,7 @@ test("permissionSpec matrix derives sandbox and approval policy for every input"
 		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "workspace-write", approvalPolicy: "never", approval: "never" }
 	];
 	for (const c of cases) {
-		const service = new ManagedCliAgentsService({ drivers: { codex: { async start() {} } }, permissionSource: () => c.input });
+		const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => c.input });
 		const spec = service.permissionSpec("codex");
 		assert.equal(spec.sandbox, c.sandbox, `sandbox ${c.label}`);
 		assert.equal(spec.permissionMode, c.sandbox, `permissionMode ${c.label}`);
@@ -356,7 +356,7 @@ test("resolvePermission decision matrix never prompts for gate/allow/never", asy
 				return { threadId: `thread-${d.label}`, text: outcome };
 			})(), dispose: async () => {} };
 		} };
-		const service = new ManagedCliAgentsService({ drivers: { codex: driver }, permissionSource: () => d.profile, approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+		const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => d.profile, approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 		const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 		assert.equal(done.output, d.expected, `outcome ${d.label}`);
 		assert.equal(approvalCalls, 0, `no prompt ${d.label}`);
@@ -399,7 +399,7 @@ test("dispatch auto-continues an early-stopped turn and returns the cleaned answ
 		},
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, routeSource: () => ({ provider: "p", model: "m", reasoningEffort: "high" }), permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return run; } } }, routeSource: () => ({ provider: "p", model: "m", reasoningEffort: "high" }), permissionSource: () => "workspace-write" });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "调查新闻" });
 	assert.equal(followupCount, 1);
 	assert.deepEqual(followupPrompts, [AUTO_CONTINUE_PROMPT]);
@@ -417,7 +417,7 @@ test("dispatch never auto-continues a turn that already looks complete", async (
 		async followup() { followupCount++; return { threadId: "thread-c", text: "不应发生", toolRounds: 0, stopReason: "completed" }; },
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(followupCount, 0);
 	assert.equal(done.output, "这是完整的最终报告。\n- 要点一\n- 要点二");
@@ -434,7 +434,7 @@ test("auto-continue stops at the bound when every nudge still looks premature", 
 		},
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(followupCount, AUTO_CONTINUE_MAX);
 	assert.equal(done.session.status, "ready");
@@ -451,7 +451,7 @@ test("followup also auto-continues a premature early-stop", async () => {
 		},
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return run; } } }, permissionSource: () => "workspace-write" });
 	const first = await service.dispatch({ cwd: "/repo", prompt: "first" });
 	const next = await service.followup(first.session.sessionId, "second");
 	// dispatch: toolRounds 0 → no nudge; followup: premature → one nudge.
@@ -488,13 +488,13 @@ test("restore reloads durable sessions so followup reattaches the same thread", 
 	} };
 	// First process: dispatch persists the ready session, then release keeps
 	// it reattachable (run dropped, status ready, remote thread id preserved).
-	const first = new ManagedCliAgentsService({ drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
+	const first = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
 	const created = await first.dispatch({ cwd: "/repo", prompt: "first" });
 	await first.release(created.session.sessionId);
 	assert.equal(store.length, 1);
 	assert.equal(store[0].status, "ready");
 	// "Restart": a fresh service instance restores from the same store.
-	const second = new ManagedCliAgentsService({ drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
+	const second = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
 	const restored = await second.restore();
 	assert.equal(restored.restored, 1);
 	const status = second.list({ cli: "codex" });
@@ -516,7 +516,7 @@ test("restore skips closed sessions and records without a remote thread id", asy
 		]; },
 		async save() {}
 	};
-	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { throw new Error("should not start"); } } }, persist });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { throw new Error("should not start"); } } }, persist });
 	const restored = await service.restore();
 	assert.equal(restored.restored, 1);
 	assert.equal(service.list({ cli: "codex" }).length, 1);
@@ -529,7 +529,7 @@ test("dispatch writes the persisted store through the seam on success", async ()
 		async load() { return []; },
 		async save(sessions) { saved = { ...sessions[0] }; }
 	};
-	const service = new ManagedCliAgentsService({
+	const service = new ManagedCliAgentsService({ _skipAssert: true,
 		drivers: { codex: { async start() { return { remoteSessionId: "thread-p", result: Promise.resolve({ threadId: "thread-p", text: "done", stopReason: "completed" }), followup: async () => ({ threadId: "thread-p", text: "x" }), dispose: async () => {} }; } } },
 		persist,
 		permissionSource: () => "workspace-write"
@@ -547,7 +547,7 @@ test("followup after restore reattaches without a pre-existing run", async () =>
 		async load() { return [{ sessionId: "s-r", cli: "codex", cwd: "/repo", provider: "p", model: "m", reasoningEffort: "", permissionMode: "read-only", status: "ready", createdAt: "t0", updatedAt: "t1", lastError: null, remoteSessionId: "thread-r" }]; },
 		async save() {}
 	};
-	const service = new ManagedCliAgentsService({
+	const service = new ManagedCliAgentsService({ _skipAssert: true,
 		drivers: { codex: { async start(input) { calls.push(input); return { remoteSessionId: input.resumeThreadId ?? "x", result: Promise.resolve({ threadId: input.resumeThreadId ?? "x", text: "ok" }), followup: async () => ({ threadId: input.resumeThreadId ?? "x", text: "reattached" }), dispose: async () => {} }; } } },
 		persist
 	});
@@ -567,7 +567,7 @@ test("autoContinueSource with enabled:false skips nudging entirely", async () =>
 		async followup() { followupCount++; return { threadId: "thread-off", text: "更多内容。", stopReason: "completed" }; },
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({
+	const service = new ManagedCliAgentsService({ _skipAssert: true,
 		drivers: { codex: { async start() { return run; } } },
 		autoContinueSource: () => ({ enabled: false }),
 		permissionSource: () => "workspace-write"
@@ -585,7 +585,7 @@ test("autoContinueSource max caps nudge rounds below the default", async () => {
 		async followup() { followupCount++; return { threadId: "thread-cap", text: "继续推进中。现在做下一步。", toolRounds: 1, stopReason: "completed" }; },
 		async dispose() {}
 	};
-	const service = new ManagedCliAgentsService({
+	const service = new ManagedCliAgentsService({ _skipAssert: true,
 		drivers: { codex: { async start() { return run; } } },
 		autoContinueSource: () => ({ enabled: true, max: 1 }),
 		permissionSource: () => "workspace-write"
@@ -593,4 +593,72 @@ test("autoContinueSource max caps nudge rounds below the default", async () => {
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(followupCount, 1);
 	assert.equal(done.session.status, "ready");
+});
+
+// ── Multi-CLI driver dispatch (Round 1 refactor) ────────────────────────────
+// These tests cover the move from a single hard-coded `drivers.codex` to a
+// `drivers[cli]` map. The fake drivers here are intentionally minimal — the
+// service-level tests above use `_skipAssert: true` for the same reason.
+
+test("dispatch routes to the driver registered under the requested CLI id", async () => {
+	const codexStartCalls = [];
+	const claudeStartCalls = [];
+	const codexDriver = { async start(input) { codexStartCalls.push(input); return { remoteSessionId: "codex-t", result: Promise.resolve({ threadId: "codex-t", text: "from-codex", stopReason: "completed" }), followup: async () => ({ threadId: "codex-t", text: "x" }), dispose: async () => {} }; } };
+	const claudeDriver = { async start(input) { claudeStartCalls.push(input); return { remoteSessionId: "claude-t", result: Promise.resolve({ threadId: "claude-t", text: "from-claude", stopReason: "completed" }), followup: async () => ({ threadId: "claude-t", text: "x" }), dispose: async () => {} }; } };
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: codexDriver, claude: claudeDriver }, permissionSource: () => "read-only" });
+	const codex = await service.dispatch({ cli: "codex", cwd: "/r", prompt: "hi" });
+	const claude = await service.dispatch({ cli: "claude", cwd: "/r", prompt: "hi" });
+	assert.equal(codex.output, "from-codex");
+	assert.equal(codex.session.cli, "codex");
+	assert.equal(claude.output, "from-claude");
+	assert.equal(claude.session.cli, "claude");
+	assert.equal(codexStartCalls.length, 1);
+	assert.equal(claudeStartCalls.length, 1);
+});
+
+test("dispatch rejects an unregistered CLI id with CLI_UNSUPPORTED", async () => {
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "x", result: Promise.resolve({ threadId: "x", text: "", stopReason: "completed" }), followup: async () => ({}), dispose: async () => {} }; } } }, permissionSource: () => "read-only" });
+	await assert.rejects(
+		service.dispatch({ cli: "qwen", cwd: "/r", prompt: "hi" }),
+		(error) => error.code === "CLI_UNSUPPORTED" && /qwen/.test(error.message) && /codex/.test(error.message)
+	);
+});
+
+test("constructor validates every driver against the contract when assertion is enabled", () => {
+	const invalid = { async start() { return { remoteSessionId: "x", result: Promise.resolve({ threadId: "x", text: "", stopReason: "completed" }), followup: async () => ({}), dispose: async () => {} }; } };
+	// Missing `id` and `capabilities` → must reject.
+	assert.throws(() => new ManagedCliAgentsService({ drivers: { codex: invalid }, permissionSource: () => "read-only" }), /id must be non-empty/);
+	// A driver that passes the contract → must succeed.
+	const valid = { id: "codex-app-server", capabilities: { streaming: true, continuable: true, durableResume: true, modelOverride: true, reasoningEffort: true, cwd: true, interrupt: true, interactivePermissions: true, structuredOutput: false, toolFilter: false, persona: false }, async start() { return { remoteSessionId: "x", result: Promise.resolve({ threadId: "x", text: "", stopReason: "completed" }), followup: async () => ({}), dispose: async () => {} }; } };
+	assert.doesNotThrow(() => new ManagedCliAgentsService({ drivers: { codex: valid }, permissionSource: () => "read-only" }));
+});
+
+test("restore skips records whose CLI is no longer registered", async () => {
+	let saved = [
+		{ sessionId: "cli-codex-1", cli: "codex", cwd: "/r", remoteSessionId: "t-1", permissionMode: "read-only", provider: "", model: "", reasoningEffort: "", status: "ready", createdAt: "x", updatedAt: "x", lastError: null },
+		{ sessionId: "cli-claude-1", cli: "claude", cwd: "/r", remoteSessionId: "t-2", permissionMode: "read-only", provider: "", model: "", reasoningEffort: "", status: "ready", createdAt: "x", updatedAt: "x", lastError: null }
+	];
+	const persist = { async load() { return saved; }, async save() {} };
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() { return { remoteSessionId: "t-1", result: Promise.resolve({ threadId: "t-1", text: "", stopReason: "completed" }), followup: async () => ({}), dispose: async () => {} }; } } }, permissionSource: () => "read-only", persist });
+	const { restored } = await service.restore();
+	assert.equal(restored, 1); // only codex; claude has no driver registered
+	assert.equal(service.list().length, 1);
+	assert.equal(service.list()[0].cli, "codex");
+});
+
+test("looksPrematureOutput flags English intent tails like 'I will now ...'", () => {
+	// Round 1: English tails are now recognised alongside the Chinese ones.
+	assert.equal(looksPrematureOutput("Investigating the bug. I will now check the failing test.", 0), true);
+	assert.equal(looksPrematureOutput("Looking at this. Let me look at the routes file.", 0), true);
+	assert.equal(looksPrematureOutput("Working through it. Now I'll fetch the test logs.", 0), true);
+	// Mixed-language content also detected.
+	assert.equal(looksPrematureOutput("Bug found. 我会修复它.", 0), true);
+	// Genuinely finished answers are not flagged.
+	assert.equal(looksPrematureOutput("The fix is in src/fix.js. Tests pass: 12/12.", 5), false);
+	assert.equal(looksPrematureOutput("Done — no further action needed.", 0), false);
+});
+
+test("autoContinuePrompt is preserved (中文模板未变)", () => {
+	assert.equal(AUTO_CONTINUE_PROMPT, "请继续完成你的任务，把最终结果完整输出给我。不要只描述计划或过程。");
+	assert.equal(AUTO_CONTINUE_MAX, 3);
 });

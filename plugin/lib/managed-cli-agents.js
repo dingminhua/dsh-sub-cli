@@ -5,22 +5,32 @@
 import { randomUUID } from "node:crypto";
 import { normalizePermission, deriveSandboxMode, allowsCapability } from "./permissions.js";
 import { DEFAULT_PERMISSION } from "./registry.js";
+import { assertManagedCliDriver } from "./drivers/types.js";
 
 const TERMINAL = new Set(["closed"]);
 
 // Auto-continue: some supplier-paired models end a turn early on long
 // tool-driven tasks — the turn completes with a "I will now do X" commitment
 // instead of the final result. The driver faithfully waits for turn/completed;
-// to still return a complete answer from a single cli_codex_direct call we
+// to still return a complete answer from a single cli_*_direct call we
 // nudge the same thread (bounded). This is model/supplier-agnostic: any model
 // that stops after a plan sentence benefits, including ones whose provider
 // config the user changes later.
 export const AUTO_CONTINUE_MAX = 3;
 export const AUTO_CONTINUE_PROMPT = "请继续完成你的任务，把最终结果完整输出给我。不要只描述计划或过程。";
+
 // An "intent tail": the last sentence still commits to future work (will do /
 // about to / now I) instead of delivering the result. We look at the final
 // sentence, because these models often stop right after stating a plan.
-const INTENT_TAIL = /(?:我会|我将|我先|让我|现在|接下来|然后|继续|准备|马上|即将|随后|正在|打算|稍后|先)(?:[^。！？!?]{0,60})[。！？!?]?$/;
+//
+// Both Chinese and English tails are recognised so the same auto-continue loop
+// works for Codex (often Chinese), Claude (English), and Qwen (mixed) without
+// per-CLI branches. Each keyword matches when it opens a sentence-ending tail,
+// so we keep the regex strict (anchored to the tail) and broad (multiple
+// alternates) to balance false positives against missed premature stops.
+const INTENT_HEAD_CN = "(?:我会|我将|我先|让我|现在|接下来|然后|继续|准备|马上|即将|随后|正在|打算|稍后|先)";
+const INTENT_HEAD_EN = "(?:I'll|I will|I'm going to|Let me|Now (?:I|'ll)|Next,? (?:I|'ll)|Then (?:I|'ll)|Continuing|About to|Going to|I'm (?:going|about)|I plan to|I intend to|First,? (?:I|'ll))";
+const INTENT_TAIL = new RegExp(`(?:${INTENT_HEAD_CN}|${INTENT_HEAD_EN})(?:[^。！？!?\\.\\n]{0,120})[。！？!?\\.]?$`);
 
 /**
  * Decide whether a finished turn looks like a premature stop that deserves an
@@ -31,7 +41,11 @@ const INTENT_TAIL = /(?:我会|我将|我先|让我|现在|接下来|然后|继�
 export function looksPrematureOutput(text, toolRounds) {
 	const trimmed = String(text ?? "").trim();
 	if (!trimmed) return true; // empty result → nudge
-	const sentences = trimmed.split(/[。！？!?]/).map((s) => s.trim()).filter(Boolean);
+	// Split on the last terminal punctuation to isolate the final sentence.
+	// Mixed-language output may end with . ? ! or fullwidth equivalents; the
+	// split below keeps the trailing punctuation with the last sentence so the
+	// regex can match it as the boundary.
+	const sentences = trimmed.split(/(?<=[。！？!?\.])\s*/u).map((s) => s.trim()).filter(Boolean);
 	const last = sentences[sentences.length - 1] || trimmed;
 	return INTENT_TAIL.test(last);
 }
@@ -78,9 +92,28 @@ function snapshot(record) {
 }
 
 export class ManagedCliAgentsService {
-	constructor({ drivers, routeSource, permissionSource, approvalRequest, persist = null, autoContinueSource = null }) {
-		if (!drivers?.codex) throw new TypeError("managedCliAgents requires a Codex driver");
-		this.drivers = drivers;
+	/**
+	 * @param {{ drivers: Record<string, object>, routeSource, permissionSource, approvalRequest, persist?, autoContinueSource?, _skipAssert? }} options
+	 *   drivers maps CLI id → driver instance (codex, claude, qwen …). At least one
+	 *   driver must be present; the constructor validates the map shape.
+	 *   Set `_skipAssert = true` in unit tests that use minimal driver fakes;
+	 *   production always asserts the full contract.
+	 */
+	constructor({ drivers, routeSource, permissionSource, approvalRequest, persist = null, autoContinueSource = null, _skipAssert = false }) {
+		if (!drivers || typeof drivers !== "object") throw new TypeError("managedCliAgents requires a drivers map");
+		const ids = Object.keys(drivers);
+		if (!ids.length) throw new TypeError("managedCliAgents requires at least one driver");
+		// Validate that every entry satisfies the driver contract (skip only in tests
+		// that use intentionally minimal fakes and test service logic, not driver contracts).
+		if (!_skipAssert) {
+			for (const id of ids) {
+				try { assertManagedCliDriver(drivers[id]); } catch (e) {
+					throw new TypeError(`driver "${id}" does not satisfy the managed CLI contract: ${e.message}`);
+				}
+			}
+		}
+		this.drivers = Object.freeze({ ...drivers });
+		this.driverIds = Object.freeze([...ids]);
 		this.routeSource = typeof routeSource === "function" ? routeSource : () => ({});
 		this.permissionSource = typeof permissionSource === "function" ? permissionSource : () => "read-only";
 		this.approvalRequest = typeof approvalRequest === "function" ? approvalRequest : async () => "unavailable";
@@ -106,11 +139,15 @@ export class ManagedCliAgentsService {
 		for (const rec of Array.isArray(saved) ? saved : []) {
 			if (!rec || typeof rec.sessionId !== "string" || !rec.remoteSessionId) continue;
 			if (this.records.has(rec.sessionId)) continue;
+			// Drop records whose CLI is no longer registered; persisting a stale
+			// cli id (e.g. an old "claude" record after a driver was removed)
+			// would force every restore path to special-case unknown ids.
+			if (typeof rec.cli !== "string" || !this.drivers[rec.cli]) continue;
 			if (rec.status === "closed") continue; // closed 是终态，不恢复
 			// 只恢复能 reattach 的非终态会话：run 置空，followup 时走 reattach。
 			const record = {
 				sessionId: rec.sessionId,
-				cli: rec.cli === "codex" ? "codex" : "codex",
+				cli: rec.cli,
 				cwd: rec.cwd,
 				provider: rec.provider || "",
 				model: rec.model || "",
@@ -243,7 +280,8 @@ export class ManagedCliAgentsService {
 	}
 
 	async dispatch({ cli = "codex", cwd, prompt, signal, agent = null, childId = null }) {
-		if (cli !== "codex") throw errorOf("CLI_UNSUPPORTED", `managed session CLI ${cli} is not supported yet`);
+		const driver = this.drivers[cli];
+		if (!driver) throw errorOf("CLI_UNSUPPORTED", `managed CLI "${cli}" is not registered. Available: ${this.driverIds.join(", ")}`);
 		if (typeof cwd !== "string" || !cwd) throw errorOf("SESSION_CWD_REQUIRED", "managed CLI session requires cwd");
 		if (typeof prompt !== "string" || !prompt.trim()) throw errorOf("SESSION_PROMPT_REQUIRED", "managed CLI session prompt must not be empty");
 		const route = await this.routeSource(cli) ?? {};
@@ -259,7 +297,7 @@ export class ManagedCliAgentsService {
 		};
 		this.records.set(sessionId, record);
 		try {
-			record.run = await this.drivers.codex.start({
+			record.run = await driver.start({
 				cwd, prompt, model: record.model || undefined, reasoningEffort: record.reasoningEffort || undefined,
 				approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox, signal,
 				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
@@ -325,14 +363,18 @@ export class ManagedCliAgentsService {
 		}
 	}
 
-	// Reopen a released session: a fresh app-server process reattaches the same
-	// remote Codex thread. Used so idle sessions do not hold a live subprocess.
+	// Reopen a released session: a fresh driver process reattaches the same
+	// remote thread. Used so idle sessions do not hold a live subprocess.
+	// Subclasses that need a different reattach protocol (e.g. subprocess+--resume)
+	// can override this method.
 	async reattach(record, { agent = null, childId = null, signal = null } = {}) {
 		if (!record.remoteSessionId) throw errorOf("SESSION_NOT_LIVE", `managed CLI session ${record.sessionId} has no remote thread to reattach`);
 		if (record.activeTurn) throw errorOf("SESSION_BUSY", `managed CLI session ${record.sessionId} already has an active turn`);
+		const driver = this.drivers[record.cli];
+		if (!driver) throw errorOf("CLI_UNSUPPORTED", `cannot reattach unknown CLI "${record.cli}"`);
 		record.status = "starting";
 		record.updatedAt = now();
-		record.run = await this.drivers.codex.start({
+		record.run = await driver.start({
 			cwd: record.cwd,
 			attachOnly: true,
 			resumeThreadId: record.remoteSessionId,
