@@ -16,7 +16,9 @@
 - **三层模型路由**：每个 CLI 可独立选 Provider → 模型 → 推理强度；
 - **无头派发**：`cli_dispatch` 工具用 argv 数组执行 CLI，不用 shell 字符串拼接，处理超时、输出上限、退出码和 stderr；
 - **Codex 持续会话**：首轮 `cli_codex_direct` 返回稳定 `sessionId`；后续工具直接进入同一个 Codex thread，不经过 relay 模型；
-- **配置持久化**：统一目录与模型路由通过 `installSettingsSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。当前 Codex 会话 Registry 为 Host 内存态，Host 重启后需重新创建会话；持久恢复将在后续版本接入 DSH storage。
+- **配置持久化**：统一目录与模型路由通过 `installSettingsSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。
+- **Codex 会话持久化**：会话注册表（含远程 Codex thread id）写入统一目录的 `sessions.json`，Host 重启后 `cli_codex_followup` 直接按 `sessionId` 恢复并 reattach 同一 thread，无需重新创建。
+- **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_codex_direct` 即返回完整报告。每个 CLI 可在设置卡里开关（`enabled`）并调整续接次数（`max`，默认 3）。**泛化评估结论**：该机制依赖"同一 Codex thread 的 followup"，仅对 Codex 会话式调用生效；Claude Code / Qwen Code 走一次性 provider（每次全新进程、无 thread 可续接），故暂不适用，若后续为其接入会话式驱动可复用同一逻辑。
 
 ## 安装
 
@@ -68,6 +70,8 @@ cli_codex_interrupt(sessionId)          # 中断当前 turn，保留 thread
 | `models.<cli>.provider` | 该 CLI 的推理 Provider |
 | `models.<cli>.model` | 该 CLI 的模型 |
 | `models.<cli>.reasoningEffort` | 该 CLI 的推理强度 |
+| `autoContinue.<cli>.enabled` | 自动补全开关（默认 `true`；仅 Codex 会话式生效） |
+| `autoContinue.<cli>.max` | 自动补全最多续接次数（1–10，默认 3） |
 
 `<cli>` 取值：`codex` / `claude` / `qwen`。
 

@@ -86,8 +86,11 @@ cd plugin && npm pack --dry-run
 `~/.dsh/.credentials.yaml`，用插件的真实代码路径（registry argv 模板、
 权限能力开关 → 沙箱档位推导、verify 配置渲染）构造命令，然后真实启动
 codex/claude/qwen 二进制各跑一个最小任务，并逐项断言：安装存在性、路由、
-权限档位 → argv 标志映射、隔离配置落盘、真实运行退出码与输出。任何一步
-失败都会以非零退出码报告。它只读凭据、绝不打印 API key。
+权限档位 → argv 标志映射、隔离配置落盘、真实运行退出码与输出。它还会：
+纯逻辑断言 `CLI_SUBAGENT_TOOLS` 不含 `cli_codex` 别名、`isOkReply` 容忍
+`OK\nOK` 回声；以及 Codex 双模式会话（真实 app-server + 当前路由）——
+直连 `dispatch` 与代理 `bindChild/submitFromChild` 两轮同一 session 且输出
+完整。任何一步失败都会以非零退出码报告。它只读凭据、绝不打印 API key。
 
 ## License
 

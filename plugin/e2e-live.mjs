@@ -27,7 +27,10 @@ import { CLI_REGISTRY, cliById } from "./lib/registry.js";
 import { envFor, binPath, PLATFORM } from "./lib/paths.js";
 import { normalizePermission, deriveSandboxMode } from "./lib/permissions.js";
 import { winShimArgv } from "./lib/dispatch.js";
-import { codexToml, gateToml, qwenSettings, fingerprint, stripTrailingV1 } from "./lib/verify.js";
+import { codexToml, gateToml, qwenSettings, fingerprint, stripTrailingV1, isOkReply } from "./lib/verify.js";
+import { CLI_SUBAGENT_TOOLS } from "./lib/subagent-tools.js";
+import { CodexAppServerDriver } from "./lib/drivers/codex-app-server.js";
+import { ManagedCliAgentsService } from "./lib/managed-cli-agents.js";
 
 // ── minimal settings.yaml extraction (only the bits the plugin owns) ─────────
 
@@ -216,6 +219,26 @@ async function main() {
 
 	let failures = 0;
 
+	// ── pure invariants (no network / no binary required) ─────────────────────
+	// 1) The `cli_codex` alias is gone: Codex exposes only explicit modes, so the
+	//    model-facing tool table must NOT register a `cli_codex` name anymore.
+	const toolNames = CLI_SUBAGENT_TOOLS.map((s) => s.toolName);
+	const hasCodexAlias = toolNames.includes("cli_codex");
+	const hasCodexDirect = toolNames.includes("cli_codex_direct");
+	console.log(`  [${hasCodexAlias ? "FAIL" : "ok"}] CLI_SUBAGENT_TOOLS 不含 cli_codex 别名（直连=${hasCodexDirect}）`);
+	if (hasCodexAlias) failures++;
+	if (!hasCodexDirect) { console.log("  [FAIL] CLI_SUBAGENT_TOOLS 缺少 cli_codex_direct"); failures++; }
+	// 2) Probe tolerance: some suppliers echo `Reply with exactly: OK` as a multi-line
+	//    `OK\nOK`; isOkReply must accept every-all-OK lines (the regression that
+	//    previously blocked provider changes from being perceived).
+	const okEcho = isOkReply("OK\nOK\nOK\nOK");
+	console.log(`  [${okEcho ? "ok" : "FAIL"}] isOkReply 容忍多行 OK 回声（OK\\nOK×4）`);
+	if (!okEcho) failures++;
+	const okReject = !isOkReply("OK\n再见");
+	console.log(`  [${okReject ? "ok" : "FAIL"}] isOkReply 拒绝非 OK 行`);
+	if (!okReject) failures++;
+	console.log("");
+
 	for (const entry of CLI_REGISTRY) {
 		console.log(`── ${entry.name} (${entry.id}) ──────────────────────────`);
 		const bin = binPath(dir, entry.bin);
@@ -309,6 +332,79 @@ async function main() {
 			failures++;
 		}
 		console.log("");
+	}
+
+	// ── Codex 双模式会话验证（真实 app-server + 真实网络）─────────────────────
+	// 直连 = service.dispatch（cli_codex_direct 的路径）；代理 = bindChild +
+	// submitFromChild（cli_codex_subagent 背后 Relay 子代理的提交路径）。两者走
+	// 同一个真实驱动、同一份 app-server 二进制与当前路由。config-codex/config.toml
+	// 已由上方逐 CLI 段写入当前路由。
+	{
+		const entry = cliById("codex");
+		const bin = binPath(dir, entry.bin);
+		const route = models.codex;
+		const pc = route && route.provider ? providers[route.provider] : null;
+		const key = pc ? creds[pc.apiKeyEnv] : null;
+		if (existsSync(bin) && route && route.provider && route.model && pc && key) {
+			console.log(`── Codex 双模式会话（真实 app-server + 网络）─────────────────────`);
+			const permission = permissions.codex ?? "workspace-write";
+			const createTransport = async (request) => {
+				// 必须继承 process.env：统一目录里的 codex 是 `#!/usr/bin/env node`
+				// shim，靠 PATH 定位 node；只传隔离 env 会 127。
+				const env = { ...process.env, ...envFor(entry, dir), [pc.apiKeyEnv]: key };
+				const child = spawn(bin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "inherit"], cwd: request.cwd });
+				const listeners = new Set();
+				const closeListeners = new Set();
+				let buf = "";
+				child.stdout.on("data", (chunk) => {
+					buf += chunk.toString();
+					let nl;
+					while ((nl = buf.indexOf("\n")) >= 0) {
+						const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+						for (const l of [...listeners]) { try { l(line); } catch {} }
+					}
+				});
+				child.on("close", (code) => { for (const l of [...closeListeners]) l(new Error(`codex app-server exited ${code}`)); });
+				child.on("error", (error) => { for (const l of [...closeListeners]) l(error); });
+				return {
+					write(text) { return new Promise((res, rej) => child.stdin.write(text, (e) => (e ? rej(e) : res()))); },
+					onLine(l) { listeners.add(l); return () => listeners.delete(l); },
+					onClose(l) { closeListeners.add(l); return () => closeListeners.delete(l); },
+					async dispose() { try { child.kill("SIGTERM"); } catch {} }
+				};
+			};
+			const driver = new CodexAppServerDriver({ createTransport, requestTimeoutMs: 30000, turnTimeoutMs: 300000 });
+			const service = new ManagedCliAgentsService({
+				drivers: { codex: driver },
+				routeSource: () => ({ provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort }),
+				permissionSource: () => permission,
+				approvalRequest: async () => (normalizePermission(permission).approval === "never" ? "rejected" : "allowed-once")
+			});
+			try {
+				const signal = new AbortController().signal;
+				const direct = await service.dispatch({ cli: "codex", cwd: dir, prompt: "请只用一句话回答：Codex 直连 OK。不要使用任何工具。", signal });
+				const directOk = direct.stopReason === "completed" && direct.output.trim().length > 0;
+				console.log(`  [${directOk ? "ok" : "FAIL"}] 直连 dispatch stopReason=${direct.stopReason} output=${JSON.stringify(direct.output.slice(0, 90))}`);
+				if (!directOk) failures++;
+				service.bindChild("e2e-child", { cli: "codex", parentAgent: null });
+				service.setChildCwd("e2e-child", dir);
+				const proxy1 = await service.submitFromChild("e2e-child", "请只用一句话回答：Codex 代理第一轮 OK。不要使用任何工具。", signal, null);
+				const sessionId = proxy1.session.sessionId;
+				const proxy2 = await service.submitFromChild("e2e-child", "请只用一句话回答：Codex 代理第二轮 OK（同一会话）。不要使用任何工具。", signal, null);
+				const proxyOk = proxy1.stopReason === "completed" && proxy2.session.sessionId === sessionId && proxy2.output.trim().length > 0;
+				console.log(`  [${proxyOk ? "ok" : "FAIL"}] 代理 submitFromChild 两轮同一会话 ${sessionId} output=${JSON.stringify(proxy2.output.slice(0, 90))}`);
+				if (!proxyOk) failures++;
+				await service.close(sessionId).catch(() => {});
+			} catch (error) {
+				console.log(`  [FAIL] Codex 双模式会话异常: ${error instanceof Error ? error.message : String(error)}`);
+				failures++;
+			} finally {
+				await service.dispose().catch(() => {});
+			}
+			console.log("");
+		} else {
+			console.log(`── Codex 双模式会话（跳过：缺安装/路由/凭据，见上方逐 CLI 诊断─────`);
+		}
 	}
 
 	console.log(failures === 0 ? "✅ 全部真实场景通过" : `❌ ${failures} 个场景失败`);

@@ -59,11 +59,20 @@ const PERMISSION_ENTRY = z.object({
 	approval: z.string().default("ask")
 });
 
+// Per-CLI auto-continue knobs: when a finished turn looks like a premature
+// stop, the service nudges the same Codex thread up to `max` times so one call
+// returns a complete answer. `enabled:false` disables nudge entirely.
+const AUTO_CONTINUE_ENTRY = z.object({
+	enabled: z.boolean().default(true),
+	max: z.number().min(1).max(10).default(3)
+}).default({});
+
 const SCHEMA = z.object({
 	cliDir: z.string().default(""),
 	models: z.dict(MODEL_ENTRY).default({}),
 	permissions: z.dict(z.union([z.string(), PERMISSION_ENTRY])).default({}),
-	verified: z.dict(VERIFIED_ENTRY).default({})
+	verified: z.dict(VERIFIED_ENTRY).default({}),
+	autoContinue: z.dict(AUTO_CONTINUE_ENTRY).default({})
 }).default({});
 
 /** Current settings value read from the live settings scope. */
@@ -78,6 +87,40 @@ function currentSection() {
 
 function currentDir() {
 	return resolveDir(currentSection());
+}
+
+/**
+ * Durable Codex session store backed by the DSH fs service. Sessions live in
+ * `<unifiedDir>/sessions.json` so they ride along with the plugin's own managed
+ * directory and never touch user config. Records contain no keys. Load never
+ * throws (missing file → []); save failures are silent (next state change
+ * retries), mirroring the in-memory fallback when fs is absent.
+ */
+function createSessionPersist(ctx, dirSource) {
+	const fs = ctx.get("fs");
+	const file = () => path.join(typeof dirSource === "function" ? dirSource() : resolveDir(currentSection()), "sessions.json");
+	return {
+		async load() {
+			if (!fs) return [];
+			try {
+				const target = await fs.resolve(file());
+				const text = await fs.readText(target);
+				const data = JSON.parse(text);
+				return Array.isArray(data && data.sessions) ? data.sessions : [];
+			} catch {
+				return [];
+			}
+		},
+		async save(sessions) {
+			if (!fs) return;
+			try {
+				const target = await fs.resolve(file());
+				await fs.writeText(target, JSON.stringify({ version: 1, sessions }, null, 2));
+			} catch {
+				// 静默：统一目录尚不存在或不可写时跳过，下次状态变更重试。
+			}
+		}
+	};
 }
 
 /** Run one subprocess argv and return { exitCode, stdout, stderr }. */
@@ -137,7 +180,7 @@ async function preflightCli(ctx, cliId) {
 	return { ok: false, error: probe.error };
 }
 
-export function apply(ctx) {
+export async function apply(ctx) {
 	// Persist cliDir + per-CLI model route in the `dsh-sub-cli` settings section.
 	installSettingsSection(ctx, SETTINGS_NS, SCHEMA, {}, {
 		setSource: (current) => {
@@ -236,11 +279,16 @@ export function apply(ctx) {
 		drivers,
 		routeSource: (cliId) => currentSection()?.models?.[cliId] ?? {},
 		permissionSource: (cliId) => permissionOf(ctx, cliId),
+		autoContinueSource: (cliId) => currentSection()?.autoContinue?.[cliId] ?? {},
+		persist: createSessionPersist(ctx, currentDir),
 		approvalRequest: (request, { agent, signal }) => {
 			if (!agent || !ctx.approval || typeof ctx.approval.request !== "function") return "unavailable";
 			return ctx.approval.request({ agent, signal, toolName: "managed_cli_submit", reason: permissionReason(request) });
 		}
 	});
+	// 重启后恢复持久化的 Codex 会话（remoteSessionId 保活），这样 followup 可
+	// 直接 reattach 同一 thread，不必重新创建。
+	await managedCliAgents.restore();
 	if (typeof ctx.provide === "function") ctx.provide("managedCliAgents", managedCliAgents);
 	ctx.effect(() => () => managedCliAgents.dispose());
 	registerCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, {

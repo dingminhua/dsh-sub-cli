@@ -38,6 +38,25 @@ export function looksPrematureOutput(text, toolRounds) {
 
 function now() { return new Date().toISOString(); }
 function errorOf(code, message) { const error = new Error(message); error.code = code; return error; }
+
+/** Durable view of a session record: never serializes live run/pending state. */
+export function persistable(record) {
+	return Object.freeze({
+		sessionId: record.sessionId,
+		cli: record.cli,
+		cwd: record.cwd,
+		provider: record.provider || "",
+		model: record.model || "",
+		reasoningEffort: record.reasoningEffort || "",
+		permissionMode: record.permissionMode,
+		status: record.status,
+		createdAt: record.createdAt,
+		updatedAt: record.updatedAt,
+		lastError: record.lastError ?? null,
+		remoteSessionId: record.remoteSessionId ?? null
+	});
+}
+
 function snapshot(record) {
 	return Object.freeze({
 		sessionId: record.sessionId,
@@ -59,14 +78,69 @@ function snapshot(record) {
 }
 
 export class ManagedCliAgentsService {
-	constructor({ drivers, routeSource, permissionSource, approvalRequest }) {
+	constructor({ drivers, routeSource, permissionSource, approvalRequest, persist = null, autoContinueSource = null }) {
 		if (!drivers?.codex) throw new TypeError("managedCliAgents requires a Codex driver");
 		this.drivers = drivers;
 		this.routeSource = typeof routeSource === "function" ? routeSource : () => ({});
 		this.permissionSource = typeof permissionSource === "function" ? permissionSource : () => "read-only";
 		this.approvalRequest = typeof approvalRequest === "function" ? approvalRequest : async () => "unavailable";
+		// Optional durable persistence seam: { load(): Promise<SavedSession[]>, save(sessions): Promise<void> }.
+		// When absent the service stays in-memory. Records never contain keys.
+		this.persist = persist && typeof persist.load === "function" && typeof persist.save === "function" ? persist : null;
+		// Optional per-CLI auto-continue config: (cliId) => { enabled?: boolean, max?: number }.
+		this.autoContinueSource = typeof autoContinueSource === "function" ? autoContinueSource : null;
 		this.records = new Map();
 		this.childBindings = new Map();
+	}
+
+	/** Restore durable session records from the persistence seam (idempotent). */
+	async restore() {
+		if (!this.persist) return { restored: 0 };
+		let saved;
+		try {
+			saved = await this.persist.load();
+		} catch {
+			return { restored: 0, error: "sessions load failed" };
+		}
+		let restored = 0;
+		for (const rec of Array.isArray(saved) ? saved : []) {
+			if (!rec || typeof rec.sessionId !== "string" || !rec.remoteSessionId) continue;
+			if (this.records.has(rec.sessionId)) continue;
+			if (rec.status === "closed") continue; // closed 是终态，不恢复
+			// 只恢复能 reattach 的非终态会话：run 置空，followup 时走 reattach。
+			const record = {
+				sessionId: rec.sessionId,
+				cli: rec.cli === "codex" ? "codex" : "codex",
+				cwd: rec.cwd,
+				provider: rec.provider || "",
+				model: rec.model || "",
+				reasoningEffort: rec.reasoningEffort || "",
+				permissionMode: rec.permissionMode,
+				status: "ready",
+				activeTurn: false,
+				createdAt: rec.createdAt,
+				updatedAt: rec.updatedAt,
+				lastError: rec.lastError ?? null,
+				run: null,
+				remoteSessionId: rec.remoteSessionId,
+				pendingPermission: null,
+				lastPermissionDecision: null
+			};
+			this.records.set(record.sessionId, record);
+			restored++;
+		}
+		return { restored };
+	}
+
+	/** Persist all session records through the seam; failures never throw. */
+	async persistNow() {
+		if (!this.persist) return;
+		const saved = [...this.records.values()].map(persistable);
+		try {
+			await this.persist.save(saved);
+		} catch {
+			// 持久化失败不阻断主流程；下次状态变更会再次尝试。
+		}
 	}
 
 	permissionSpec(cli) {
@@ -87,14 +161,20 @@ export class ManagedCliAgentsService {
 	// (tool work happened but the text ends with a continuation commitment), push
 	// the same thread a bounded number of times so a single dispatch returns a
 	// complete answer. Each nudge is a real followup turn on the same thread.
+	// Per-CLI config (autoContinueSource) can disable it (enabled:false) or tune
+	// the bound (max). Disabled → return the raw result unchanged.
 	async settleWithAutoContinue(record, result, { agent = null, childId = null, signal = null } = {}) {
 		let text = result.text || "";
 		let toolRounds = Number.isInteger(result.toolRounds) ? result.toolRounds : 0;
 		let last = result;
+		const raw = { text, stopReason: result.stopReason ?? "completed", threadId: result.threadId ?? record.run?.remoteSessionId ?? null };
+		const cfg = this.autoContinueSource ? (this.autoContinueSource(record.cli) ?? {}) : {};
+		if (cfg.enabled === false) return raw;
+		const max = Number.isInteger(cfg.max) && cfg.max > 0 ? cfg.max : AUTO_CONTINUE_MAX;
 		// When nudging, remember the newest block so we can drop progress-fragment
 		// noise once a real (long) answer finally lands.
 		let added = "";
-		for (let i = 0; i < AUTO_CONTINUE_MAX; i++) {
+		for (let i = 0; i < max; i++) {
 			if (!looksPrematureOutput(text, toolRounds)) break;
 			record.updatedAt = now();
 			last = await record.run.followup(AUTO_CONTINUE_PROMPT, {
@@ -194,6 +274,7 @@ export class ManagedCliAgentsService {
 			record.status = "ready";
 			record.activeTurn = false;
 			record.updatedAt = now();
+			await this.persistNow();
 			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
 			record.pendingPermission = null;
@@ -202,6 +283,7 @@ export class ManagedCliAgentsService {
 			record.activeTurn = false;
 			record.lastError = error instanceof Error ? error.message : String(error);
 			record.updatedAt = now();
+			await this.persistNow();
 			throw error;
 		}
 	}
@@ -228,6 +310,7 @@ export class ManagedCliAgentsService {
 			record.status = "ready";
 			record.activeTurn = false;
 			record.updatedAt = now();
+			await this.persistNow();
 			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
 			record.pendingPermission = null;
@@ -235,6 +318,7 @@ export class ManagedCliAgentsService {
 			record.activeTurn = false;
 			record.lastError = error instanceof Error ? error.message : String(error);
 			record.updatedAt = now();
+			await this.persistNow();
 			throw error;
 		} finally {
 			signal?.removeEventListener("abort", onAbort);
@@ -273,6 +357,7 @@ export class ManagedCliAgentsService {
 		record.run = null;
 		record.pendingPermission = null;
 		record.updatedAt = now();
+		await this.persistNow();
 		return { released: true, session: snapshot(record) };
 	}
 
@@ -353,6 +438,7 @@ export class ManagedCliAgentsService {
 		record.pendingPermission = null;
 		record.status = "closed";
 		record.updatedAt = now();
+		await this.persistNow();
 		return snapshot(record);
 	}
 

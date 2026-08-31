@@ -15,6 +15,8 @@ A DeepSeek Harness (DSH) plugin for managing external Agent CLIs.
 - **Route verification**: verifies the CLI's required protocol and tool continuation before dispatch;
 - **Codex app-server driver**: uses real `thread/start`, `turn/start`, `turn/interrupt`, streaming deltas, usage, and same-thread follow-up;
 - **Secret-free session records**: records cwd, route, permission tier, status, and remote thread id, but never an API key;
+- **Codex session persistence**: the session registry (including the remote Codex thread id) is written to `sessions.json` inside the unified dir; after a Host restart `cli_codex_followup` reattaches the same thread from `sessionId` directly, no re-creation needed;
+- **Auto-continue**: when an answer looks like a premature stop (plans only, no deliverable), the service nudges the same conversation until the result is complete, so a single `cli_codex_direct` call returns the full report. Each CLI has an `enabled` + `max` (default 3) setting in the card. **Generalization note**: the nudge depends on same-thread follow-up and only applies to Codex session calls; Claude Code / Qwen Code run through one-shot providers (a fresh process every time, no thread to continue), so it does not apply to them unless they gain a session-based driver later.
 - **Concurrency guard**: one active turn per managed session; overlapping follow-up calls fail with `SESSION_BUSY`.
 
 ## Install
@@ -58,7 +60,20 @@ cli_codex_sessions()
 cli_codex_interrupt(sessionId)
 ```
 
-These are plugin-specific continuation tools, not DSH native `send_message`. Follow-ups are sent to the same real Codex thread without a relay model. The current registry is Host-memory scoped, so a Host restart currently requires creating a new managed session; durable storage recovery is planned separately.
+These are plugin-specific continuation tools, not DSH native `send_message`. Follow-ups are sent to the same real Codex thread without a relay model. Sessions are persisted to `sessions.json` in the unified dir, so a Host restart keeps them and follow-up reattaches the same remote thread.
+
+## Configuration
+
+| Field | Description |
+|---|---|
+| `cliDir` | Unified directory, default `~/dsh-clis` |
+| `models.<cli>.provider` | Provider for this CLI |
+| `models.<cli>.model` | Model for this CLI |
+| `models.<cli>.reasoningEffort` | Reasoning effort for this CLI |
+| `autoContinue.<cli>.enabled` | Auto-continue switch (default `true`; Codex session calls only) |
+| `autoContinue.<cli>.max` | Max nudges (1–10, default 3) |
+
+`<cli>` is `codex` / `claude` / `qwen`.
 
 ## Environment isolation
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ManagedCliAgentsService, looksPrematureOutput, AUTO_CONTINUE_MAX, AUTO_CONTINUE_PROMPT } from "../lib/managed-cli-agents.js";
+import { ManagedCliAgentsService, looksPrematureOutput, persistable, AUTO_CONTINUE_MAX, AUTO_CONTINUE_PROMPT } from "../lib/managed-cli-agents.js";
 
 // Permission profile that grants every capability with approval=ask, so tests
 // that exercise the approval seam actually reach it (the default read-only
@@ -457,4 +457,140 @@ test("followup also auto-continues a premature early-stop", async () => {
 	// dispatch: toolRounds 0 → no nudge; followup: premature → one nudge.
 	assert.equal(followupCount, 2);
 	assert.match(next.output, /最终汇总/);
+});
+
+test("persistable never serializes live run or permission state", () => {
+	const record = {
+		sessionId: "s", cli: "codex", cwd: "/repo", provider: "p", model: "m", reasoningEffort: "high",
+		permissionMode: "danger-full-access", status: "ready", createdAt: "t0", updatedAt: "t1",
+		lastError: null, remoteSessionId: "thread-x",
+		run: { fake: true }, activeTurn: true, pendingPermission: { requestId: "r" }, lastPermissionDecision: { outcome: "allowed-once" }
+	};
+	const saved = persistable(record);
+	assert.equal(saved.sessionId, "s");
+	assert.equal(saved.remoteSessionId, "thread-x");
+	assert.equal(saved.run, undefined);
+	assert.equal(saved.activeTurn, undefined);
+	assert.equal(saved.pendingPermission, undefined);
+	assert.equal(saved.lastPermissionDecision, undefined);
+});
+
+test("restore reloads durable sessions so followup reattaches the same thread", async () => {
+	const calls = [];
+	const store = [];
+	const persist = {
+		async load() { return store; },
+		async save(sessions) { store.length = 0; store.push(...sessions); }
+	};
+	const driver = { async start(input) {
+		calls.push(input);
+		return { remoteSessionId: input.resumeThreadId ?? "thread-new", result: Promise.resolve({ threadId: input.resumeThreadId ?? "thread-new", text: "first" }), followup: async () => ({ threadId: input.resumeThreadId ?? "thread-new", text: "reattached" }), dispose: async () => {} };
+	} };
+	// First process: dispatch persists the ready session, then release keeps
+	// it reattachable (run dropped, status ready, remote thread id preserved).
+	const first = new ManagedCliAgentsService({ drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
+	const created = await first.dispatch({ cwd: "/repo", prompt: "first" });
+	await first.release(created.session.sessionId);
+	assert.equal(store.length, 1);
+	assert.equal(store[0].status, "ready");
+	// "Restart": a fresh service instance restores from the same store.
+	const second = new ManagedCliAgentsService({ drivers: { codex: driver }, persist, permissionSource: () => "workspace-write" });
+	const restored = await second.restore();
+	assert.equal(restored.restored, 1);
+	const status = second.list({ cli: "codex" });
+	assert.equal(status[0].sessionId, created.session.sessionId);
+	// Followup on the restored (run-less) session reattaches via resumeThreadId.
+	const next = await second.followup(created.session.sessionId, "second");
+	assert.equal(calls.some((c) => c.resumeThreadId === "thread-new" || c.resumeThreadId === created.session.remoteSessionId), true);
+	assert.equal(next.output, "reattached");
+	assert.equal(next.session.status, "ready");
+	await second.dispose();
+});
+
+test("restore skips closed sessions and records without a remote thread id", async () => {
+	const persist = {
+		async load() { return [
+			{ sessionId: "s1", cli: "codex", cwd: "/a", provider: "p", model: "m", reasoningEffort: "", permissionMode: "read-only", status: "ready", createdAt: "t0", updatedAt: "t1", lastError: null, remoteSessionId: "thread-1" },
+			{ sessionId: "s2", cli: "codex", cwd: "/a", provider: "p", model: "m", reasoningEffort: "", permissionMode: "read-only", status: "closed", createdAt: "t0", updatedAt: "t1", lastError: null, remoteSessionId: "thread-2" },
+			{ sessionId: "s3", cli: "codex", cwd: "/a", provider: "p", model: "m", reasoningEffort: "", permissionMode: "read-only", status: "ready", createdAt: "t0", updatedAt: "t1", lastError: null, remoteSessionId: null }
+		]; },
+		async save() {}
+	};
+	const service = new ManagedCliAgentsService({ drivers: { codex: { async start() { throw new Error("should not start"); } } }, persist });
+	const restored = await service.restore();
+	assert.equal(restored.restored, 1);
+	assert.equal(service.list({ cli: "codex" }).length, 1);
+	assert.equal(service.list({ cli: "codex" })[0].sessionId, "s1");
+});
+
+test("dispatch writes the persisted store through the seam on success", async () => {
+	let saved = null;
+	const persist = {
+		async load() { return []; },
+		async save(sessions) { saved = { ...sessions[0] }; }
+	};
+	const service = new ManagedCliAgentsService({
+		drivers: { codex: { async start() { return { remoteSessionId: "thread-p", result: Promise.resolve({ threadId: "thread-p", text: "done", stopReason: "completed" }), followup: async () => ({ threadId: "thread-p", text: "x" }), dispose: async () => {} }; } } },
+		persist,
+		permissionSource: () => "workspace-write"
+	});
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.ok(saved, "persist.save should have been called");
+	assert.equal(saved.sessionId, done.session.sessionId);
+	assert.equal(saved.remoteSessionId, "thread-p");
+	assert.equal(saved.run, undefined);
+});
+
+test("followup after restore reattaches without a pre-existing run", async () => {
+	const calls = [];
+	const persist = {
+		async load() { return [{ sessionId: "s-r", cli: "codex", cwd: "/repo", provider: "p", model: "m", reasoningEffort: "", permissionMode: "read-only", status: "ready", createdAt: "t0", updatedAt: "t1", lastError: null, remoteSessionId: "thread-r" }]; },
+		async save() {}
+	};
+	const service = new ManagedCliAgentsService({
+		drivers: { codex: { async start(input) { calls.push(input); return { remoteSessionId: input.resumeThreadId ?? "x", result: Promise.resolve({ threadId: input.resumeThreadId ?? "x", text: "ok" }), followup: async () => ({ threadId: input.resumeThreadId ?? "x", text: "reattached" }), dispose: async () => {} }; } } },
+		persist
+	});
+	await service.restore();
+	assert.equal(service.list({ cli: "codex" }).length, 1);
+	const next = await service.followup("s-r", "continue");
+	assert.equal(next.output, "reattached");
+	assert.equal(calls[0].attachOnly, true);
+	assert.equal(calls[0].resumeThreadId, "thread-r");
+});
+
+test("autoContinueSource with enabled:false skips nudging entirely", async () => {
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-off",
+		result: Promise.resolve({ threadId: "thread-off", text: "第一步完成。现在继续第二步。", toolRounds: 1, stopReason: "completed" }),
+		async followup() { followupCount++; return { threadId: "thread-off", text: "更多内容。", stopReason: "completed" }; },
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({
+		drivers: { codex: { async start() { return run; } } },
+		autoContinueSource: () => ({ enabled: false }),
+		permissionSource: () => "workspace-write"
+	});
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(followupCount, 0);
+	assert.equal(done.output, "第一步完成。现在继续第二步。");
+});
+
+test("autoContinueSource max caps nudge rounds below the default", async () => {
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-cap",
+		result: Promise.resolve({ threadId: "thread-cap", text: "第一步完成。现在继续第二步。", toolRounds: 1, stopReason: "completed" }),
+		async followup() { followupCount++; return { threadId: "thread-cap", text: "继续推进中。现在做下一步。", toolRounds: 1, stopReason: "completed" }; },
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({
+		drivers: { codex: { async start() { return run; } } },
+		autoContinueSource: () => ({ enabled: true, max: 1 }),
+		permissionSource: () => "workspace-write"
+	});
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(followupCount, 1);
+	assert.equal(done.session.status, "ready");
 });
