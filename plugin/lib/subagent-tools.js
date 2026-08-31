@@ -7,9 +7,11 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { MANAGED_PROVIDERS } from "./provider.js";
 import { withPermissionGuidance } from "./permission-guidance.js";
 
+// Codex exposes two explicit modes only: cli_codex_direct (主控直连 Codex，不建
+// Relay 子代理) 和 cli_codex_subagent (DSH 代理子代理)。cli_codex 别名已移除，
+// 避免"直连/代理"边界不清。Claude/Qwen 走一次性 provider。
 export const CLI_SUBAGENT_TOOLS = [
 	{ cli: "codex", toolName: "cli_codex_direct", displayName: "Codex", mode: "direct", provider: "managed-codex-app-server" },
-	{ cli: "codex", toolName: "cli_codex", displayName: "Codex", mode: "direct", compatibilityAlias: true, provider: "managed-codex-app-server" },
 	{ cli: "claude", toolName: "cli_claude_code", displayName: "Claude Code", provider: "managed-claude" },
 	{ cli: "qwen", toolName: "cli_qwen", displayName: "Qwen Code", provider: "managed-qwen" }
 ];
@@ -49,11 +51,11 @@ async function settleBackground(start, signal) {
 
 function definition(spec, ctx, opts) {
 	const isSessionCli = spec.cli === "codex" && opts.managedCliAgents;
-	const naming = spec.compatibilityAlias
-		? "兼容别名：行为等同 cli_codex_direct；新调用优先使用 cli_codex_direct。"
-		: spec.mode === "direct"
-			? "Direct 模式：由当前主控直接调用外部 CLI，不创建 DSH Relay 子代理。"
-			: "";
+	// cli_codex_subagent is its own relay tool; CLI_SUBAGENT_TOOLS here only
+	// holds the direct path (codex) and the one-shot paths (claude/qwen).
+	const naming = spec.mode === "direct"
+		? "Direct 模式：由当前主控直接调用外部 CLI，不创建 DSH Relay 子代理。"
+		: "";
 	return defineTool({
 		name: spec.toolName,
 		description: `${naming}\n\n把一段自包含任务交给 ${spec.displayName} 执行，以原生子代理方式无头运行并返回其输出。任务必须完整、自包含，因为外部 CLI 看不到父会话上下文。当用户说「用 ${spec.displayName} 看/检查/重构/评审/处理……某事」时调用。参数：description 是主界面显示的简短标题（3-5 个词）；prompt 是完整、自包含的任务说明。无需指定模型——该 CLI 用它在插件里配置的模型。长任务可传 run_in_background:true，立即返回后台 jobId；之后用 job_output 增量读取、用 job_kill 取消。所有托管 CLI 都使用同一套后台任务机制。

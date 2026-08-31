@@ -22,6 +22,7 @@ import {
 	extractCodexError,
 	isCodexMetadataWarning,
 	localizeCliError,
+	isOkReply,
 	permissionOf
 } from "../lib/verify.js";
 
@@ -73,6 +74,25 @@ test("extractCliReply does not accept OK outside a Codex agent message", () => {
 		JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "" } })
 	].join("\n");
 	assert.equal(extractCliReply("codex", stdout), "");
+});
+
+test("isOkReply accepts a plain OK reply", () => {
+	assert.equal(isOkReply("OK"), true);
+	assert.equal(isOkReply(" ok "), true);
+});
+
+test("isOkReply tolerates OK echo (OK\\nOK) from echo-prone models", () => {
+	// 一些供应商/模型会把 "Reply with exactly: OK" 输出成两行 OK（多次 agent_message）。
+	assert.equal(isOkReply("OK\nOK"), true);
+	assert.equal(isOkReply("OK\r\nOK\nOK"), true);
+});
+
+test("isOkReply rejects non-OK or empty replies", () => {
+	assert.equal(isOkReply(""), false);
+	assert.equal(isOkReply("OK\nbye bye"), false);
+	assert.equal(isOkReply("hello"), false);
+	assert.equal(isOkReply(null), false);
+	assert.equal(isOkReply(42), false);
 });
 
 test("extractCodexError exposes JSONL error events when reply is empty", () => {

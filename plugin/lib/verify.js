@@ -544,6 +544,17 @@ export function extractCliReply(cliId, stdout) {
 	return replies.join("\n").trim();
 }
 
+/**
+ * Whether a probe reply confirms "OK". Some suppliers/models echo the reply
+ * ("OK\nOK", e.g. repeated agent_message blocks); accept only when every
+ * non-empty line is exactly OK, so a real wrong answer still fails.
+ */
+export function isOkReply(reply) {
+	if (typeof reply !== "string") return false;
+	const lines = reply.split(/\r?\n+/).map((line) => line.trim().toUpperCase()).filter(Boolean);
+	return lines.length > 0 && lines.every((line) => line === "OK");
+}
+
 /** Extract actionable Codex JSONL errors when the assistant reply is empty. */
 export function extractCodexError(stdout) {
 	if (typeof stdout !== "string") return "";
@@ -603,12 +614,14 @@ export async function testCli(ctx, cliId, signal) {
 	} catch (error) {
 		return { ok: false, error: localizeCliError(cliId, error instanceof Error ? error.message : String(error)) };
 	}
-	if (reply.trim().toUpperCase() !== "OK") {
+	// 兼容模型回声：isOkReply 接受 "OK\nOK"（多次 agent_message），只要每行
+	// 都是 OK 就算通过，避免把正常供应商/模型误判为连通失败。
+	if (!isOkReply(reply)) {
 		const codexError = cliId === "codex" ? extractCodexError(stdout) : "";
 		if (codexError) return { ok: false, error: localizeCliError(cliId, codexError) };
 		// 模型没有按预期返回 OK。对用户最实用的提示是：当前代理/中转商可能不提供
 		// 该 CLI 所需的能力（或模型配置不对），引导其更换代理商再重测。
-		return { ok: false, error: `当前代理/中转商（${route.provider}）未返回预期的 OK（实际：${reply.slice(0, 40) || "空"}）。可能不提供 ${entry.name} 所需的能力或模型配置有误，请更换代理/中转商后重试。` };
+		return { ok: false, error: `当前代理/中转商（${route.provider}${route.model ? ` / ${route.model}` : ""}）未返回预期的 OK（实际：${reply.slice(0, 40) || "空"}）。可能不提供 ${entry.name} 所需的能力或模型配置有误，请更换代理/中转商后重试。` };
 	}
 	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
 	// tool continuation to actually work (Codex=responses, Claude=anthropic

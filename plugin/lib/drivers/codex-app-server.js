@@ -1,6 +1,7 @@
 // Experimental Codex app-server driver. One wire owns one process so Codex
 // notifications that omit thread/turn ids cannot leak between concurrent runs.
-// It is intentionally not wired into cli_codex yet; tests use a fake transport.
+// It is wired into cli_codex_direct (managed session service); unit tests use a
+// fake transport.
 
 import { randomUUID } from "node:crypto";
 import { createRunState, defineDriverCapabilities } from "./types.js";

@@ -8,11 +8,13 @@ import { DEFAULT_PERMISSION } from "./registry.js";
 
 const TERMINAL = new Set(["closed"]);
 
-// Auto-continue: some supplier-paired models (e.g. glm-5.2 through a
-// responses-proxy) end a turn early on long tool-driven tasks — the turn
-// completes with a "I will now do X" commitment instead of the final result.
-// The driver faithfully waits for turn/completed; to still return a complete
-// answer from a single cli_codex call we nudge the same thread (bounded).
+// Auto-continue: some supplier-paired models end a turn early on long
+// tool-driven tasks — the turn completes with a "I will now do X" commitment
+// instead of the final result. The driver faithfully waits for turn/completed;
+// to still return a complete answer from a single cli_codex_direct call we
+// nudge the same thread (bounded). This is model/supplier-agnostic: any model
+// that stops after a plan sentence benefits, including ones whose provider
+// config the user changes later.
 export const AUTO_CONTINUE_MAX = 3;
 export const AUTO_CONTINUE_PROMPT = "请继续完成你的任务，把最终结果完整输出给我。不要只描述计划或过程。";
 // An "intent tail": the last sentence still commits to future work (will do /

@@ -257,7 +257,7 @@ export function apply(ctx) {
 	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
-		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_codex / cli_claude_code / cli_qwen（子代理）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
+		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_codex_direct / cli_codex_subagent / cli_claude_code / cli_qwen。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
 		parameters: {
 			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude / qwen" },
 			task: { type: "string", required: true, description: "自包含的任务描述" },
