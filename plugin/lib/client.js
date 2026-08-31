@@ -22,15 +22,21 @@ window.__ModuleLoader__.load({
     var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-test-hint-error{color:#ef4444}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{color:var(--dsw-alias-label-tertiary,#999)}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-cli-install{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap}.dsc-cli-status{font:inherit;line-height:inherit;color:inherit}.dsc-conn-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-conn-fail{color:#ef4444}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 0 0}.dsc-footer-left{display:flex;align-items:center;gap:10px;min-width:0;margin-right:auto}.dsc-cheer{display:inline-flex;align-items:center;gap:4px;flex:none;text-decoration:underline;text-underline-offset:2px;color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5;transition:color .16s}.dsc-cheer-star{font-size:12px;line-height:1;display:inline-flex}.dsc-cheer:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-cheer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}.dsc-footer-status{min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;display:inline-flex;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
 
     // Fine-grained permission controls styles (appended to the main sheet).
-    var PERM_CSS = ".dsc-perm-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px}.dsc-perm-preset{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-perm-toggles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.dsc-perm-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3}.dsc-perm-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0}.dsc-perm-approval{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-ac-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-ac-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3}.dsc-ac-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0}.dsc-ac-max{min-width:84px}.dsc-ac-hint{grid-column:1 / -1;font-size:11px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.4}";
+    var PERM_CSS = ".dsc-perm-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-perm-preset{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-perm-toggles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.dsc-perm-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3;min-width:0}.dsc-perm-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0;flex:none}.dsc-perm-toggle span{min-width:0;overflow-wrap:break-word}.dsc-perm-approval{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-ac-block{position:relative;width:100%;min-width:0;box-sizing:border-box;margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-ac-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;flex-wrap:wrap}.dsc-ac-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3;min-width:0;flex:1 1 auto}.dsc-ac-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0;flex:none}.dsc-ac-toggle span{min-width:0;overflow-wrap:break-word}.dsc-ac-max{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap;flex:none}.dsc-ac-max select{width:64px;height:28px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-ac-max select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-ac-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.4;min-width:0;overflow-wrap:break-word;word-break:break-word}";
 
     if (typeof document !== "undefined") {
       var cssId = "dsh-sub-cli/client.css";
-      if (!document.querySelector("style[data-plugin-css='" + cssId + "']")) {
+      var cssText = SETTINGS_CSS + PERM_CSS;
+      var existingStyle = document.querySelector("style[data-plugin-css='" + cssId + "']");
+      if (existingStyle) {
+        // HMR 重载模块时旧 <style> 仍留在 head；每次都覆写文本，确保 CSS 改动
+        // 即时生效，而不是只在一开始注入一次（旧逻辑导致“改了 CSS 但页面不变”）。
+        existingStyle.textContent = cssText;
+      } else {
         var styleTag = document.createElement("style");
         styleTag.dataset.plugin = "dsh-sub-cli";
         styleTag.dataset.pluginCss = cssId;
-        styleTag.textContent = SETTINGS_CSS + PERM_CSS;
+        styleTag.textContent = cssText;
         document.head.appendChild(styleTag);
       }
     }
@@ -54,7 +60,7 @@ window.__ModuleLoader__.load({
       "row.exec": "执行命令",
       "row.network": "联网",
       "row.approval": "审批模式",
-      "row.autoContinue": "自动补全（智能续接提前收尾的回答）",
+      "row.autoContinue": "自动补全",
       "row.autoContinueMax": "最多续接次数",
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整。当前仅对 Codex 会话式调用生效。",
       "row.approvalAsk": "询问",
@@ -128,7 +134,7 @@ window.__ModuleLoader__.load({
       "row.exec": "Run commands",
       "row.network": "Network",
       "row.approval": "Approval",
-      "row.autoContinue": "Auto-continue (nudge premature early-stopped answers)",
+      "row.autoContinue": "Auto-continue",
       "row.autoContinueMax": "Max nudges",
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete. Currently applies to Codex session-based calls only.",
       "row.approvalAsk": "Ask",
@@ -369,18 +375,24 @@ window.__ModuleLoader__.load({
           )
         ),
         React.createElement("div", { className: "dsc-ac-block" },
-          React.createElement("label", { className: "dsc-ac-toggle" },
-            React.createElement("input", { type: "checkbox", checked: (props.autoContinue || {}).enabled !== false, onChange: function (e) { props.onAutoContinueChange({ enabled: e.target.checked, max: (props.autoContinue || {}).max || 3 }); } }),
-            React.createElement("span", null, t("row.autoContinue"))
-          ),
-          React.createElement("label", { className: "dsc-field dsc-ac-max" }, t("row.autoContinueMax"),
-            React.createElement("select", { className: "dsc-select dsc-perm", value: (props.autoContinue || {}).enabled === false ? 0 : ((props.autoContinue || {}).max || 3), disabled: (props.autoContinue || {}).enabled === false, onChange: function (e) { props.onAutoContinueChange({ enabled: (props.autoContinue || {}).enabled !== false, max: Number(e.target.value) }); } },
-              React.createElement("option", { value: 0 }, "0"),
-              React.createElement("option", { value: 1 }, "1"),
-              React.createElement("option", { value: 2 }, "2"),
-              React.createElement("option", { value: 3 }, "3"),
-              React.createElement("option", { value: 4 }, "4"),
-              React.createElement("option", { value: 5 }, "5")
+          React.createElement("div", { className: "dsc-ac-row" },
+            React.createElement("label", { className: "dsc-ac-toggle" },
+              React.createElement("input", { type: "checkbox", checked: (props.autoContinue || {}).enabled !== false, onChange: function (e) { props.onAutoContinueChange({ enabled: e.target.checked, max: (props.autoContinue || {}).max || 3 }); } }),
+              React.createElement("span", null, t("row.autoContinue"))
+            ),
+            React.createElement("label", { className: "dsc-ac-max" }, t("row.autoContinueMax"),
+              React.createElement("select", { value: (props.autoContinue || {}).max || 3, disabled: (props.autoContinue || {}).enabled === false, onChange: function (e) { props.onAutoContinueChange({ enabled: (props.autoContinue || {}).enabled !== false, max: Number(e.target.value) }); } },
+                React.createElement("option", { value: 1 }, "1"),
+                React.createElement("option", { value: 2 }, "2"),
+                React.createElement("option", { value: 3 }, "3"),
+                React.createElement("option", { value: 4 }, "4"),
+                React.createElement("option", { value: 5 }, "5"),
+                React.createElement("option", { value: 6 }, "6"),
+                React.createElement("option", { value: 7 }, "7"),
+                React.createElement("option", { value: 8 }, "8"),
+                React.createElement("option", { value: 9 }, "9"),
+                React.createElement("option", { value: 10 }, "10")
+              )
             )
           ),
           React.createElement("div", { className: "dsc-ac-hint" }, t("row.autoContinueHint"))
@@ -390,7 +402,6 @@ window.__ModuleLoader__.load({
 
     function SetupRow(props) {
       var t = props.t;
-      var api = props.api;
       var snap = useSettingsScopeSnapshot(props.settingsScope);
       var value = (snap && snap.status === "ready" && snap.value) || {};
       var dirState = React.useState(normalize(value).cliDir);
@@ -404,7 +415,10 @@ window.__ModuleLoader__.load({
       var savedState = React.useState(false);
       React.useEffect(function () {
         var alive = true;
-        props.api.llm.models({}).then(function (r) { if (alive && r.result && r.result.ok) groupsState[1](r.result.value.groups || []); }).catch(function () {});
+        // `loadCatalog` is injected by apply(); guard it so a missing seat can
+        // never throw inside the effect and take the whole Plugins tab down.
+        if (typeof props.loadCatalog !== "function") return;
+        props.loadCatalog().then(function (groups) { if (alive) groupsState[1](groups || []); }).catch(function () {});
         return function () { alive = false; };
       }, []);
       React.useEffect(function () {
@@ -584,26 +598,46 @@ window.__ModuleLoader__.load({
       );
     }
 
-    var inject = ["connection", "slots", "locale", "settingsScope", "remote"];
+    var inject = ["slots", "locale", "settingsScope", "remote", "remote.session"];
 
     function apply(ctx) {
-      var api = ctx.connection.api;
-      ctx.locale.register(NS, "zh", ZH);
-      ctx.locale.register(NS, "en", EN);
-      var scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
-      var injected = function () {
-        return {
-          settingsScope: scope,
-          api: api,
-          pickDirectory: function () {
-            var ws = ctx.get("workspaces");
-            return ws && typeof ws.pickDirectory === "function" ? ws.pickDirectory() : Promise.resolve(null);
-          }
+      try {
+        ctx.effect(function () {
+          var offZh = ctx.locale.register(NS, "zh", ZH);
+          var offEn = ctx.locale.register(NS, "en", EN);
+          return function () { offEn(); offZh(); };
+        }, "dsh-sub-cli: settings copy");
+        var t = ctx.locale.bind(NS);
+        var scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
+        // Model catalog: `remote.session.modelCatalog()` is the current remote
+        // face (the old `connection.api.llm.models()` seat no longer exists).
+        // Resolved through ctx.get so a page without the seat still mounts the
+        // card instead of throwing before slots.inject.
+        var sessionRemote = typeof ctx.get === "function" ? ctx.get("remote.session") : undefined;
+        var loadCatalog = function () {
+          if (!sessionRemote || typeof sessionRemote.modelCatalog !== "function") return Promise.resolve([]);
+          return sessionRemote.modelCatalog().then(function (response) {
+            if (!response || !response.ok) return [];
+            return (response.value && response.value.groups) || [];
+          }).catch(function () { return []; });
         };
-      };
-      ctx.slots.inject("settings.plugin.item", function () {
-        return ctx.slots.register({ name: "settings.plugin.item", key: "dsh-sub-cli", locale: NS, inject: injected }, PluginCard);
-      });
+        var injected = function () {
+          return {
+            t: t,
+            settingsScope: scope,
+            loadCatalog: loadCatalog,
+            pickDirectory: function () {
+              var ws = ctx.get("workspaces");
+              return ws && typeof ws.pickDirectory === "function" ? ws.pickDirectory() : Promise.resolve(null);
+            }
+          };
+        };
+        ctx.slots.inject("settings.plugin.item", function () {
+          return ctx.slots.register({ name: "settings.plugin.item", key: "dsh-sub-cli", priority: 30, inject: injected }, PluginCard);
+        });
+      } catch (error) {
+        console.error("[dsh-sub-cli] client card failed to load (Host CLI tools remain available):", error);
+      }
     }
 
     return { apply: apply, inject: inject };
