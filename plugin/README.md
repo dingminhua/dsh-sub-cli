@@ -24,7 +24,7 @@
 - **三个 CLI 持续会话**：首轮 `cli_<cli>_direct` 返回稳定 `sessionId`；后续工具直接进入同一 thread——Codex 走 app-server 长连接，Claude/Qwen 走 `stream-json` 单次进程 + `--session-id`/`--resume` 文件级持久化——不经过 relay 模型；
 - **配置持久化**：统一目录与模型路由通过 `installSettingsSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。
 - **会话持久化**：会话注册表（含远程 thread id）写入统一目录的 `sessions.json`，Host 重启后 `cli_<cli>_followup` 直接按 `sessionId` 恢复并 reattach 同一 thread，无需重新创建。
-- **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_<cli>_direct` 即返回完整报告。每个 CLI 可在设置卡里开关（`enabled`）并调整续接次数（`max`，默认 3）。**泛化评估结论**：该机制依赖"同一 thread 的 followup"，对所有持续会话式调用生效（Codex/Claude/Qwen），`INTENT_TAIL` 正则同时识别中英文意图句。
+- **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_<cli>_direct` 即返回完整报告。每个 CLI 在设置卡里配置续接次数（`max`，默认 3；**设为 0 即关闭**，没有独立开关）。**泛化评估结论**：该机制依赖"同一 thread 的 followup"，对所有持续会话式调用生效（Codex/Claude/Qwen），`INTENT_TAIL` 正则同时识别中英文意图句。
 
 ## 各 CLI 内置工具能力
 
@@ -105,8 +105,8 @@ cli_<cli>_subagent(description, prompt)  # codex / claude / qwen
 | `models.<cli>.provider` | 该 CLI 的推理 Provider |
 | `models.<cli>.model` | 该 CLI 的模型 |
 | `models.<cli>.reasoningEffort` | 该 CLI 的推理强度 |
-| `autoContinue.<cli>.enabled` | 自动补全开关（默认 `true`；仅 Codex 会话式生效） |
-| `autoContinue.<cli>.max` | 自动补全最多续接次数（1–10，默认 3） |
+| `autoContinue.<cli>.max` | 自动补全续接次数（0–10，默认 3；**0 = 关闭**。旧配置的 `enabled:false` 会归一化为 0，字段本身已废弃） |
+| `turnTimeoutMinutes.<cli>` | 轮次超时（分钟，10/20/30 三档，默认 20）。到点先探测：进程已退出交由真实结果、仍在输出则继续等、确认卡死才报错 |
 
 `<cli>` 取值：`codex` / `claude` / `qwen`。
 
