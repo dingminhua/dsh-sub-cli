@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attachRelayLifecycle, registerCodexSubagentTool, registerManagedCliSubagentTools, relayPersonaFor } from "../lib/relay-subagent.js";
+import { attachRelayLifecycle, registerManagedCliSubagentTools, relayPersonaFor } from "../lib/relay-subagent.js";
 import { ManagedCliRelayProvider } from "../lib/relay-provider.js";
 
 function toolFixture() {
-	let tool, request;
+	// registerManagedCliSubagentTools registers one tool per CLI; keep them by
+	// name so the codex assertions below still target cli_codex_subagent.
+	const tools = new Map();
+	let request;
 	const ctx = {
-		tools: { register(v) { tool = v; } },
+		tools: { register(v) { tools.set(v.name, v); } },
 		subagents: { async startContinuable(v) { request = v; return { childId: "child-1" }; } }
 	};
 	const service = {};
-	registerCodexSubagentTool(ctx, service, async () => ({ ok: true }));
-	return { ctx, get tool() { return tool; }, get request() { return request; } };
+	registerManagedCliSubagentTools(ctx, async () => ({ ok: true }));
+	return { ctx, get tool() { return tools.get("cli_codex_subagent"); }, get request() { return request; } };
 }
 
 test("relayPersonaFor generates the right persona for each CLI", () => {

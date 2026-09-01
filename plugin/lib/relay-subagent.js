@@ -102,12 +102,6 @@ const SUPPORTED_CLIS = [
 	{ cli: "qwen", displayName: "Qwen Code" }
 ];
 
-// Back-compat: keep the old Codex-only entry point working so existing
-// callers (index.js) don't have to be updated in lockstep.
-export function registerCodexSubagentTool(ctx, service, preflight) {
-	registerCliSubagentTool(ctx, { cli: "codex", displayName: "Codex", preflight });
-}
-
 export function registerManagedCliSubagentTools(ctx, preflight) {
 	for (const spec of SUPPORTED_CLIS) registerCliSubagentTool(ctx, { ...spec, preflight });
 }

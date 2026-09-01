@@ -60,7 +60,7 @@ window.__ModuleLoader__.load({
       "row.approval": "未勾选时",
       "row.approvalHint": "未勾选的权限被用到时，按此选择。",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
-      "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。当前仅对 Codex 会话式调用生效。",
+      "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
       "row.turnTimeout": "轮次超时",
       "row.turnTimeoutUnit": "分钟",
       "row.turnTimeoutHint": "到点不会直接判失败：先检查进程是否还在运行、是否仍在输出，仍在推进就继续等，确认卡死才报错。Codex 走 app-server 协议，此处同样作为其请求超时。",
@@ -130,7 +130,7 @@ window.__ModuleLoader__.load({
       "row.approval": "When unchecked",
       "row.approvalHint": "When an unchecked capability comes up, follow this choice.",
       "row.autoContinueMax": "Max nudges (0 = off)",
-      "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Currently applies to Codex session-based calls only.",
+      "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
       "row.turnTimeout": "Turn timeout",
       "row.turnTimeoutUnit": "min",
       "row.turnTimeoutHint": "Hitting the limit is not an instant failure: the driver first checks whether the process is still running and still producing output, waits on when it is progressing, and only fails when it is truly stuck. Codex uses this as its app-server request timeout.",
@@ -292,6 +292,10 @@ window.__ModuleLoader__.load({
         return scope.set("permissions", value.permissions || {});
       }).then(function () {
         return scope.set("autoContinue", value.autoContinue || {});
+      }).then(function () {
+        // Without this write the per-CLI turn timeout resets to the default
+        // (20 min) on every reload — the UI payload had it, persistence dropped it.
+        return scope.set("turnTimeoutMinutes", value.turnTimeoutMinutes || {});
       });
     }
 
