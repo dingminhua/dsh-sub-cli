@@ -83,9 +83,9 @@ const ARGV_PERMISSION_CASES = [
 	{ label: "legacy danger-full-access", permission: "danger-full-access", tier: "danger-full-access" },
 	{ label: "unknown string falls back to default (read-only)", permission: "bogus", tier: "read-only" },
 	{ label: "missing permission defaults to read-only", permission: undefined, tier: "read-only" },
-	{ label: "network alone escalates to full access", permission: { read: true, write: false, exec: false, network: true, approval: "ask" }, tier: "danger-full-access" },
-	{ label: "exec+network escalates to full access", permission: { read: true, write: false, exec: true, network: true, approval: "ask" }, tier: "danger-full-access" },
-	{ label: "exec without network stays workspace-write", permission: { read: true, write: false, exec: true, network: false, approval: "ask" }, tier: "workspace-write" },
+	{ label: "exec escalates to full access (egress intent)", permission: { read: true, write: false, exec: true, approval: "ask" }, tier: "danger-full-access" },
+	{ label: "legacy network:true migrates to exec and escalates", permission: { read: true, write: false, exec: false, network: true, approval: "ask" }, tier: "danger-full-access" },
+	{ label: "exec plus legacy network stays full access", permission: { read: true, write: false, exec: true, network: true, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "write without exec stays workspace-write", permission: { read: true, write: true, exec: false, network: false, approval: "ask" }, tier: "workspace-write" },
 	{ label: "read-only profile stays read-only", permission: { read: true, write: false, exec: false, network: false, approval: "ask" }, tier: "read-only" }
 ];

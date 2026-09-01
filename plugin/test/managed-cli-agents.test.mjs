@@ -260,9 +260,10 @@ test("permissionSpec derives sandbox tier and approval policy from the profile",
 		permissionMode: "workspace-write",
 		approvalPolicy: "on-request",
 		sandbox: "workspace-write",
-		profile: { read: true, write: true, exec: true, network: false, approval: "ask" }
+		// Three capabilities: the workspace-write preset is write-only (no exec).
+		profile: { read: true, write: true, exec: false, approval: "ask" }
 	});
-	const denied = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, network: false, approval: "never" }) });
+	const denied = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, approval: "never" }) });
 	assert.equal(denied.permissionSpec("codex").approvalPolicy, "never");
 	assert.equal(denied.permissionSpec("codex").sandbox, "read-only");
 });
@@ -292,7 +293,7 @@ test("approval=never auto-rejects an UNCHECKED capability without prompting", as
 			return { threadId: "thread-n", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, exec: false, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ read: true, write: true, exec: false, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "rejected");
 	assert.equal(approvalCalls, 0);
@@ -309,7 +310,7 @@ test("an UNCHECKED capability with approval=ask reaches the interactive seam", a
 			return { threadId: "thread-ask", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, exec: false, approval: "ask" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ read: true, write: true, exec: false, approval: "ask" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "allowed-once", "the interactive decision grants it");
 	assert.equal(approvalCalls, 1, "exactly one prompt surfaced");
@@ -324,10 +325,10 @@ test("permissionSpec matrix derives sandbox and approval policy for every input"
 		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "unknown string defaults to read-only", input: "bogus", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "legacy allow migrates to ask", input: { read: true, write: true, exec: true, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "network alone escalates", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "legacy network escalates via exec migration", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "exec+network escalates", input: { read: true, write: false, exec: true, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "exec only stays workspace", input: { read: true, write: false, exec: true, network: false, approval: "ask" }, sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "workspace-write", approvalPolicy: "never", approval: "never" }
+		{ label: "exec alone escalates (egress intent)", input: { read: true, write: false, exec: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "danger-full-access", approvalPolicy: "never", approval: "never" }
 	];
 	for (const c of cases) {
 		const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => c.input });
@@ -351,9 +352,9 @@ const RESOLVE_DECISIONS = [
 	{ label: "checked permissions", capability: "permissions", profile: { ...ASK_ALL }, expected: "allowed-once" },
 	{ label: "checked beats never", capability: "command", profile: { ...ASK_ALL, approval: "never" }, expected: "allowed-once" },
 	// Unchecked + never → auto-reject without prompting.
-	{ label: "unchecked command + never", capability: "command", profile: { ...ASK_ALL, exec: false, approval: "never" }, expected: "rejected" },
-	{ label: "unchecked file-change + never", capability: "file-change", profile: { ...ASK_ALL, write: false, approval: "never" }, expected: "rejected" },
-	{ label: "unchecked permissions + never", capability: "permissions", profile: { ...ASK_ALL, network: false, approval: "never" }, expected: "rejected" }
+	{ label: "unchecked command + never", capability: "command", profile: { read: true, write: true, exec: false, approval: "never" }, expected: "rejected" },
+	{ label: "unchecked file-change + never", capability: "file-change", profile: { read: true, write: false, exec: true, approval: "never" }, expected: "rejected" },
+	{ label: "unchecked permissions + never", capability: "permissions", profile: { read: true, write: true, exec: false, approval: "never" }, expected: "rejected" }
 ];
 
 test("resolvePermission decision matrix never prompts for checked/never branches", async () => {

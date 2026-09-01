@@ -10,33 +10,37 @@ export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "reje
 
 // ── Fine-grained permission profiles ─────────────────────────────────────────
 // Each CLI's permission is stored as a capability object:
-//   { read, write, exec, network, approval }
+//   { read, write, exec, approval }
+// Three capabilities only — the network flag is gone. Granting "exec" already
+// means the CLI process may reach the network: npm install / git pull are
+// ordinary parts of command execution, and a sandbox that allows commands but
+// blocks the network cannot run them. Users who want no egress simply leave
+// exec unchecked; Codex then lands in read-only.
 // Legacy string tiers are accepted everywhere and normalized to a profile.
 
 // The checkbox is the only grant: checked = allowed silently at runtime.
-// `approval` is no longer an "auto-allow" dial — it is the strategy for what
-// happens when an UNCHECKED capability is requested: ask interactively, or
-// auto-reject. "allow" is accepted on read (stored profiles) and migrated:
-// an "allow" approval meant the user wanted that capability to just work, so it
-// becomes a checkbox.
+// `approval` is the strategy for what happens when an UNCHECKED capability is
+// requested: ask interactively, or auto-reject.
 
 export const APPROVAL_MODES = Object.freeze(["ask", "never"]);
 
 export const PERMISSION_PRESETS = Object.freeze([
-	// Default: only read is granted; write/exec/network come up at runtime and
-	// are handled by the approval strategy (ask by default).
-	{ id: "read-only", label: "只读", profile: Object.freeze({ read: true, write: false, exec: false, network: false, approval: "ask" }) },
-	{ id: "workspace-write", label: "工作区可写", profile: Object.freeze({ read: true, write: true, exec: true, network: false, approval: "ask" }) },
-	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true, network: true, approval: "ask" }) }
+	// Default: only read is granted; write/exec come up at runtime and are
+	// handled by the approval strategy (ask by default).
+	{ id: "read-only", label: "只读", profile: Object.freeze({ read: true, write: false, exec: false, approval: "ask" }) },
+	{ id: "workspace-write", label: "工作区可写", profile: Object.freeze({ read: true, write: true, exec: false, approval: "ask" }) },
+	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true, approval: "ask" }) }
 ]);
 
-export const DEFAULT_PROFILE = Object.freeze({ read: true, write: false, exec: false, network: false, approval: "ask" });
+export const DEFAULT_PROFILE = Object.freeze({ read: true, write: false, exec: false, approval: "ask" });
 
 /**
  * Normalize a stored permission value (legacy string tier, partial object, or
- * full profile) into a complete profile under the checkbox-only model. Legacy
- * `approval: "allow"` migrates to checked capabilities + ask: an auto-allow
- * approval expressed "just do it", which is now what a checkbox means.
+ * full profile) into a complete three-capability profile. Stored `network`
+ * values are dropped: exec now carries that intent (checked exec implies the
+ * process may egress). Legacy `approval: "allow"` migrates to checked
+ * capabilities + ask: an auto-allow approval expressed "just do it", which is
+ * now what a checkbox means.
  */
 export function normalizePermission(raw) {
 	if (typeof raw === "string") {
@@ -48,14 +52,19 @@ export function normalizePermission(raw) {
 	if (raw && typeof raw === "object") {
 		// Legacy "allow": the auto-accept dial is gone, so that intent migrates to
 		// the checkboxes themselves — grant read/write/exec (the old "allow" tier's
-		// reach) and keep network explicit, with ask as the strategy for the rest.
+		// reach), with ask as the strategy for anything unchecked.
 		const legacyAllow = raw.approval === "allow";
 		const read = raw.read !== undefined ? !!raw.read : (legacyAllow ? true : DEFAULT_PROFILE.read);
 		const write = raw.write !== undefined ? !!raw.write : (legacyAllow ? true : DEFAULT_PROFILE.write);
-		const exec = raw.exec !== undefined ? !!raw.exec : (legacyAllow ? true : DEFAULT_PROFILE.exec);
-		const network = raw.network !== undefined ? !!raw.network : (legacyAllow ? true : DEFAULT_PROFILE.network);
+		// Legacy network:true meant "the process may egress" — under the
+		// three-capability model exec is the carrier of that intent (a checked
+		// exec escalates the sandbox to danger-full-access). Old profiles always
+		// stored all four booleans, so "network checked but exec unchecked" is a
+		// legacy artifact, not a live choice: promote exec rather than lose the
+		// egress the user had configured.
+		const exec = legacyAllow ? true : (raw.network === true ? true : (raw.exec !== undefined ? !!raw.exec : DEFAULT_PROFILE.exec));
 		return {
-			read, write, exec, network,
+			read, write, exec,
 			approval: APPROVAL_MODES.includes(raw.approval) ? raw.approval : DEFAULT_PROFILE.approval
 		};
 	}
@@ -65,11 +74,12 @@ export function normalizePermission(raw) {
 /** Derive the closest coarse CLI sandbox tier from a profile. */
 export function deriveSandboxMode(profile) {
 	const p = normalizePermission(profile);
-	// Codex only opens the network under danger-full-access, so a profile that
-	// enables network must escalate to it (write stays gated by the approval
-	// bridge and the argv mapping, not by the coarse sandbox tier).
-	if (p.network) return "danger-full-access";
-	if (p.write || p.exec) return "workspace-write";
+	// exec escalates to danger-full-access: allowing command execution means
+	// allowing ordinary commands that reach the network (npm install, git
+	// pull); Codex cannot run those under workspace-write. write alone stays at
+	// workspace-write; nothing checked stays read-only.
+	if (p.exec) return "danger-full-access";
+	if (p.write) return "workspace-write";
 	return "read-only";
 }
 
@@ -78,7 +88,10 @@ export function capabilityKey(capability) {
 	switch (capability) {
 		case "command": return "exec";
 		case "file-change": return "write";
-		case "permissions": return "network";
+		// Codex's escalation request ("permissions") used to map to the removed
+		// network flag. Under the three-capability model it is an exec-level
+		// escalation: a checked exec already implies egress, so route it there.
+		case "permissions": return "exec";
 		default: return null;
 	}
 }

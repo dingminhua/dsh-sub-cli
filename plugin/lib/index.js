@@ -56,6 +56,9 @@ const PERMISSION_ENTRY = z.object({
 	read: z.boolean().default(true),
 	write: z.boolean().default(false),
 	exec: z.boolean().default(false),
+	// `network` accepted on read for backward compatibility (old stored profiles
+	// keep the key); the live model is three capabilities and normalizePermission
+	// drops it toward exec (egress intent). Any boolean value validates.
 	network: z.boolean().default(false),
 	approval: z.string().default("ask")
 });

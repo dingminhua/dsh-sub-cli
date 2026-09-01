@@ -350,13 +350,14 @@ test("probeProtocolContinuation routes by protocol", async () => {
 test("permissionOf returns a normalized capability profile for a CLI", () => {
 	// Legacy string tier is expanded to its preset profile.
 	const ctx = sampleCtx({ value: { permissions: { codex: "read-only" } } });
-	assert.deepEqual(permissionOf(ctx, "codex"), { read: true, write: false, exec: false, network: false, approval: "ask" });
-	// Profile objects pass through normalized.
+	assert.deepEqual(permissionOf(ctx, "codex"), { read: true, write: false, exec: false, approval: "ask" });
+	// Profile objects pass through normalized; a stored network:true promotes
+	// exec (the three-capability carrier of egress intent).
 	const objCtx = sampleCtx({ value: { permissions: { codex: { read: true, write: true, exec: false, network: true, approval: "ask" } } } });
-	assert.deepEqual(permissionOf(objCtx, "codex"), { read: true, write: true, exec: false, network: true, approval: "ask" });
+	assert.deepEqual(permissionOf(objCtx, "codex"), { read: true, write: true, exec: true, approval: "ask" });
 	// Missing permission falls back to the default tier (read-only).
 	const emptyCtx = sampleCtx({ value: { permissions: {} } });
-	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, network: false, approval: "ask" });
+	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, approval: "ask" });
 	// Other CLIs are independent.
-	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, network: false, approval: "ask" });
+	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, approval: "ask" });
 });

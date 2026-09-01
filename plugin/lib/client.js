@@ -56,8 +56,7 @@ window.__ModuleLoader__.load({
       "row.read": "读文件",
       "row.write": "写文件",
       "row.exec": "执行命令",
-      "row.network": "联网",
-      "row.approval": "未勾选时",
+            "row.approval": "未勾选时",
       "row.approvalHint": "未勾选的权限被用到时，按此选择。",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
@@ -126,8 +125,7 @@ window.__ModuleLoader__.load({
       "row.read": "Read files",
       "row.write": "Write files",
       "row.exec": "Run commands",
-      "row.network": "Network",
-      "row.approval": "When unchecked",
+            "row.approval": "When unchecked",
       "row.approvalHint": "When an unchecked capability comes up, follow this choice.",
       "row.autoContinueMax": "Max nudges (0 = off)",
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
@@ -187,9 +185,9 @@ window.__ModuleLoader__.load({
     // Fine-grained permission presets. Each carries the capability profile it
     // maps to; `custom` is chosen in the UI when the profile matches none.
     var PERMISSION_PRESETS = [
-      { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false, network: false, approval: "ask" } },
-      { id: "workspace-write", label: "工作区可写", profile: { read: true, write: true, exec: true, network: false, approval: "ask" } },
-      { id: "danger-full-access", label: "完全", profile: { read: true, write: true, exec: true, network: true, approval: "ask" } }
+      { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false, approval: "ask" } },
+      { id: "workspace-write", label: "工作区可写", profile: { read: true, write: true, exec: false, approval: "ask" } },
+      { id: "danger-full-access", label: "完全", profile: { read: true, write: true, exec: true, approval: "ask" } }
     ];
     // Approval is the strategy for UNCHECKED capabilities only: ask interactively
     // or auto-deny. "allow" is gone — checking the box already is the allow.
@@ -198,7 +196,7 @@ window.__ModuleLoader__.load({
       { id: "never", label: "自动拒绝" }
     ];
     var DEFAULT_PERMISSION = "read-only";
-    var DEFAULT_PROFILE = { read: true, write: false, exec: false, network: false, approval: "ask" };
+    var DEFAULT_PROFILE = { read: true, write: false, exec: false, approval: "ask" };
 
     // Normalize a stored permission (legacy string tier or profile object) into
     // a complete profile for the UI. Mirrors the host's normalizePermission.
@@ -217,15 +215,14 @@ window.__ModuleLoader__.load({
       if (typeof raw === "string") {
         var preset = null;
         for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === raw) { preset = PERMISSION_PRESETS[pi].profile; break; }
-        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec, network: preset.network, approval: preset.approval };
-        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec, network: DEFAULT_PROFILE.network, approval: DEFAULT_PROFILE.approval };
+        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec, approval: preset.approval };
+        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec, approval: DEFAULT_PROFILE.approval };
       }
       var p = raw || {};
       return {
         read: p.read !== undefined ? !!p.read : DEFAULT_PROFILE.read,
         write: p.write !== undefined ? !!p.write : DEFAULT_PROFILE.write,
         exec: p.exec !== undefined ? !!p.exec : DEFAULT_PROFILE.exec,
-        network: p.network !== undefined ? !!p.network : DEFAULT_PROFILE.network,
         approval: APPROVAL_OPTIONS.some(function (a) { return a.id === p.approval; }) ? p.approval : DEFAULT_PROFILE.approval
       };
     }
@@ -349,26 +346,24 @@ window.__ModuleLoader__.load({
         React.createElement("div", { className: "dsc-perm-block", style: { gridColumn: "1 / -1" } },
           React.createElement("div", { className: "dsc-perm-toggles" },
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.read"))
             ),
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.write"))
             ),
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, network: permission.network, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.exec"))
-            ),
-            // The network toggle is the same sandbox dial for every CLI.
-            React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.network, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: e.target.checked, approval: permission.approval }); } }),
-              React.createElement("span", null, t("row.network"))
             )
+            // No network toggle: exec already carries egress intent — npm
+            // install / git pull are ordinary commands, and the host-side
+            // normalizer maps legacy network:true onto exec.
           ),
           React.createElement("div", { className: "dsc-perm-approval" },
             React.createElement("label", { className: "dsc-ac-max" }, t("row.approval"),
-              React.createElement("select", { value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: permission.network, approval: e.target.value }); } },
+              React.createElement("select", { value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, approval: e.target.value }); } },
                 APPROVAL_OPTIONS.map(function (a) { return React.createElement("option", { key: a.id, value: a.id }, a.label); })
               )
             ),

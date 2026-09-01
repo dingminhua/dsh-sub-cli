@@ -128,7 +128,8 @@ test("permission UI renders capability toggles and the unchecked-strategy select
 	assert.match(source, /"row\.read"/);
 	assert.match(source, /"row\.write"/);
 	assert.match(source, /"row\.exec"/);
-	assert.match(source, /"row\.network"/);
+	// Three capability toggles only: the network flag is gone (exec carries egress).
+	assert.doesNotMatch(source, /"row\\.network"/, "the network toggle label is gone");
 	assert.match(source, /"row\.approval"/);
 	assert.match(source, /"row\.approvalAsk"/);
 	assert.match(source, /"row\.approvalNever"/);
