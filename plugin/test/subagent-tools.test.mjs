@@ -78,7 +78,7 @@ test("a network task is refused before any CLI starts", async () => {
 		registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 		const tool = fixture.tools.get(toolName);
 		await assert.rejects(
-			tool.execute({ description: "联网调查", prompt: "搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
+			tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
 			/没有内置联网工具/
 		);
 		assert.equal(dispatched, false, `${toolName} must not start a CLI for a network task`);

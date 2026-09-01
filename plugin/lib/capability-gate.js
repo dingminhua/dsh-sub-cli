@@ -9,17 +9,24 @@
 import { cliById } from "./registry.js";
 
 /**
- * Markers that a task needs live internet access. Deliberately bilingual and
- * coarse: a false positive only costs one clarifying turn, while a false
- * negative launches a doomed run.
+ * Markers that a task needs live internet access. Match the task's INTENT,
+ * not bare words: "fetch"/"url"/"http"/"news" appear in local work (inventorying
+ * a tool named web_fetch, reading a link in a file, git log messages) and must
+ * not trip the gate. A missed marker only costs one failed run; a false
+ * positive blocks a perfectly local task, so precision beats recall here.
  */
 const NETWORK_MARKERS = [
-	// Chinese
-	"联网", "上网", "搜索", "搜一下", "查一下", "查询最新", "查最新", "最新消息", "最新新闻",
-	"新闻", "抓取", "爬取", "访问网页", "打开网页", "浏览网页", "网页", "官网", "下载",
-	// English
-	"search the web", "web search", "browse", "fetch", "scrape", "crawl",
-	"latest news", "news about", "look up online", "online", "website", "url", "http"
+	// Chinese — verbs/objects that clearly ask for online access.
+	"联网", "上网", "联网搜索", "搜索一下", "搜一下", "搜索最新", "查询最新", "查最新",
+	"最新消息", "最新新闻", "搜索新闻", "查新闻", "新闻调查", "抓取网页", "爬取网页",
+	"访问这个网页", "打开这个网页", "浏览网页", "浏览这个网页", "访问网站", "打开网站",
+	"去网上", "从网上", "在网上查",
+	// English — full intent phrases, not bare tokens.
+	"search the web", "web search", "search online", "search the internet",
+	"google it", "look it up online", "search for the latest", "latest news",
+	"news about", "browse the web", "browse this url", "open this url",
+	"visit this url", "fetch this url", "fetch this page", "fetch this website",
+	"scrape this", "scrape the", "crawl this", "crawl the", "download from"
 ];
 
 /**
