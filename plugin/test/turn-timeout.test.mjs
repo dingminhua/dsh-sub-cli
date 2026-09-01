@@ -49,15 +49,19 @@ test("no observable activity at all counts as stuck", async () => {
 	assert.match(probe.reason, /no output observed/);
 });
 
-test("a process that will not settle after the deadline is stalled", async () => {
-	// `done` pending past the short settle window: treat it as stuck rather than
-	// waiting forever.
+test("a pending done with no observable activity is stalled (not 'awaiting exit')", async () => {
+	// Regression guard for the original bug: `handle?.done` (a promise object)
+	// is ALWAYS truthy, so a live child's pending `done` used to read as
+	// "exited at the deadline; awaiting close" and misjudge healthy long turns.
+	// The new contract: a pending `done` means "still running"; only a SETTLED
+	// promise counts as exited, and a silent pending child is judged by its
+	// lack of output.
 	const probe = await probeStalledTurn({
 		transport: transport({ done: new Promise(() => {}) }),
 		elapsedMs: 1_200_000
 	});
 	assert.equal(probe.stalled, true);
-	assert.match(probe.reason, /did not settle/);
+	assert.match(probe.reason, /no output observed/);
 });
 
 test("a rejected process exit is not treated as success", async () => {

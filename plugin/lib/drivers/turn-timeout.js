@@ -8,12 +8,31 @@
 //   1. Has the process already exited?          → the turn is over, wait for close.
 //   2. Did it emit output recently?             → still working, extend the wait.
 //   3. Nothing observed at all?                 → stuck, reject.
-//
-// Waiting on `done` is bounded: a child that exits settles it immediately, so
-// the "already exited" path never costs the full grace period.
 
 /** Default grace window granted to a turn that still looks alive, in ms. */
 export const DEFAULT_PROBE_GRACE_MS = 60_000;
+
+/**
+ * Whether a promise has ALREADY settled (fulfilled or rejected), without
+ * awaiting it. A pending promise object is always truthy — testing the
+ * object directly was the original bug: a live child's pending `done` read
+ * as "exited", the activity check below became unreachable, and healthy
+ * long turns were misjudged as stalled at their deadline. Only the SETTLED
+ * state means "exited"; never the object's truthiness.
+ *
+ * probeStalledTurn is async and always called from a timer callback (one
+ * macrotask AFTER any resolution), so an await-yield here flushes the
+ * microtask queue first: mark flags set by an already-settled promise's
+ * `.then` become visible, while a pending promise leaves them unset.
+ */
+async function isSettled(promise) {
+	if (!promise || typeof promise.then !== "function") return false;
+	let settled = false;
+	const mark = () => { settled = true; };
+	promise.then(mark, mark);
+	await null; // flush microtasks: settled promises run mark synchronously here
+	return settled;
+}
 
 /**
  * Decide what to do when a turn hits its deadline.
@@ -29,18 +48,11 @@ export const DEFAULT_PROBE_GRACE_MS = 60_000;
 export async function probeStalledTurn({ transport, elapsedMs, graceMs = DEFAULT_PROBE_GRACE_MS }) {
 	const handle = transport?.handle ?? null;
 
-	// 1. The process already exited: the turn is over. Wait briefly for the
-	//    transport to flush and close — that path delivers the real result (or
-	//    the real exit error), which beats a synthetic timeout.
-	if (handle?.done) {
-		const outcome = await Promise.race([
-			handle.done.then(() => "exited").catch(() => "exited"),
-			wait(2_000).then(() => "pending")
-		]);
-		if (outcome === "exited") {
-			return { stalled: false, reason: "process exited at the deadline; awaiting close", extendMs: 2_000 };
-		}
-		return { stalled: true, reason: `process did not settle after ${elapsedMs}ms` };
+	// 1. The process already exited (its done promise has settled): the turn
+	//    is over. The close path will deliver the real result (or the real
+	//    exit error), which beats a synthetic timeout, so grant it a moment.
+	if (await isSettled(handle?.done)) {
+		return { stalled: false, reason: "process exited at the deadline; awaiting close", extendMs: 2_000 };
 	}
 
 	// 2. Still running: did it emit anything recently? A live CLI that keeps
@@ -56,8 +68,4 @@ export async function probeStalledTurn({ transport, elapsedMs, graceMs = DEFAULT
 
 	// 3. No observable activity: treat it as stuck rather than waiting forever.
 	return { stalled: true, reason: `no output observed within ${elapsedMs}ms` };
-}
-
-function wait(ms) {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }

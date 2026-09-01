@@ -22,7 +22,7 @@ import { SubprocessLineTransport } from "./subprocess-transport.js";
 import { probeStalledTurn } from "./turn-timeout.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
-import { DEFAULT_TURN_TIMEOUT_MS } from "../turn-timeout-policy.js";
+import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
 
 export const QWEN_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -135,7 +135,7 @@ function formatElapsed(startedAt) {
 }
 
 export class QwenStreamJsonDriver {
-	constructor({ subprocess, dirSource, prepare, turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS } = {}) {
+	constructor({ subprocess, dirSource, prepare, turnTimeoutMs } = {}) {
 		if (!subprocess || typeof subprocess.spawn !== "function") throw new TypeError("Qwen stream-json driver requires subprocess.spawn");
 		if (typeof dirSource !== "function") throw new TypeError("Qwen stream-json driver requires dirSource()");
 		this.id = "qwen-stream-json";
@@ -143,7 +143,9 @@ export class QwenStreamJsonDriver {
 		this.subprocess = subprocess;
 		this.dirSource = dirSource;
 		this.prepare = typeof prepare === "function" ? prepare : null;
-		this.turnTimeoutMs = turnTimeoutMs;
+		// Sanitize like Claude does: null/0/NaN/negative must fall back to the
+		// default instead of arming an immediate timeout.
+		this.turnTimeoutMs = resolveTurnTimeoutMs(turnTimeoutMs);
 	}
 
 	async start(request) {
