@@ -271,8 +271,14 @@ class CodexAppServerSession {
 			off();
 			this.activeTurn = null;
 			if (outcome.error) {
-				this.state.transition(outcome.cancelled ? "cancelled" : "failed", outcome.error.message);
-				reject(outcome.error);
+				// MEDIUM fix: distinguish user-initiated cancellation from real
+				// turn failure. The old code mapped both to "cancelled", which
+				// made "Codex turn failed" indistinguishable from "user pressed
+				// Ctrl-C" downstream. timeoutMs-based interrupts also land here
+				// and are still "cancelled" (not "failed") by design.
+				const stopReason = outcome.cancelled ? "cancelled" : "failed";
+				this.state.transition(stopReason, outcome.error.message);
+				reject(Object.assign(outcome.error, { stopReason }));
 				return;
 			}
 			this.state.transition("completed");

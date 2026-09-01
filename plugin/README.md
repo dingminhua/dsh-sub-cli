@@ -5,7 +5,14 @@
 - 把 Codex、Claude Code、Qwen Code 放到一个**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**（`config-<cli>/`），通过该 CLI 自身的环境变量指向，**完全不碰**你系统里已装的 CLI 配置；
 - Web 插件配置卡片可配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
-- 注册 **`cli_codex_direct` / `cli_codex_subagent` / `cli_claude_direct` / `cli_claude_code` / `cli_claude_subagent` / `cli_qwen_direct` / `cli_qwen` / `cli_qwen_subagent`** 工具，让 DSH 模型把自包含任务交给对应 CLI；每个 CLI 都有**直连**（`*_direct`，持续会话）与**代理**（`*_subagent`，DSH Relay 子代理转发）两种模式，`cli_claude_code` / `cli_qwen` 是 one-shot 路径（后台 job 支持）；`cli_codex` 别名已移除；
+- 注册 **17 个模型工具**，按"CLI × 模式"全矩阵覆盖：
+  - 持续会话（每个 CLI）：`cli_codex_direct` / `cli_claude_direct` / `cli_qwen_direct`（首轮；返回 `sessionId`）+ `cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions`（qwen 无 `sessions`）；
+    > **注意**：`cli_<cli>_direct` 属于 session-mode，**不支持后台 job**（返回的 `sessionId` 仅用于同会话内的后续 `followup/status/sessions` 调用）；`cli_claude_code` / `cli_qwen` 的一次性模式才支持后台 job。
+  - Relay 子代理（每个 CLI）：`cli_codex_subagent` / `cli_claude_subagent` / `cli_qwen_subagent`（创建 DSH continuable 子代理，通过 `managed_cli_submit` 转发到真实 thread）；
+  - 中断（codex/claude）：`cli_codex_interrupt` / `cli_claude_interrupt`（Qwen 不支持）；
+  - 一次性（仅 Claude/Qwen）：`cli_claude_code` / `cli_qwen`（一次性无 headless，支持后台 job）；
+  - **17 = 3 direct + 3 subagent + 11 session 续接（4 codex + 4 claude + 3 qwen） + 2 one-shot + 1 dispatch + 1 `managed_cli_submit` Relay 内部工具**。
+  - `cli_codex` 别名已移除；
 - 每个 CLI 都有持续会话驱动（Codex: app-server，Claude/Qwen: stream-json NDJSON），并提供 **`cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions` / `cli_<cli>_interrupt`** 持续会话工具（qwen 无 interrupt）；
 - 注册 **`cli_dispatch`** 模型工具，让 DSH 模型无头调用外部 CLI 并回传输出。
 

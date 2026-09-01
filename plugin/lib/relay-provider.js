@@ -16,12 +16,20 @@ export class ManagedCliRelayProvider {
 		return Promise.reject(new Error(`${this.name} is continuable-only`));
 	}
 	prepareContinuable(request) {
-		const childId = String(request.sessionId);
+		// M1 fix: refuse to bind without a real session id; an "undefined" key
+		// would let two relay children collide on the same record.
+		const childId = request?.sessionId;
+		if (typeof childId !== "string" || !childId) throw new Error("Relay continuable requires a string sessionId");
 		// Approval requests are audited and presented on the parent/controller turn.
 		// Delegated child approval policy is intentionally pinned to never, so the
 		// Relay may forward requests but can never approve its own escalation.
-		this.service.bindChild(childId, { cli: this.cli, parentAgent: request.parent ?? null });
-		this.service.setChildCwd(childId, request.parent?.session?.header?.cwd);
+		this.service.bindChild(String(childId), { cli: this.cli, parentAgent: request.parent ?? null });
+		// M2 fix: surface the missing cwd explicitly so the user does not see a
+		// confusing SESSION_CWD_REQUIRED later. The parent (controller agent) always
+		// carries a working directory; the only path that omits it is a test rig.
+		const cwd = request.parent?.session?.header?.cwd;
+		if (typeof cwd !== "string" || !cwd) throw new Error(`Relay continuable for child ${childId} requires parent.session.header.cwd`);
+		this.service.setChildCwd(String(childId), cwd);
 		return Promise.resolve({ seed: [] });
 	}
 }

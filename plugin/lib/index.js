@@ -24,8 +24,8 @@ import { ManagedCliAgentsService } from "./managed-cli-agents.js";
 import { registerManagedSessionTools } from "./session-tools.js";
 import { registerRelaySubmitTool } from "./relay-tools.js";
 import { permissionReason } from "./permissions.js";
-import { attachRelayLifecycle, registerCodexSubagentTool, registerManagedCliSubagentTools } from "./relay-subagent.js";
-import { registerManagedCodexRelayProvider, registerManagedCliRelayProvider } from "./relay-provider.js";
+import { attachRelayLifecycle, registerManagedCliSubagentTools } from "./relay-subagent.js";
+import { registerManagedCliRelayProvider } from "./relay-provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
@@ -304,10 +304,10 @@ export async function apply(ctx) {
 	}
 	registerRelaySubmitTool({ tools: ctx.tools }, managedCliAgents);
 	attachRelayLifecycle(ctx, managedCliAgents);
+	// H1 fix: registerManagedCliSubagentTools already covers all 3 CLIs
+	// (codex/claude/qwen); the legacy registerCodexSubagentTool call below
+	// was duplicating the codex entry. Drop it.
 	registerManagedCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, (cliId) => preflightCli(ctx, cliId));
-	// Back-compat: keep cli_codex_subagent registered via the legacy entry point
-	// so any caller still importing `registerCodexSubagentTool` keeps working.
-	registerCodexSubagentTool({ subagents: ctx.subagents, tools: ctx.tools }, managedCliAgents, (cliId) => preflightCli(ctx, cliId));
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.

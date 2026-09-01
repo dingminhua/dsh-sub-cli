@@ -32,12 +32,21 @@ export function attachRelayLifecycle(ctx, service) {
 			const guard = childCtx.tools.guard((exec) => {
 				if (exec.name !== "report") return undefined;
 				const childId = exec.agent?.session?.id;
-				if (!childId) return undefined;
+				// Missing childId is itself a report that should be blocked: a Relay
+				// turn is always attached to a child session, so an unkeyed exec
+				// means something is wrong upstream. We surface the same submit-first
+				// message rather than letting the child fall through.
+				if (!childId) return "This Relay turn has no child session id. managed_cli_submit cannot route; refusing report.";
 				try {
 					return service.childCanReport(String(childId))
 						? undefined
 						: "This Relay turn has not called managed_cli_submit. Forward the task to the external CLI before report.";
-				} catch { return undefined; }
+				} catch (error) {
+					// H2 fix: an exception (e.g. CHILD_BINDING_NOT_FOUND) must NOT
+					// grant the report. Fail closed so a mis-bound child can never
+					// report without first calling managed_cli_submit.
+					return `managed_cli_submit guard failed: ${error instanceof Error ? error.message : String(error)}. Refusing report.`;
+				}
 			});
 			return typeof guard === "function" ? guard : () => {};
 		});
