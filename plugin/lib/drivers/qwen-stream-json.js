@@ -33,34 +33,26 @@ export const QWEN_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	interactivePermissions: false
 });
 
-// Extract the final text from assistant message events.
-// Falls back to the `result` field when no streamed text arrived.
+// Extract final text from Qwen's result object. Qwen has no streaming events
+// (no assistant/user/...), so we look for the result field on the result event.
 function extractFinalText(events) {
-	const parts = [];
-	for (const ev of events) {
-		if (ev?.type !== "assistant") continue;
-		const content = ev?.message?.content;
-		if (!Array.isArray(content)) continue;
-		for (const block of content) {
-			if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
-		}
-	}
-	if (parts.length) return parts.join("\n");
+	// Qwen emits only a single "result" event. Try the typed field first.
 	const result = events.find((ev) => ev?.type === "result");
-	return typeof result?.result === "string" ? result.result : "";
+	if (typeof result?.result === "string") return result.result;
+	// Fallback: serialize the raw result event (covers content/output fields too).
+	if (result) {
+		const flat = JSON.stringify(result).replace(/[{}"]/g, " ").replace(/\s+/g, " ").trim();
+		return flat.slice(0, 500);
+	}
+	return "";
 }
 
+// Qwen's single-line result has no separate tool_use tracking; surface whatever
+// the result event reports. Returns 0 when no counter is present.
 function countToolUses(events) {
-	let n = 0;
-	for (const ev of events) {
-		if (ev?.type !== "assistant") continue;
-		const content = ev?.message?.content;
-		if (!Array.isArray(content)) continue;
-		for (const block of content) {
-			if (block?.type === "tool_use") n++;
-		}
-	}
-	return n;
+	const result = events.find((ev) => ev?.type === "result");
+	const n = result?.num_turns ?? result?.toolRounds ?? 0;
+	return Number.isInteger(n) ? n : 0;
 }
 
 /**
@@ -68,7 +60,9 @@ function countToolUses(events) {
  * CLI emits a `result` event or the process closes. Caller owns subprocess
  * disposal.
  */
-function runTurn({ transport, prompt, timeoutMs }) {
+function runTurn({ transport, timeoutMs }) {
+	// Qwen has no --input-format, so the prompt is passed via --prompt on the
+	// command line (in #spawnTurn). Here we just read the single JSON result line.
 	return new Promise((resolve, reject) => {
 		const events = [];
 		let settled = false;
@@ -88,7 +82,9 @@ function runTurn({ transport, prompt, timeoutMs }) {
 			let ev;
 			try { ev = JSON.parse(trimmed); } catch { return; }
 			events.push(ev);
-			if (ev?.type === "result") {
+			// Qwen emits exactly one JSON object on stdout (single-line output mode,
+			// not NDJSON). It is always the result; there is no init/assistant event.
+			if (ev?.type === "result" || ev?.subtype === "error_during_execution") {
 				const isError = ev.is_error === true || ev.subtype === "error_during_execution";
 				if (isError) {
 					const message = ev?.error?.message || ev?.result || "Qwen turn failed";
@@ -106,9 +102,6 @@ function runTurn({ transport, prompt, timeoutMs }) {
 			finish(false, new Error(`Qwen turn timed out after ${timeoutMs}ms`));
 		}, timeoutMs);
 		timer.unref?.();
-		// Send the first user turn as one NDJSON line.
-		const payload = `${JSON.stringify({ type: "user", message: { role: "user", content: prompt } })}\n`;
-		transport.write(payload).catch((error) => finish(false, error));
 	});
 }
 
@@ -178,13 +171,22 @@ export class QwenStreamJsonDriver {
 	}
 
 	#spawnTurn(ctx, request, { mode, prompt, resumeSessionId = null, signal = null }) {
+		// Qwen has no --input-format flag: a single user message is appended as
+		// `--prompt <text>` (the value, not a stream). The output, however, is a
+		// single JSON object on stdout when `--output-format stream-json` is set.
 		const args = [
 			"-p",
-			"--input-format", "stream-json",
 			"--output-format", "stream-json"
 		];
+		// Both new and resume turns pass the prompt explicitly via --prompt
+		// (Qwen has no stdin protocol). The first turn also seeds a session id;
+		// subsequent turns use --resume to reattach the on-disk history.
+		if (typeof prompt === "string" && prompt) args.push("--prompt", prompt);
 		if (request.model) args.push("--model", request.model);
-		if (request.reasoningEffort) args.push("--effort", request.reasoningEffort);
+		// Qwen has no --effort flag (verified against `qwen --help`); if the user
+		// configured a reasoning effort we silently skip it instead of letting the
+		// CLI reject the whole invocation with "Unknown argument: effort".
+		if (request.reasoningEffort) console.warn(`[dsh-sub-cli] qwen driver: ignoring reasoningEffort=${request.reasoningEffort}; Qwen has no --effort flag`);
 		if (mode === "resume" && resumeSessionId) args.push("--resume", resumeSessionId);
 		else if (mode === "new") args.push("--session-id", ctx.sessionId);
 		args.push("--cwd", request.cwd);
@@ -200,9 +202,9 @@ export class QwenStreamJsonDriver {
 		const transport = new SubprocessLineTransport(handle);
 		return (async () => {
 			try {
-				const { events, result } = await runTurn({ transport, prompt, timeoutMs: request.timeoutMs ?? this.turnTimeoutMs });
-				const init = events.find((ev) => ev?.type === "system" && ev?.subtype === "init");
-				const resolvedSessionId = init?.session_id || result?.session_id || resumeSessionId || ctx.sessionId;
+				const { events, result } = await runTurn({ transport, timeoutMs: request.timeoutMs ?? this.turnTimeoutMs });
+				// Qwen emits no init event; session id comes from the result or the ctx.
+				const resolvedSessionId = result?.session_id || resumeSessionId || ctx.sessionId;
 				ctx.actualSessionId = resolvedSessionId;
 				return {
 					threadId: resolvedSessionId,
