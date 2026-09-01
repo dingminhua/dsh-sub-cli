@@ -27,22 +27,6 @@
 - **会话持久化**：会话注册表（含远程 thread id）写入统一目录的 `sessions.json`，Host 重启后 `cli_<cli>_followup` 直接按 `sessionId` 恢复并 reattach 同一 thread，无需重新创建。
 - **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_<cli>_direct` 即返回完整报告。每个 CLI 可在设置卡里开关（`enabled`）并调整续接次数（`max`，默认 3）。**泛化评估结论**：该机制依赖"同一 thread 的 followup"，对所有持续会话式调用生效（Codex/Claude/Qwen），`INTENT_TAIL` 正则同时识别中英文意图句。
 
-## 各 CLI 工具能力矩阵
-
-DSH 已经自带了 `advanced_search` / `web_fetch` / `platform_search` / `free_search_test` 等工具。**直接让 DSH 模型调这些就行，不要让某个 CLI 内部去做 web 搜索**。本插件启动的 CLI 子进程里能调哪些工具，由该 CLI 自己决定，下表只列"在 stream-json / app-server 模式下确实能被 LLM 触发"的能力：
-
-| 能力 | Codex (app-server) | Claude Code (stream-json) | Qwen Code (stream-json) |
-|------|:------------------:|:--------------------------:|:-----------------------:|
-| 文件读写（Read/Write/Edit） | ✅ | ✅ | ✅ |
-| Shell 命令（exec） | ✅ | ✅ | ✅ |
-| WebSearch（联网搜索） | ❌ 内部无此工具 | ❌ **驱动层强制 `--disallowed-tools WebSearch,WebFetch`**（stream-json 模式拿不到 DSH 权限；启 WebSearch 会让模型规划失败） | ❌ 内部无此工具 |
-| WebFetch（抓 URL） | ❌ | ❌ 同上 | ❌ |
-| Plan / Agent / 内部子代理 | ✅ | ✅ | ✅ |
-
-**用 DSH 工具做 web 任务**：`advanced_search({"query": "..."})`、`web_fetch({"url": "...", "prompt": "..."})`、`platform_search({"platform": "github", "query": "..."})` — 这些是 DSH 自带、跟 CLI 无关。
-
-**Claude Code 强制排除 WebSearch/WebFetch 的原因**：实测下，Claude Code CLI 在 stream-json 模式下确实会暴露 WebSearch 工具，但它需要 DSH 弹出权限对话框才能用，而 stream-json 协议不携带审批事件——实际表现是"工具请求权限时未获授权"。本插件用 `--disallowed-tools WebSearch,WebFetch` 阻止 CLI 暴露这俩工具，让 LLM 在规划阶段就知道它们不可用，避免 mid-turn 失败。Qwen/Codex 内部根本没有 web 工具（system/init 事件 `tools` 数组里不包含 web_*），不需要额外配置。
-
 ## 安装
 
 在 DSH 中通过插件目录添加：
