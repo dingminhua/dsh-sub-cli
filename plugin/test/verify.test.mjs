@@ -354,9 +354,9 @@ test("permissionOf returns a normalized capability profile for a CLI", () => {
 	// Profile objects pass through normalized.
 	const objCtx = sampleCtx({ value: { permissions: { codex: { read: true, write: true, exec: false, network: true, approval: "ask" } } } });
 	assert.deepEqual(permissionOf(objCtx, "codex"), { read: true, write: true, exec: false, network: true, approval: "ask" });
-	// Missing permission falls back to the default tier (workspace-write).
+	// Missing permission falls back to the default tier (read-only).
 	const emptyCtx = sampleCtx({ value: { permissions: {} } });
-	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: true, exec: true, network: false, approval: "ask" });
+	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, network: false, approval: "ask" });
 	// Other CLIs are independent.
-	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: true, exec: true, network: false, approval: "ask" });
+	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, network: false, approval: "ask" });
 });

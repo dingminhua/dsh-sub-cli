@@ -1,8 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { CLI_REGISTRY } from "../lib/registry.js";
 
 const source = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
+
+test("client webTools flags agree with the registry", () => {
+	// The client half cannot import the registry (it uses node builtins), so it
+	// repeats the flags. If the two drift, the settings card promises a network
+	// toggle the capability gate then refuses — keep them in lockstep.
+	for (const entry of CLI_REGISTRY) {
+		const flag = new RegExp(`id: "${entry.id}"[^}]*webTools: ${entry.webTools}`);
+		assert.match(source, flag, `client.js webTools for ${entry.id} must match registry (${entry.webTools})`);
+	}
+});
 
 test("settings footer includes the documented encourage link", () => {
 	assert.match(source, /DSC_GITHUB_URL = "https:\/\/github\.com\/dingminhua\/dsh-sub-cli"/);
@@ -95,13 +106,17 @@ test("old probe-era labels and second connectivity line are gone", () => {
 	assert.doesNotMatch(source, /installText/);
 });
 
-test("permission UI renders presets, capability toggles and approval mode", () => {
+test("permission UI renders capability toggles and the unchecked-strategy select", () => {
 	// Fine-grained profile model mirrored in the client.
 	assert.match(source, /var PERMISSION_PRESETS = /);
 	assert.match(source, /var APPROVAL_OPTIONS = /);
 	assert.match(source, /function normalizePermissionClient\(raw\)/);
-	assert.match(source, /function presetIdOf\(p\)/);
-	// The three presets with their capability profiles.
+	// The preset SELECT is gone: the checkboxes are their own visualization, so
+	// there is no reverse presetIdOf and no preset dropdown in the UI.
+	assert.doesNotMatch(source, /function presetIdOf/, "no reverse preset lookup is needed any more");
+	assert.doesNotMatch(source, /"row\.preset"/, "no preset select label");
+	assert.doesNotMatch(source, /"row\.custom"/, "no custom preset option");
+	// The three legacy tier ids still exist for stored-string normalization.
 	assert.match(source, /"read-only"/);
 	assert.match(source, /"workspace-write"/);
 	assert.match(source, /"danger-full-access"/);
@@ -113,12 +128,30 @@ test("permission UI renders presets, capability toggles and approval mode", () =
 	assert.match(source, /"row\.network"/);
 	assert.match(source, /"row\.approval"/);
 	assert.match(source, /"row\.approvalAsk"/);
-	assert.match(source, /"row\.approvalAllow"/);
 	assert.match(source, /"row\.approvalNever"/);
+	// The checkbox is the only grant: there is no "auto-allow" option left. The
+	// approval select decides what happens to UNCHECKED capabilities only.
+	assert.doesNotMatch(source, /"row\.approvalAllow"/, "auto-allow is gone; the checkbox is the allow");
+	assert.doesNotMatch(source, /\{ id: "allow"/, "no allow option in APPROVAL_OPTIONS");
+	assert.match(source, /var APPROVAL_OPTIONS = \[\s*\{ id: "ask"[\s\S]*?\{ id: "never"/, "exactly ask + never, in that order");
+	assert.match(source, /"row\.approvalHint"/, "the select explains it applies to unchecked capabilities");
 	// Permissions persist as profile objects (normalizePermissions), not tiers.
 	assert.match(source, /function normalizePermissions\(raw\)/);
 	assert.match(source, /permissions: normalizePermissions\(/);
 	// The legacy three-tier select is gone.
 	assert.doesNotMatch(source, /var PERMISSIONS = /);
 	assert.doesNotMatch(source, /PERMISSIONS\.map/);
+});
+
+test("auto-continue has no checkbox; off is max 0", () => {
+	// The toggle was removed: auto-continue is always on, and turning it off is
+	// expressed by choosing 0 in the max-nudges select (label says so).
+	assert.doesNotMatch(source, /"row\.autoContinue"/, "the standalone toggle label is gone");
+	assert.doesNotMatch(source, /dsc-ac-toggle/, "no toggle element or style remains");
+	assert.match(source, /"row\.autoContinueMax"\s*:\s*"[^"]*0\s*=\s*关闭/, "the Chinese label explains 0 means off");
+	assert.match(source, /"row\.autoContinueMax"\s*:\s*"[^"]*0 = off/, "the English label explains 0 means off");
+	assert.match(source, /function autoContinueMaxOf\(raw\)/, "stored profiles normalize to a 0–10 display value");
+	assert.match(source, /React\.createElement\("option", \{ value: 0 \}, "0"\)/, "the select offers 0");
+	// Old enabled:false profiles must display as 0, not silently re-enable.
+	assert.match(source, /if \(!enabled\) return 0;/);
 });

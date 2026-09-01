@@ -32,18 +32,22 @@ export { QwenStreamJsonDriver } from "./qwen-stream-json.js";
  *   stream-json), and Qwen (subprocess + stream-json) when their binaries
  *   are present in the unified directory.
  */
-export function createManagedCliDrivers({ subprocess, dirSource, prepare, drivers = {} }) {
+export function createManagedCliDrivers({ subprocess, dirSource, prepare, drivers = {}, turnTimeoutSource = null }) {
+	// Each CLI carries its own configured timeout (minutes). This factory only
+	// wires the lookup through; the default lives in turn-timeout-policy.js.
+	const timeoutMsFor = (cliId) => (typeof turnTimeoutSource === "function" ? turnTimeoutSource(cliId) : undefined);
 	const map = { ...drivers };
 	if (!map.codex) {
 		map.codex = new CodexAppServerDriver({
-			createTransport: createCodexSubprocessTransportFactory({ subprocess, dirSource, prepare })
+			createTransport: createCodexSubprocessTransportFactory({ subprocess, dirSource, prepare }),
+			turnTimeoutMs: timeoutMsFor("codex")
 		});
 	}
 	if (!map.claude) {
-		map.claude = new ClaudeStreamJsonDriver({ subprocess, dirSource, prepare });
+		map.claude = new ClaudeStreamJsonDriver({ subprocess, dirSource, prepare, turnTimeoutMs: timeoutMsFor("claude") });
 	}
 	if (!map.qwen) {
-		map.qwen = new QwenStreamJsonDriver({ subprocess, dirSource, prepare });
+		map.qwen = new QwenStreamJsonDriver({ subprocess, dirSource, prepare, turnTimeoutMs: timeoutMsFor("qwen") });
 	}
 	const ids = Object.keys(map);
 	if (!ids.length) throw new TypeError("createManagedCliDrivers requires at least one driver");

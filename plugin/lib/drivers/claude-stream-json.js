@@ -21,6 +21,8 @@
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
 import { SubprocessLineTransport } from "./subprocess-transport.js";
+import { probeStalledTurn } from "./turn-timeout.js";
+import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
 
@@ -117,8 +119,28 @@ function runTurn({ transport, prompt, timeoutMs }) {
 			if (settled) return;
 			finish(false, error ?? new Error("Claude process closed without a result event"));
 		});
+		// Hitting the deadline is not an automatic failure: probe the child and
+		// only reject when it is genuinely silent (see drivers/turn-timeout.js).
 		timer = setTimeout(() => {
-			finish(false, new Error(`Claude turn timed out after ${timeoutMs}ms`));
+			if (settled) return;
+			const startedAt = Date.now() - timeoutMs;
+			probeStalledTurn({ transport, elapsedMs: timeoutMs })
+				.then((probe) => {
+					if (settled) return;
+					if (probe.stalled) {
+						finish(false, new Error(`Claude turn stalled after ${timeoutMs}ms: ${probe.reason}`));
+						return;
+					}
+					timer = setTimeout(() => {
+						finish(false, new Error(
+							`Claude turn timed out after ${Date.now() - startedAt}ms (granted extra time: ${probe.reason})`
+						));
+					}, probe.extendMs ?? 0);
+					timer.unref?.();
+				})
+				.catch((error) => {
+					if (!settled) finish(false, error);
+				});
 		}, timeoutMs);
 		timer.unref?.();
 		// stream-json requires one NDJSON line per message. The wire stays
@@ -130,7 +152,7 @@ function runTurn({ transport, prompt, timeoutMs }) {
 }
 
 export class ClaudeStreamJsonDriver {
-	constructor({ subprocess, dirSource, prepare, turnTimeoutMs = 1800000 } = {}) {
+	constructor({ subprocess, dirSource, prepare, turnTimeoutMs } = {}) {
 		if (!subprocess || typeof subprocess.spawn !== "function") throw new TypeError("Claude stream-json driver requires subprocess.spawn");
 		if (typeof dirSource !== "function") throw new TypeError("Claude stream-json driver requires dirSource()");
 		this.id = "claude-stream-json";
@@ -138,7 +160,7 @@ export class ClaudeStreamJsonDriver {
 		this.subprocess = subprocess;
 		this.dirSource = dirSource;
 		this.prepare = typeof prepare === "function" ? prepare : null;
-		this.turnTimeoutMs = turnTimeoutMs;
+		this.turnTimeoutMs = resolveTurnTimeoutMs(turnTimeoutMs);
 	}
 
 	async start(request) {

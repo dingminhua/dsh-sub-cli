@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { createRunState, defineDriverCapabilities } from "./types.js";
 import { codexApprovalResponse, normalizeCodexPermissionRequest } from "../permissions.js";
+import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
 
 export const CODEX_APP_SERVER_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -147,7 +148,7 @@ export class JsonRpcLineWire {
 }
 
 class CodexAppServerSession {
-	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, onPermissionRequest, resumeThreadId = null, timeoutMs = 1800000 }) {
+	constructor({ wire, cwd, model, reasoningEffort, approvalPolicy, sandbox, onPermissionRequest, resumeThreadId = null, timeoutMs }) {
 		this.wire = wire;
 		this.cwd = cwd;
 		this.model = model;
@@ -156,7 +157,7 @@ class CodexAppServerSession {
 		this.sandbox = sandbox;
 		this.onPermissionRequest = typeof onPermissionRequest === "function" ? onPermissionRequest : null;
 		this.resumeThreadId = resumeThreadId;
-		this.timeoutMs = timeoutMs;
+		this.timeoutMs = resolveTurnTimeoutMs(timeoutMs);
 		this.threadId = null;
 		this.activeTurn = null;
 		this.progress = "";
@@ -371,13 +372,16 @@ class CodexAppServerSession {
 }
 
 export class CodexAppServerDriver {
-	constructor({ createTransport, requestTimeoutMs = 30000, turnTimeoutMs = 1800000, clientInfo } = {}) {
+	constructor({ createTransport, requestTimeoutMs = 30000, turnTimeoutMs, clientInfo } = {}) {
 		if (typeof createTransport !== "function") throw new TypeError("Codex app-server driver requires createTransport(request)");
 		this.id = "codex-app-server";
 		this.capabilities = CODEX_APP_SERVER_CAPABILITIES;
 		this.createTransport = createTransport;
 		this.requestTimeoutMs = requestTimeoutMs;
-		this.turnTimeoutMs = turnTimeoutMs;
+		// Codex drives its turn over the app-server wire, so this is a request
+		// timeout rather than a process deadline; the deadline probe belongs to the
+		// subprocess-based drivers (Claude/Qwen), which own a live child.
+		this.turnTimeoutMs = resolveTurnTimeoutMs(turnTimeoutMs);
 		this.clientInfo = clientInfo ?? { name: "dsh-sub-cli", version: "0.1.0" };
 	}
 

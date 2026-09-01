@@ -19,8 +19,10 @@
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
 import { SubprocessLineTransport } from "./subprocess-transport.js";
+import { probeStalledTurn } from "./turn-timeout.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
+import { DEFAULT_TURN_TIMEOUT_MS } from "../turn-timeout-policy.js";
 
 export const QWEN_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -98,15 +100,42 @@ function runTurn({ transport, timeoutMs }) {
 			if (settled) return;
 			finish(false, error ?? new Error("Qwen process closed without a result event"));
 		});
+		// Hitting the deadline is not an automatic failure. Probe the child: an
+		// exited process is left to the close handler (which carries the real
+		// result), and a turn that is still emitting output gets more time. Only a
+		// genuinely silent turn is rejected.
 		timer = setTimeout(() => {
-			finish(false, new Error(`Qwen turn timed out after ${timeoutMs}ms`));
+			if (settled) return;
+			const startedAt = Date.now() - timeoutMs;
+			probeStalledTurn({ transport, elapsedMs: timeoutMs })
+				.then((probe) => {
+					if (settled) return;
+					if (probe.stalled) {
+						finish(false, new Error(`Qwen turn stalled after ${timeoutMs}ms: ${probe.reason}`));
+						return;
+					}
+					// Grant more time and keep listening.
+					timer = setTimeout(() => {
+						finish(false, new Error(
+							`Qwen turn timed out after ${formatElapsed(startedAt)}ms (granted extra time: ${probe.reason})`
+						));
+					}, probe.extendMs ?? 0);
+					timer.unref?.();
+				})
+				.catch((error) => {
+					if (!settled) finish(false, error);
+				});
 		}, timeoutMs);
 		timer.unref?.();
 	});
 }
 
+function formatElapsed(startedAt) {
+	return String(Math.max(0, Date.now() - startedAt));
+}
+
 export class QwenStreamJsonDriver {
-	constructor({ subprocess, dirSource, prepare, turnTimeoutMs = 1800000 } = {}) {
+	constructor({ subprocess, dirSource, prepare, turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS } = {}) {
 		if (!subprocess || typeof subprocess.spawn !== "function") throw new TypeError("Qwen stream-json driver requires subprocess.spawn");
 		if (typeof dirSource !== "function") throw new TypeError("Qwen stream-json driver requires dirSource()");
 		this.id = "qwen-stream-json";

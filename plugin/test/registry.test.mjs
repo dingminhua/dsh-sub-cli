@@ -24,9 +24,11 @@ test("argv templates are shell-safe arrays; codex uses -m for model", () => {
 	assert.ok(args.includes("gpt-5"));
 });
 
-test("argv without model omits the model flag (default permission workspace-write)", () => {
+test("argv without model omits the model flag (default permission is now read-only)", () => {
 	const claude = cliById("claude");
-	assert.deepEqual(claude.argv("hi", ""), ["-p", "--output-format", "text", "--permission-mode", "acceptEdits", "hi"]);
+	// The default tier changed to read-only (only read checked), so an unset
+	// permission now maps to Claude's plan mode.
+	assert.deepEqual(claude.argv("hi", ""), ["-p", "--output-format", "text", "--permission-mode", "plan", "hi"]);
 });
 
 test("permission tier maps into each CLI's argv", () => {
@@ -43,8 +45,8 @@ test("permission tier maps into each CLI's argv", () => {
 	assert.deepEqual(qwen.argv("t", "", "read-only"), ["--sandbox", "--prompt", "t"]);
 	assert.deepEqual(qwen.argv("t", "", "workspace-write"), ["--prompt", "t"]);
 	assert.deepEqual(qwen.argv("t", "", "danger-full-access"), ["--prompt", "t"]);
-	// Unknown tier falls back to the default (workspace-write).
-	assert.deepEqual(qwen.argv("t", "", "bogus"), ["--prompt", "t"]);
+	// Unknown tier falls back to the default (read-only).
+	assert.deepEqual(qwen.argv("t", "", "bogus"), ["--sandbox", "--prompt", "t"]);
 });
 
 test("headless argv includes unattended flags so codex never prompts for a TTY", () => {
@@ -52,7 +54,7 @@ test("headless argv includes unattended flags so codex never prompts for a TTY",
 	const args = codex.argv("task", "");
 	assert.ok(args.includes("--skip-git-repo-check"));
 	assert.ok(args.includes("-s"));
-	assert.ok(args.includes("workspace-write"));
+	assert.ok(args.includes("read-only"));
 	const claude = cliById("claude");
 	assert.ok(claude.argv("task", "").includes("--permission-mode"));
 });
@@ -79,9 +81,9 @@ const ARGV_PERMISSION_CASES = [
 	{ label: "legacy read-only", permission: "read-only", tier: "read-only" },
 	{ label: "legacy workspace-write", permission: "workspace-write", tier: "workspace-write" },
 	{ label: "legacy danger-full-access", permission: "danger-full-access", tier: "danger-full-access" },
-	{ label: "unknown string falls back to default", permission: "bogus", tier: "workspace-write" },
-	{ label: "missing permission defaults to workspace-write", permission: undefined, tier: "workspace-write" },
-	{ label: "network alone escalates to full access", permission: { read: true, write: false, exec: false, network: true, approval: "allow" }, tier: "danger-full-access" },
+	{ label: "unknown string falls back to default (read-only)", permission: "bogus", tier: "read-only" },
+	{ label: "missing permission defaults to read-only", permission: undefined, tier: "read-only" },
+	{ label: "network alone escalates to full access", permission: { read: true, write: false, exec: false, network: true, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "exec+network escalates to full access", permission: { read: true, write: false, exec: true, network: true, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "exec without network stays workspace-write", permission: { read: true, write: false, exec: true, network: false, approval: "ask" }, tier: "workspace-write" },
 	{ label: "write without exec stays workspace-write", permission: { read: true, write: true, exec: false, network: false, approval: "ask" }, tier: "workspace-write" },

@@ -19,6 +19,9 @@ export class SubprocessLineTransport {
 		this.closeListeners = new Set();
 		this.buffer = "";
 		this.closed = false;
+		// Timestamp of the most recent output, used by the turn-timeout probe to
+		// tell "still working" from "silently stuck".
+		this.lastActivityAt = Date.now();
 		this.decoder = new TextDecoder();
 		this.onData = (chunk) => this.consume(chunk);
 		handle.stdout.on("data", this.onData);
@@ -40,6 +43,9 @@ export class SubprocessLineTransport {
 
 	consume(chunk) {
 		if (this.closed) return;
+		// Any byte at all counts as activity: a CLI that is streaming output is
+		// making progress even when it has not produced a complete line yet.
+		this.lastActivityAt = Date.now();
 		const text = typeof chunk === "string" ? chunk : this.decoder.decode(chunk, { stream: true });
 		this.buffer += text;
 		let newline;

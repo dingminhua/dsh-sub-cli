@@ -14,11 +14,12 @@ import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-sett
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { CLI_REGISTRY, cliById } from "./registry.js";
+import { checkCapability } from "./capability-gate.js";
+import { DEFAULT_TURN_TIMEOUT_MINUTES, turnTimeoutMs } from "./turn-timeout-policy.js";
 import { resolveDir, managedNames, PLATFORM } from "./paths.js";
 import { dispatch } from "./dispatch.js";
 import { detectInstalled } from "./status.js";
 import { registerCliSubagentTools } from "./subagent-tools.js";
-import { registerManagedCliProviders } from "./provider.js";
 import { createManagedCliDrivers, registerExperimentalCodexProvider } from "./drivers/index.js";
 import { ManagedCliAgentsService } from "./managed-cli-agents.js";
 import { registerManagedSessionTools } from "./session-tools.js";
@@ -64,15 +65,23 @@ const PERMISSION_ENTRY = z.object({
 // returns a complete answer. `enabled:false` disables nudge entirely.
 const AUTO_CONTINUE_ENTRY = z.object({
 	enabled: z.boolean().default(true),
-	max: z.number().min(1).max(10).default(3)
+	// 0 disables nudging (the checkbox is gone; the select starts at 0).
+	max: z.number().min(0).max(10).default(3)
 }).default({});
+
+// Per-CLI turn timeout, in minutes. Reaching it is not an immediate failure:
+// the driver first probes the child (still running? partial output?) and only
+// rejects when the probe says the turn is really stuck — see
+// `lib/drivers/turn-timeout.js`.
+const TURN_TIMEOUT_ENTRY = z.number().default(DEFAULT_TURN_TIMEOUT_MINUTES);
 
 const SCHEMA = z.object({
 	cliDir: z.string().default(""),
 	models: z.dict(MODEL_ENTRY).default({}),
 	permissions: z.dict(z.union([z.string(), PERMISSION_ENTRY])).default({}),
 	verified: z.dict(VERIFIED_ENTRY).default({}),
-	autoContinue: z.dict(AUTO_CONTINUE_ENTRY).default({})
+	autoContinue: z.dict(AUTO_CONTINUE_ENTRY).default({}),
+	turnTimeoutMinutes: z.dict(TURN_TIMEOUT_ENTRY).default({})
 }).default({});
 
 /** Current settings value read from the live settings scope. */
@@ -264,8 +273,16 @@ export async function apply(ctx) {
 		if (!prep.ok) return { ok: false, reason: prep.reason };
 		return { ok: true, env: prep.env };
 	};
-	registerManagedCliProviders({ subagents: ctx.subagents, subprocess: ctx.subprocess }, currentDir, envForEntry);
-	const drivers = createManagedCliDrivers({ subprocess: ctx.subprocess, dirSource: currentDir, prepare: envForEntry });
+	const drivers = createManagedCliDrivers({
+		subprocess: ctx.subprocess,
+		dirSource: currentDir,
+		prepare: envForEntry,
+		// Per-CLI turn timeout (minutes → ms); unset CLIs keep the shared default.
+		turnTimeoutSource: (cliId) => {
+			const minutes = currentSection()?.turnTimeoutMinutes?.[cliId];
+			return typeof minutes === "number" ? turnTimeoutMs(minutes) : undefined;
+		}
+	});
 	// Keep the validated one-shot Provider for DSH child presentation and
 	// compatibility; the session service below owns persistent Codex threads.
 	registerExperimentalCodexProvider({ subagents: ctx.subagents, subprocess: ctx.subprocess }, {
@@ -313,7 +330,7 @@ export async function apply(ctx) {
 	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
-		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_codex_direct / cli_codex_subagent / cli_claude_code / cli_qwen。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
+		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_<cli>_direct（持续会话，直连）或 cli_<cli>_subagent（DSH Relay 子代理；同时调度多个 CLI 时用这个，子代理并行执行且无需后台任务插件）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
 		parameters: {
 			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude / qwen" },
 			task: { type: "string", required: true, description: "自包含的任务描述" },
@@ -329,6 +346,10 @@ export async function apply(ctx) {
 			const model = args && typeof args.model === "string" ? args.model : "";
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
+			// Same capability gate as the subagent/relay channels, so the headless
+			// path cannot be used to bypass it.
+			const capability = checkCapability(cliId, task);
+			if (!capability.ok) return { ok: false, error: capability.reason };
 			const dir = currentDir();
 			const prep = await prepareManagedRun(ctx, cliId, dir);
 			if (!prep.ok) return { ok: false, error: prep.reason };

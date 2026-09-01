@@ -5,7 +5,7 @@ A DeepSeek Harness (DSH) plugin for managing external Agent CLIs.
 - Installs Codex, Claude Code, and Qwen Code under one managed directory (default `~/dsh-clis`) without using the system PATH;
 - Gives every CLI an isolated config root (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `QWEN_HOME`) and never modifies the user's system CLI configuration;
 - Provides a Web settings card for provider, model, reasoning effort, permission tier, installation, and protocol verification;
-- Registers `cli_codex_direct` and `cli_codex_subagent` (Codex direct / proxy modes only — the `cli_codex` alias was removed), plus `cli_claude_code` and `cli_qwen` delegation tools;
+- Registers `cli_<cli>_direct` (the captain drives the managed session) and `cli_<cli>_subagent` (a DSH Relay child forwards the task) for all three CLIs. The `cli_codex` alias and the unsuffixed one-shot tools `cli_claude_code` / `cli_qwen` were removed along with their provider. To run several CLIs at once use `cli_<cli>_subagent`: it returns a subagent id immediately and the children run in parallel, so no background-job plugin is required;
 - Provides persistent-in-Host Codex thread controls: `cli_codex_followup`, `cli_codex_status`, `cli_codex_sessions`, and `cli_codex_interrupt`;
 - Keeps `cli_dispatch` as an explicit one-shot headless fallback.
 
@@ -40,7 +40,7 @@ Restart the target DSH profile after installation or upgrade.
 3. Install the required CLI from the card;
 4. Select provider, model, reasoning effort, and permission tier;
 5. Run the connection/protocol test;
-6. Ask DSH to use `cli_codex_direct`, `cli_codex_subagent`, `cli_claude_code`, or `cli_qwen`.
+6. Ask DSH to use `cli_<cli>_direct` or `cli_<cli>_subagent` (`cli_<cli>_subagent` also runs several CLIs in parallel; `cli_dispatch` stays a one-shot headless fallback).
 
 ### Codex continued sessions
 

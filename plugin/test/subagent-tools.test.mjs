@@ -6,7 +6,7 @@ function context() {
 	const tools = new Map();
 	const services = new Map();
 	const ctx = {
-		subagents: { start: async () => { throw new Error("start not configured"); } },
+		subagents: { start: async () => { throw new Error("subagents.start must not be used: the one-shot path was removed"); } },
 		tools: { register(definition) { tools.set(definition.name, definition); return () => tools.delete(definition.name); } },
 		get(name) { return services.get(name); }
 	};
@@ -14,36 +14,49 @@ function context() {
 	return { ctx, tools };
 }
 
-test("registers 5 CLI tools: 3 session-mode + 2 one-shot (Claude/Qwen)", () => {
+const AGENT = { id: "parent", session: { header: { cwd: "/repo" } } };
+const SIGNAL = new AbortController().signal;
+
+test("registers exactly three suffixed session-mode tools", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
-	// session-mode (managed thread) tools for each cli
 	assert.deepEqual([...fixture.tools.keys()], [
 		"cli_codex_direct",
 		"cli_claude_direct",
-		"cli_claude_code",
-		"cli_qwen_direct",
-		"cli_qwen"
+		"cli_qwen_direct"
 	]);
+	// The unsuffixed one-shot tools are gone, and no CLI ever had a bare `cli_<cli>` alias.
+	assert.equal(fixture.tools.has("cli_claude_code"), false);
+	assert.equal(fixture.tools.has("cli_qwen"), false);
 	assert.equal(fixture.tools.has("cli_codex"), false);
-	assert.equal(CLI_SUBAGENT_TOOLS.length, 5);
+	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
 });
 
-test("delegates Codex through managed session service and returns sessionId", async () => {
+test("each tool declares no background-job parameter", () => {
+	// Concurrency comes from cli_<cli>_subagent, not from run_in_background.
 	const fixture = context();
-	let seen;
-	const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: "session-1", status: "ready" }, output: "found issues" }; } };
-	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
-	const tool = fixture.tools.get("cli_codex_direct");
-	const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
-	const signal = new AbortController().signal;
-	const result = await tool.execute({ description: "检查测试", prompt: "完整检查项目测试" }, { agent, signal });
-	assert.equal(seen.cli, "codex");
-	assert.equal(seen.cwd, "/repo");
-	assert.equal(seen.prompt, "完整检查项目测试");
-	assert.equal(seen.signal, signal);
-	assert.equal(result.sessionId, "session-1");
-	assert.equal(result.output, "found issues");
+	registerCliSubagentTools(fixture.ctx);
+	for (const definition of fixture.tools.values()) {
+		assert.equal(definition.parameters.run_in_background, undefined, `${definition.name} must not expose run_in_background`);
+	}
+});
+
+test("delegates through the managed session service and returns sessionId", async () => {
+	for (const [toolName, cli] of [["cli_codex_direct", "codex"], ["cli_claude_direct", "claude"], ["cli_qwen_direct", "qwen"]]) {
+		const fixture = context();
+		let seen;
+		const managedCliAgents = {
+			async dispatch(request) { seen = request; return { session: { sessionId: `s-${request.cli}`, status: "ready" }, output: "session-text" }; }
+		};
+		registerCliSubagentTools(fixture.ctx, { managedCliAgents });
+		const tool = fixture.tools.get(toolName);
+		const result = await tool.execute({ description: "检查", prompt: "完整检查这个项目" }, { agent: AGENT, signal: SIGNAL });
+		assert.equal(seen.cli, cli);
+		assert.equal(seen.cwd, "/repo");
+		assert.equal(seen.prompt, "完整检查这个项目");
+		assert.equal(result.sessionId, `s-${cli}`);
+		assert.equal(result.output, "session-text");
+	}
 });
 
 test("Codex direct shows full-settings guidance after permission rejection", async () => {
@@ -51,93 +64,42 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 	registerCliSubagentTools(fixture.ctx, { managedCliAgents: { async dispatch() { throw new Error("permission request was denied"); } } });
 	const tool = fixture.tools.get("cli_codex_direct");
 	await assert.rejects(
-		tool.execute({ description: "联网调查", prompt: "调查新闻" }, { agent: { session: { header: { cwd: "/repo" } } }, signal: new AbortController().signal }),
+		tool.execute({ description: "检查", prompt: "检查项目" }, { agent: AGENT, signal: SIGNAL }),
 		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /“完全”/.test(error.message)
 	);
 });
 
-test("Claude and Qwen session-mode tools dispatch through managed session service", async () => {
-	for (const toolName of ["cli_claude_direct", "cli_qwen_direct"]) {
+test("a network task is refused before any CLI starts", async () => {
+	// Codex/Qwen ship no web tool, so the capability gate must reject up front.
+	for (const toolName of ["cli_codex_direct", "cli_qwen_direct"]) {
 		const fixture = context();
-		let seen;
-		const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: `s-${request.cli}`, status: "ready" }, output: "session-text" }; } };
+		let dispatched = false;
+		const managedCliAgents = { async dispatch() { dispatched = true; return { session: { sessionId: "x" }, output: "" }; } };
 		registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 		const tool = fixture.tools.get(toolName);
-		const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
-		const result = await tool.execute({ description: "检查", prompt: "完整检查" }, { agent, signal: new AbortController().signal });
-		assert.equal(seen.cli, toolName.includes("claude") ? "claude" : "qwen");
-		assert.equal(seen.cwd, "/repo");
-		assert.equal(seen.prompt, "完整检查");
-		assert.equal(result.sessionId, `s-${seen.cli}`);
-		assert.equal(result.output, "session-text");
-	}
-});
-
-test("session-mode tools reject run_in_background explicitly", async () => {
-	for (const toolName of ["cli_codex_direct", "cli_claude_direct", "cli_qwen_direct"]) {
-		const fixture = context();
-		registerCliSubagentTools(fixture.ctx, { managedCliAgents: { async dispatch() { return { session: { sessionId: "x" }, output: "" }; } } });
-		const tool = fixture.tools.get(toolName);
 		await assert.rejects(
-			tool.execute({ description: "x", prompt: "y", run_in_background: true }, { agent: { id: "p", session: { header: { cwd: "/" } } }, signal: new AbortController().signal }),
-			/持续会话暂不使用 jobs/
+			tool.execute({ description: "联网调查", prompt: "搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
+			/没有内置联网工具/
 		);
+		assert.equal(dispatched, false, `${toolName} must not start a CLI for a network task`);
 	}
 });
 
-test("Claude and Qwen one-shot tools keep the background job contract", async () => {
-	for (const toolName of ["cli_claude_code", "cli_qwen"]) {
-		const fixture = context();
-		let spec;
-		fixture.ctx.services.set("jobs", {
-			start(value) { spec = value; return `${value.kind}-1`; }
-		});
-		fixture.ctx.subagents.start = async () => ({
-			id: "run-bg",
-			result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "background done" }] }),
-			dispose: async () => {}
-		});
-		registerCliSubagentTools(fixture.ctx);
-		const tool = fixture.tools.get(toolName);
-		const agent = { id: "parent" };
-		const value = await tool.execute({ description: "后台检查", prompt: "检查项目", run_in_background: true }, { agent, signal: new AbortController().signal });
-		assert.equal(value.kind, "background");
-		assert.match(value.jobId, /^cli-(claude|qwen)-1$/);
-		assert.equal(spec.owner, agent);
-		assert.equal(spec.label, "后台检查");
-		const hooks = spec.run();
-		assert.equal(typeof hooks.cancel, "function");
-		assert.deepEqual(await hooks.done, { status: "completed", output: "background done" });
-	}
+test("Claude Code may run a network task", async () => {
+	const fixture = context();
+	const managedCliAgents = { async dispatch() { return { session: { sessionId: "s-claude" }, output: "searched" }; } };
+	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
+	const tool = fixture.tools.get("cli_claude_direct");
+	const result = await tool.execute({ description: "联网调查", prompt: "搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL });
+	assert.equal(result.output, "searched");
 });
 
-test("background mode fails clearly when the jobs service is absent", async () => {
+test("rejects empty titles and prompts before dispatching", async () => {
 	const fixture = context();
-	registerCliSubagentTools(fixture.ctx);
+	let dispatches = 0;
+	registerCliSubagentTools(fixture.ctx, { managedCliAgents: { async dispatch() { dispatches += 1; return { session: { sessionId: "x" }, output: "" }; } } });
 	const tool = fixture.tools.get("cli_codex_direct");
-	await assert.rejects(() => tool.execute({ description: "后台检查", prompt: "检查项目", run_in_background: true }, { agent: { id: "parent" }, signal: new AbortController().signal }), /后台任务不可用/);
-});
-
-test("surfaces a non-completed provider result as a tool error", async () => {
-	const fixture = context();
-	fixture.ctx.subagents.start = async () => ({
-		id: "run-2",
-		result: Promise.resolve({ stopReason: "error", diagnostic: "auth missing", output: [] }),
-		dispose: async () => {}
-	});
-	registerCliSubagentTools(fixture.ctx);
-	const tool = fixture.tools.get("cli_codex_direct");
-	await assert.rejects(() => tool.execute({ description: "检查认证", prompt: "检查认证" }, { agent: { id: "parent" }, signal: new AbortController().signal }), /auth missing/);
-});
-
-test("rejects empty titles and prompts before starting a provider", async () => {
-	const fixture = context();
-	let starts = 0;
-	fixture.ctx.subagents.start = async () => { starts += 1; };
-	registerCliSubagentTools(fixture.ctx);
-	const tool = fixture.tools.get("cli_codex_direct");
-	const exec = { agent: { id: "parent" }, signal: new AbortController().signal };
-	await assert.rejects(() => tool.execute({ description: " ", prompt: "task" }, exec), /description/);
-	await assert.rejects(() => tool.execute({ description: "title", prompt: " " }, exec), /prompt/);
-	assert.equal(starts, 0);
+	await assert.rejects(() => tool.execute({ description: " ", prompt: "task" }, { agent: AGENT, signal: SIGNAL }), /description/);
+	await assert.rejects(() => tool.execute({ description: "title", prompt: " " }, { agent: AGENT, signal: SIGNAL }), /prompt/);
+	assert.equal(dispatches, 0);
 });

@@ -13,34 +13,49 @@ export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "reje
 //   { read, write, exec, network, approval }
 // Legacy string tiers are accepted everywhere and normalized to a profile.
 
-export const APPROVAL_MODES = Object.freeze(["ask", "allow", "never"]);
+// The checkbox is the only grant: checked = allowed silently at runtime.
+// `approval` is no longer an "auto-allow" dial — it is the strategy for what
+// happens when an UNCHECKED capability is requested: ask interactively, or
+// auto-reject. "allow" is accepted on read (stored profiles) and migrated:
+// an "allow" approval meant the user wanted that capability to just work, so it
+// becomes a checkbox.
+
+export const APPROVAL_MODES = Object.freeze(["ask", "never"]);
 
 export const PERMISSION_PRESETS = Object.freeze([
+	// Default: only read is granted; write/exec/network come up at runtime and
+	// are handled by the approval strategy (ask by default).
 	{ id: "read-only", label: "只读", profile: Object.freeze({ read: true, write: false, exec: false, network: false, approval: "ask" }) },
 	{ id: "workspace-write", label: "工作区可写", profile: Object.freeze({ read: true, write: true, exec: true, network: false, approval: "ask" }) },
-	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true, network: true, approval: "allow" }) }
+	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true, network: true, approval: "ask" }) }
 ]);
 
-export const DEFAULT_PROFILE = Object.freeze({ read: true, write: true, exec: true, network: false, approval: "ask" });
+export const DEFAULT_PROFILE = Object.freeze({ read: true, write: false, exec: false, network: false, approval: "ask" });
 
 /**
  * Normalize a stored permission value (legacy string tier, partial object, or
- * full profile) into a complete profile with defaults applied. Unknown strings
- * and missing values fall back to the default tier (workspace-write).
+ * full profile) into a complete profile under the checkbox-only model. Legacy
+ * `approval: "allow"` migrates to checked capabilities + ask: an auto-allow
+ * approval expressed "just do it", which is now what a checkbox means.
  */
 export function normalizePermission(raw) {
 	if (typeof raw === "string") {
 		const preset = PERMISSION_PRESETS.find((p) => p.id === raw);
 		if (preset) return { ...preset.profile };
-		// Unknown string → default tier (workspace-write), not a new capability.
+		// Unknown string → default tier (read-only), not a new capability.
 		return { ...DEFAULT_PROFILE };
 	}
 	if (raw && typeof raw === "object") {
+		// Legacy "allow": the auto-accept dial is gone, so that intent migrates to
+		// the checkboxes themselves — grant read/write/exec (the old "allow" tier's
+		// reach) and keep network explicit, with ask as the strategy for the rest.
+		const legacyAllow = raw.approval === "allow";
+		const read = raw.read !== undefined ? !!raw.read : (legacyAllow ? true : DEFAULT_PROFILE.read);
+		const write = raw.write !== undefined ? !!raw.write : (legacyAllow ? true : DEFAULT_PROFILE.write);
+		const exec = raw.exec !== undefined ? !!raw.exec : (legacyAllow ? true : DEFAULT_PROFILE.exec);
+		const network = raw.network !== undefined ? !!raw.network : (legacyAllow ? true : DEFAULT_PROFILE.network);
 		return {
-			read: raw.read !== undefined ? !!raw.read : DEFAULT_PROFILE.read,
-			write: raw.write !== undefined ? !!raw.write : DEFAULT_PROFILE.write,
-			exec: raw.exec !== undefined ? !!raw.exec : DEFAULT_PROFILE.exec,
-			network: raw.network !== undefined ? !!raw.network : DEFAULT_PROFILE.network,
+			read, write, exec, network,
 			approval: APPROVAL_MODES.includes(raw.approval) ? raw.approval : DEFAULT_PROFILE.approval
 		};
 	}

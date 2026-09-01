@@ -65,7 +65,7 @@ function seedAnswer(transport, sessionId) {
 }
 
 test("driver exposes the standard capability shape", () => {
-	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource, turnTimeoutMs: 250 });
 	assertManagedCliDriver(driver);
 	assert.equal(driver.id, "claude-stream-json");
 	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.continuable, true);
@@ -77,7 +77,7 @@ test("driver exposes the standard capability shape", () => {
 test("start composes the expected argv and surfaces the system/init session id", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	const run = await driver.start({ cwd: "/repo", prompt: "Hi", model: "claude-sonnet-4-5", sandbox: "workspace-write" });
 	// Drive the result over the transport immediately — the listener is
 	// already registered by the time the spawn() promise resolves.
@@ -113,7 +113,7 @@ test("start composes the expected argv and surfaces the system/init session id",
 test("sandbox tier maps to the right --permission-mode", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	for (const [sandbox, expected] of [
 		["read-only", "plan"],
 		["workspace-write", "acceptEdits"],
@@ -131,7 +131,7 @@ test("sandbox tier maps to the right --permission-mode", async () => {
 test("followup reuses the resolved session id via --resume", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	const first = await driver.start({ cwd: "/r", prompt: "first" });
 	seedAnswer(handles[0].stdout, "session-abc");
 	const firstValue = await first.result;
@@ -149,7 +149,7 @@ test("followup reuses the resolved session id via --resume", async () => {
 test("followup rejects empty prompts", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	const first = await driver.start({ cwd: "/r", prompt: "x" });
 	seedAnswer(handles[0].stdout, "s");
 	await first.result;
@@ -159,7 +159,7 @@ test("followup rejects empty prompts", async () => {
 test("is_error result event surfaces a real Error with the CLI message", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	const first = await driver.start({ cwd: "/r", prompt: "x" });
 	handles[0].stdout.pushLine({ type: "system", subtype: "init", session_id: "s" });
 	handles[0].stdout.pushLine({ type: "result", subtype: "error_during_execution", is_error: true, error: { message: "auth failed" } });
@@ -169,7 +169,7 @@ test("is_error result event surfaces a real Error with the CLI message", async (
 test("extractFinalText concatenates multiple assistant text blocks", async () => {
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
-	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
 	const first = await driver.start({ cwd: "/r", prompt: "x" });
 	handles[0].stdout.pushLine({ type: "system", subtype: "init", session_id: "s" });
 	handles[0].stdout.pushLine({ type: "assistant", message: { content: [{ type: "text", text: "Part 1. " }] } });
@@ -182,7 +182,7 @@ test("extractFinalText concatenates multiple assistant text blocks", async () =>
 });
 
 test("start requires cwd and rejects empty prompt", async () => {
-	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource });
+	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource, turnTimeoutMs: 250 });
 	await assert.rejects(driver.start({ cwd: "", prompt: "x" }), /cwd is required/);
 	await assert.rejects(driver.start({ cwd: "/r", prompt: "  " }), /prompt must not be empty/);
 });

@@ -5,14 +5,13 @@
 - 把 Codex、Claude Code、Qwen Code 放到一个**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**（`config-<cli>/`），通过该 CLI 自身的环境变量指向，**完全不碰**你系统里已装的 CLI 配置；
 - Web 插件配置卡片可配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
-- 注册 **17 个模型工具**，按"CLI × 模式"全矩阵覆盖：
+- 注册 **15 个模型工具**，按"CLI × 模式"覆盖（**只保留带后缀的入口**）：
   - 持续会话（每个 CLI）：`cli_codex_direct` / `cli_claude_direct` / `cli_qwen_direct`（首轮；返回 `sessionId`）+ `cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions`（qwen 无 `sessions`）；
-    > **注意**：`cli_<cli>_direct` 属于 session-mode，**不支持后台 job**（返回的 `sessionId` 仅用于同会话内的后续 `followup/status/sessions` 调用）；`cli_claude_code` / `cli_qwen` 的一次性模式才支持后台 job。
   - Relay 子代理（每个 CLI）：`cli_codex_subagent` / `cli_claude_subagent` / `cli_qwen_subagent`（创建 DSH continuable 子代理，通过 `managed_cli_submit` 转发到真实 thread）；
   - 中断（codex/claude）：`cli_codex_interrupt` / `cli_claude_interrupt`（Qwen 不支持）；
-  - 一次性（仅 Claude/Qwen）：`cli_claude_code` / `cli_qwen`（一次性无 headless，支持后台 job）；
-  - **17 = 3 direct + 3 subagent + 11 session 续接（4 codex + 4 claude + 3 qwen） + 2 one-shot + 1 dispatch + 1 `managed_cli_submit` Relay 内部工具**。
-  - `cli_codex` 别名已移除；
+  - **15 = 3 direct + 3 subagent + 8 session 工具（followup/status/sessions 各 3 → qwen 无 sessions 故 8）+ 1 dispatch + 1 `managed_cli_submit` Relay 内部工具**；
+  - `cli_codex` 别名已移除；无后缀的一次性工具 `cli_claude_code` / `cli_qwen` 及其 `managed-<cli>` provider **已删除**——它们只覆盖三个 CLI 中的两个、没有会话能力，且与 `cli_dispatch` 重复；
+    > **并发调度多个 CLI 请用 `cli_<cli>_subagent`**：它返回子代理 id 后立刻继续，多个 CLI 天然并行跑，**不需要后台任务（jobs）插件**。
 - 每个 CLI 都有持续会话驱动（Codex: app-server，Claude/Qwen: stream-json NDJSON），并提供 **`cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions` / `cli_<cli>_interrupt`** 持续会话工具（qwen 无 interrupt）；
 - 注册 **`cli_dispatch`** 模型工具，让 DSH 模型无头调用外部 CLI 并回传输出。
 
@@ -67,7 +66,7 @@ npm install dsh-sub-cli
 2. 填写或浏览选择 **CLI 统一目录**（默认 `~/dsh-clis`）；
 3. 把需要的 CLI 二进制放入 `<目录>/bin/`；
 4. 为每个 CLI 选择 Provider、模型、推理强度并保存；
-5. 在对话中让 DSH 使用对应 CLI：日常委派使用 `cli_<cli>_direct`（持续会话，直连）或 `cli_<cli>_subagent`（DSH Relay 子代理，任务通过子代理转发）；`cli_claude_code` / `cli_qwen` 用于一次性无头任务（后台 job 支持）；仅在模型提示词中要求时才用 `cli_dispatch`。
+5. 在对话中让 DSH 使用对应 CLI：日常委派用 `cli_<cli>_direct`（持续会话，直连）或 `cli_<cli>_subagent`（DSH Relay 子代理，任务通过子代理转发）；**需要同时调度多个 CLI 时用 `cli_<cli>_subagent`**（返回子代理 id 后立即继续，多个 CLI 并行跑完再回报）；仅在你明确要求"无头跑一次"时才用 `cli_dispatch`。
 
 ### 持续会话（所有 CLI）
 

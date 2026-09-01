@@ -3,9 +3,14 @@ import test from "node:test";
 import { ManagedCliAgentsService, looksPrematureOutput, persistable, AUTO_CONTINUE_MAX, AUTO_CONTINUE_PROMPT } from "../lib/managed-cli-agents.js";
 
 // Permission profile that grants every capability with approval=ask, so tests
-// that exercise the approval seam actually reach it (the default read-only
-// profile would have the capability gate auto-reject first).
+// that exercise the checked-branch decisions reach the driver with grants.
 const ASK_ALL = { read: true, write: true, exec: true, network: true, approval: "ask" };
+
+// Under the checkbox-only model, the approval seam is reached only when the
+// requested capability is UNCHECKED and the strategy is ask. The ask-flow tests
+// mock a Codex network-permission request (capability "permissions"), so this
+// fixture keeps network unchecked with ask as the strategy.
+const UNCHECKED_ASK = { read: true, write: true, exec: false, network: false, approval: "ask" };
 
 function deferred() { let resolve, reject; const promise = new Promise((a,b)=>{resolve=a;reject=b}); return {promise,resolve,reject}; }
 function driverFixture() {
@@ -50,7 +55,7 @@ test("dispatch exposes awaiting permission and clears it after an audited decisi
 		})(), dispose: async () => {} };
 	} };
 	const agent = { session: { id: "parent" } };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => UNCHECKED_ASK, approvalRequest: async (request, context) => { assert.equal(context.agent, agent); assert.equal(request.pluginSessionId.startsWith("cli-codex-"), true); return approval.promise; } });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent, childId: "child-p" });
 	await new Promise((r) => setImmediate(r));
 	const open = service.list()[0];
@@ -77,7 +82,7 @@ test("relay permission approval is routed through the bound parent agent", async
 			return { threadId: "thread-parent", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => UNCHECKED_ASK, approvalRequest: async (_request, context) => { approvedBy = context.agent; return "allowed-once"; } });
 	service.bindChild("child-agent", { cli: "codex", parentAgent });
 	service.setChildCwd("child-agent", "/repo");
 	const value = await service.submitFromChild("child-agent", "task", undefined, childAgent);
@@ -98,7 +103,7 @@ test("a second permission request is rejected while one is pending", async () =>
 			return { threadId: "thread-b", text: "done" };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => UNCHECKED_ASK, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "first", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	assert.equal(secondError.code, "PERMISSION_REQUEST_BUSY");
@@ -159,7 +164,7 @@ test("interrupt clears a pending permission and marks the session interrupted", 
 			async dispose() {}
 		};
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ASK_ALL, approvalRequest: () => approval.promise });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => UNCHECKED_ASK, approvalRequest: () => approval.promise });
 	const pending = service.dispatch({ cwd: "/repo", prompt: "task", agent: { session: { id: "parent" } } });
 	await new Promise((r) => setImmediate(r));
 	const sessionId = service.list()[0].sessionId;
@@ -262,23 +267,9 @@ test("permissionSpec derives sandbox tier and approval policy from the profile",
 	assert.equal(denied.permissionSpec("codex").sandbox, "read-only");
 });
 
-test("capability gate auto-rejects a request the profile does not grant", async () => {
-	let approvalCalls = 0;
-	const driver = { async start(value) {
-		return { remoteSessionId: "thread-g", result: (async () => {
-			const outcome = await value.onPermissionRequest({ requestId: "req-g", cli: "codex", turnId: "turn-g", itemId: "item-g", capability: "permissions", operation: "one", createdAt: new Date().toISOString() });
-			return { threadId: "thread-g", text: outcome };
-		})(), dispose: async () => {} };
-	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, network: false }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
-	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
-	assert.equal(done.output, "rejected");
-	assert.equal(approvalCalls, 0); // never surfaced a prompt
-	assert.equal(done.session.lastPermissionDecision.capability, "permissions");
-	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
-});
-
-test("approval=allow auto-accepts a granted capability without prompting", async () => {
+test("a checked capability is allowed silently, without prompting", async () => {
+	// The checkbox is the only grant: a checked capability never reaches the
+	// approval seam, no matter what the strategy says.
 	let approvalCalls = 0;
 	const driver = { async start(value) {
 		return { remoteSessionId: "thread-a", result: (async () => {
@@ -286,14 +277,14 @@ test("approval=allow auto-accepts a granted capability without prompting", async
 			return { threadId: "thread-a", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "allow" }), approvalRequest: async () => { approvalCalls++; return "rejected"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "rejected"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "allowed-once");
 	assert.equal(approvalCalls, 0);
 	assert.equal(done.session.lastPermissionDecision.outcome, "allowed-once");
 });
 
-test("approval=never auto-rejects a granted capability without prompting", async () => {
+test("approval=never auto-rejects an UNCHECKED capability without prompting", async () => {
 	let approvalCalls = 0;
 	const driver = { async start(value) {
 		return { remoteSessionId: "thread-n", result: (async () => {
@@ -301,11 +292,27 @@ test("approval=never auto-rejects a granted capability without prompting", async
 			return { threadId: "thread-n", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, exec: false, approval: "never" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "rejected");
 	assert.equal(approvalCalls, 0);
 	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
+});
+
+test("an UNCHECKED capability with approval=ask reaches the interactive seam", async () => {
+	// The strategy for unchecked capabilities: "ask" surfaces the prompt and its
+	// answer decides; the prompt is never bypassed by the old capability gate.
+	let approvalCalls = 0;
+	const driver = { async start(value) {
+		return { remoteSessionId: "thread-ask", result: (async () => {
+			const outcome = await value.onPermissionRequest({ requestId: "req-ask", cli: "codex", turnId: "turn", itemId: "item", capability: "command", operation: "one", createdAt: new Date().toISOString() });
+			return { threadId: "thread-ask", text: outcome };
+		})(), dispose: async () => {} };
+	} };
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ ...ASK_ALL, exec: false, approval: "ask" }), approvalRequest: async () => { approvalCalls++; return "allowed-once"; } });
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(done.output, "allowed-once", "the interactive decision grants it");
+	assert.equal(approvalCalls, 1, "exactly one prompt surfaced");
 });
 
 // ── Generalized permission matrices ──────────────────────────────────────────
@@ -314,9 +321,10 @@ test("permissionSpec matrix derives sandbox and approval policy for every input"
 	const cases = [
 		{ label: "legacy read-only", input: "read-only", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "legacy workspace-write", input: "workspace-write", sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "allow" },
-		{ label: "unknown string defaults", input: "bogus", sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "network alone escalates", input: { read: true, write: false, exec: false, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "allow" },
+		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "unknown string defaults to read-only", input: "bogus", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "legacy allow migrates to ask", input: { read: true, write: true, exec: true, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "network alone escalates", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "exec+network escalates", input: { read: true, write: false, exec: true, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "exec only stays workspace", input: { read: true, write: false, exec: true, network: false, approval: "ask" }, sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "workspace-write", approvalPolicy: "never", approval: "never" }
@@ -331,23 +339,24 @@ test("permissionSpec matrix derives sandbox and approval policy for every input"
 	}
 });
 
-// The deterministic branches of resolvePermission — capability denied by the
-// gate, approval=allow, and approval=never — must decide without ever calling
-// the approval seam. The "ask" branch (routes to approvalRequest) is covered
-// by the dedicated tests above. This matrix guards every capability × mode.
+// The deterministic branches of resolvePermission — checked (allowed silently)
+// and approval=never on an unchecked capability — must decide without ever
+// calling the approval seam. The "ask" branch (routes to approvalRequest) is
+// covered by the dedicated tests above. This matrix guards every capability ×
+// checkbox × strategy combination.
 const RESOLVE_DECISIONS = [
-	{ label: "denied command", capability: "command", profile: { ...ASK_ALL, exec: false }, expected: "rejected" },
-	{ label: "denied file-change", capability: "file-change", profile: { ...ASK_ALL, write: false }, expected: "rejected" },
-	{ label: "denied permissions", capability: "permissions", profile: { ...ASK_ALL, network: false }, expected: "rejected" },
-	{ label: "allow command", capability: "command", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
-	{ label: "allow file-change", capability: "file-change", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
-	{ label: "allow permissions", capability: "permissions", profile: { ...ASK_ALL, approval: "allow" }, expected: "allowed-once" },
-	{ label: "never command", capability: "command", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" },
-	{ label: "never file-change", capability: "file-change", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" },
-	{ label: "never permissions", capability: "permissions", profile: { ...ASK_ALL, approval: "never" }, expected: "rejected" }
+	// Checked capabilities are allowed regardless of the strategy.
+	{ label: "checked command", capability: "command", profile: { ...ASK_ALL }, expected: "allowed-once" },
+	{ label: "checked file-change", capability: "file-change", profile: { ...ASK_ALL }, expected: "allowed-once" },
+	{ label: "checked permissions", capability: "permissions", profile: { ...ASK_ALL }, expected: "allowed-once" },
+	{ label: "checked beats never", capability: "command", profile: { ...ASK_ALL, approval: "never" }, expected: "allowed-once" },
+	// Unchecked + never → auto-reject without prompting.
+	{ label: "unchecked command + never", capability: "command", profile: { ...ASK_ALL, exec: false, approval: "never" }, expected: "rejected" },
+	{ label: "unchecked file-change + never", capability: "file-change", profile: { ...ASK_ALL, write: false, approval: "never" }, expected: "rejected" },
+	{ label: "unchecked permissions + never", capability: "permissions", profile: { ...ASK_ALL, network: false, approval: "never" }, expected: "rejected" }
 ];
 
-test("resolvePermission decision matrix never prompts for gate/allow/never", async () => {
+test("resolvePermission decision matrix never prompts for checked/never branches", async () => {
 	for (const d of RESOLVE_DECISIONS) {
 		let approvalCalls = 0;
 		const driver = { async start(value) {
@@ -574,6 +583,26 @@ test("autoContinueSource with enabled:false skips nudging entirely", async () =>
 	});
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(followupCount, 0);
+	assert.equal(done.output, "第一步完成。现在继续第二步。");
+});
+
+test("autoContinueSource max 0 disables nudging (the checkbox is gone)", async () => {
+	// The UI no longer has an enabled checkbox: "off" is max 0, and the service
+	// must honour it instead of falling back to the default of 3.
+	let followupCount = 0;
+	const run = {
+		remoteSessionId: "thread-zero",
+		result: Promise.resolve({ threadId: "thread-zero", text: "第一步完成。现在继续第二步。", toolRounds: 1, stopReason: "completed" }),
+		async followup() { followupCount++; return { threadId: "thread-zero", text: "更多内容。", stopReason: "completed" }; },
+		async dispose() {}
+	};
+	const service = new ManagedCliAgentsService({ _skipAssert: true,
+		drivers: { codex: { async start() { return run; } } },
+		autoContinueSource: () => ({ max: 0 }),
+		permissionSource: () => "workspace-write"
+	});
+	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
+	assert.equal(followupCount, 0, "max 0 must not nudge");
 	assert.equal(done.output, "第一步完成。现在继续第二步。");
 });
 

@@ -42,26 +42,45 @@ test("maps DSH one-shot outcomes to Codex permission responses", () => {
 
 test("presets cover the three legacy tiers with distinct capability profiles", () => {
 	assert.deepEqual(PERMISSION_PRESETS.map((p) => p.id), ["read-only", "workspace-write", "danger-full-access"]);
-	assert.deepEqual(APPROVAL_MODES, ["ask", "allow", "never"]);
+	// The checkbox is the only grant: "allow" is no longer an approval mode. The
+	// select only decides the fate of UNCHECKED capabilities (ask / never).
+	assert.deepEqual(APPROVAL_MODES, ["ask", "never"]);
 	const [readOnly, workspaceWrite, full] = PERMISSION_PRESETS;
 	assert.deepEqual(readOnly.profile, { read: true, write: false, exec: false, network: false, approval: "ask" });
 	assert.deepEqual(workspaceWrite.profile, { read: true, write: true, exec: true, network: false, approval: "ask" });
-	assert.deepEqual(full.profile, { read: true, write: true, exec: true, network: true, approval: "allow" });
+	assert.deepEqual(full.profile, { read: true, write: true, exec: true, network: true, approval: "ask" });
 });
 
 test("normalizePermission maps legacy strings, unknowns, objects and missing values", () => {
-	// Legacy string tiers keep their semantics.
+	// Legacy string tiers keep their capability semantics; the legacy "allow"
+	// approval migrates to "ask" (checkboxes now carry the allow intent).
 	assert.deepEqual(normalizePermission("read-only"), { read: true, write: false, exec: false, network: false, approval: "ask" });
 	assert.deepEqual(normalizePermission("workspace-write"), { read: true, write: true, exec: true, network: false, approval: "ask" });
-	assert.deepEqual(normalizePermission("danger-full-access"), { read: true, write: true, exec: true, network: true, approval: "allow" });
+	assert.deepEqual(normalizePermission("danger-full-access"), { read: true, write: true, exec: true, network: true, approval: "ask" });
 	// Unknown strings and missing values fall back to the default tier.
 	assert.deepEqual(normalizePermission("bogus"), { ...DEFAULT_PROFILE });
 	assert.deepEqual(normalizePermission(undefined), { ...DEFAULT_PROFILE });
 	assert.deepEqual(normalizePermission(null), { ...DEFAULT_PROFILE });
-	// Partial profile objects merge over defaults.
-	assert.deepEqual(normalizePermission({ network: true }), { read: true, write: true, exec: true, network: true, approval: "ask" });
+	// Partial profile objects merge over the (new, read-only) defaults.
+	assert.deepEqual(normalizePermission({ network: true }), { read: true, write: false, exec: false, network: true, approval: "ask" });
 	// Invalid approval falls back to the default.
 	assert.deepEqual(normalizePermission({ read: true, approval: "always" }).approval, "ask");
+});
+
+test("legacy approval:'allow' migrates its intent into the checkboxes", () => {
+	// An auto-allow approval used to mean "just do it" — under the checkbox-only
+	// model that intent becomes checked capabilities, so old stored profiles do
+	// not silently tighten when the setting is next saved.
+	assert.deepEqual(
+		normalizePermission({ read: true, write: true, exec: true, network: true, approval: "allow" }),
+		{ read: true, write: true, exec: true, network: true, approval: "ask" }
+	);
+	// A legacy allow with only some booleans stored: missing ones default to the
+	// old allow-tier's reach (all true).
+	assert.deepEqual(
+		normalizePermission({ approval: "allow" }),
+		{ read: true, write: true, exec: true, network: true, approval: "ask" }
+	);
 });
 
 test("deriveSandboxMode picks the closest coarse tier for headless argv", () => {

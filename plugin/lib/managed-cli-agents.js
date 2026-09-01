@@ -207,7 +207,10 @@ export class ManagedCliAgentsService {
 		const raw = { text, stopReason: result.stopReason ?? "completed", threadId: result.threadId ?? record.run?.remoteSessionId ?? null };
 		const cfg = this.autoContinueSource ? (this.autoContinueSource(record.cli) ?? {}) : {};
 		if (cfg.enabled === false) return raw;
-		const max = Number.isInteger(cfg.max) && cfg.max > 0 ? cfg.max : AUTO_CONTINUE_MAX;
+		// The checkbox is gone: "off" is expressed as max 0. A usable max is any
+		// integer 0–10; anything else falls back to the default (3).
+		const max = Number.isInteger(cfg.max) && cfg.max >= 0 ? cfg.max : AUTO_CONTINUE_MAX;
+		if (max === 0) return raw;
 		// When nudging, remember the newest block so we can drop progress-fragment
 		// noise once a real (long) answer finally lands.
 		let added = "";
@@ -237,22 +240,18 @@ export class ManagedCliAgentsService {
 	async resolvePermission(record, request, { agent = null, childId = null, signal = null } = {}) {
 		const sessionId = record.sessionId;
 		const profile = normalizePermission(this.permissionSource(record.cli) || DEFAULT_PERMISSION);
-		const allowed = allowsCapability(profile, request.capability);
 		const decidedAt = now();
-		// Capability gate: the profile does not grant this capability at all →
-		// reject without surfacing an approval prompt.
-		if (!allowed) {
-			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "rejected", decidedAt };
-			record.updatedAt = now();
-			return "rejected";
-		}
-		// approval=allow: the capability is granted and the profile auto-accepts.
-		if (profile.approval === "allow") {
+		// Decision model: the checkboxes are the only grant. A checked capability
+		// is allowed silently; an UNCHECKED one that comes up at runtime is handled
+		// by the per-CLI strategy — ask interactively, or auto-reject. There is no
+		// separate "auto-allow": checking the box already is that.
+		if (allowsCapability(profile, request.capability)) {
 			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "allowed-once", decidedAt };
 			record.updatedAt = now();
 			return "allowed-once";
 		}
-		// approval=never: granted but never interactively confirmed → reject.
+		// Unchecked: the strategy decides. "never" auto-rejects without prompting;
+		// "ask" (the default) surfaces the interactive prompt below.
 		if (profile.approval === "never") {
 			record.lastPermissionDecision = { requestId: request.requestId, turnId: request.turnId, capability: request.capability, outcome: "rejected", decidedAt };
 			record.updatedAt = now();

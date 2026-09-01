@@ -54,13 +54,30 @@ function fakeSubprocess(handles) {
 
 function dirSource() { return "/dsh-clis"; }
 
+// Tests must never wait on the production default (20 minutes): a stalled turn
+// would hang the whole suite for that long. Inject a short deadline so the
+// timeout paths fail fast and stay observable.
+const TEST_TURN_TIMEOUT_MS = 250;
+
+// Poll until a condition holds; the drivers settle across microtask boundaries.
+async function waitFor(predicate, { timeoutMs = 1_000, intervalMs = 5 } = {}) {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		let value;
+		try { value = predicate(); } catch { value = false; }
+		if (value) return value;
+		if (Date.now() >= deadline) throw new Error("waitFor timed out");
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+}
+
 // Qwen's actual output: a single result JSON on stdout (no init / assistant).
 function seedSuccessResult(transport, sessionId, text = "Hello, world.") {
 	transport.pushLine({ type: "result", subtype: "success", is_error: false, session_id: sessionId, result: text, duration_ms: 100, num_turns: 1 });
 }
 
 test("driver exposes the standard capability shape", () => {
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	assertManagedCliDriver(driver);
 	assert.equal(driver.id, "qwen-stream-json");
 	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.continuable, true);
@@ -71,7 +88,7 @@ test("driver exposes the standard capability shape", () => {
 
 test("start composes the expected argv (stdin-prompt mode, no --input-format, no --effort)", async () => {
 	const handles = [];
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	const run = await driver.start({ cwd: "/repo", prompt: "Hi there", model: "qwen3-coder-plus" });
 	seedSuccessResult(handles[0].stdout, "qwen-session-1");
 	const value = await run.result;
@@ -104,7 +121,7 @@ test("start composes the expected argv (stdin-prompt mode, no --input-format, no
 
 test("reasoningEffort is silently dropped (Qwen has no --effort flag)", async () => {
 	const handles = [];
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	const origWarn = console.warn;
 	const warned = [];
 	console.warn = (msg) => warned.push(msg);
@@ -122,37 +139,48 @@ test("reasoningEffort is silently dropped (Qwen has no --effort flag)", async ()
 	}
 });
 
-test("followup reuses the resolved session id via --resume (no --prompt, no stdin write)", async () => {
+test("followup reattaches via --resume and feeds the prompt through stdin", async () => {
+	// Qwen has no --input-format and no way to pass the prompt as an argv value:
+	// `--prompt` (no value) switches it to stdin mode, and the text is written to
+	// stdin. Verified against `qwen --help` on 2026-09-01 — omitting --prompt
+	// makes Qwen fail with "No input provided via stdin". Resume turns are no
+	// exception, so the followup carries both --resume and stdin input.
 	const handles = [];
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	const first = await driver.start({ cwd: "/r", prompt: "first" });
 	seedSuccessResult(handles[0].stdout, "session-abc");
 	const firstValue = await first.result;
 	assert.equal(firstValue.threadId, "session-abc");
-	// Followup: --resume reattaches; we do NOT pass --prompt or write stdin
-	// (Qwen's behaviour with --resume + --prompt together is undefined; safer
-	// to let the resumed session's history drive the next turn).
 	const followupPromise = first.followup("second message", {});
+	// The followup spawns its child asynchronously, so wait for the handle to
+	// exist before seeding: seeding too early used to hit `handles[1]` undefined
+	// and left the turn waiting until its deadline.
+	await waitFor(() => handles[1]);
 	seedSuccessResult(handles[1].stdout, "session-abc");
 	await followupPromise;
 	const args = handles[1].argv.slice(1);
-	assert.ok(args.includes("--resume"));
+	assert.ok(args.includes("--resume"), "followup must reattach the same session");
 	assert.equal(args[args.indexOf("--resume") + 1], "session-abc");
 	assert.ok(!args.includes("--session-id"), "followup must not reissue --session-id");
-	assert.ok(!args.includes("--prompt"), "followup must not pass --prompt");
-	assert.equal(handles[1].stdin._written.length, 0, "followup does not write to stdin");
+	// The prompt goes over stdin, never as an argv value (which Qwen would
+	// treat as an unknown positional argument). --prompt is a valueless flag:
+	// the next element after it is another flag (--resume), not a prompt value.
+	assert.ok(args.includes("--prompt"), "--prompt is required in resume mode too");
+	assert.ok(args[args.indexOf("--prompt") + 1].startsWith("--"), "--prompt takes no value; the text follows on stdin");
+	assert.deepEqual(handles[1].stdin._written, ["second message\n"], "the prompt is written to stdin");
+	assert.equal(handles[1].stdin._ended, true, "stdin is closed so Qwen stops reading");
 });
 
 test("is_error result event surfaces a real Error with the CLI message", async () => {
 	const handles = [];
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	const first = await driver.start({ cwd: "/r", prompt: "x" });
 	handles[0].stdout.pushLine({ type: "result", subtype: "error_during_execution", is_error: true, error: { message: "auth failed" } });
 	await assert.rejects(first.result, /auth failed/);
 });
 
 test("start requires cwd and rejects empty prompt", async () => {
-	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource });
+	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });
 	await assert.rejects(driver.start({ cwd: "", prompt: "x" }), /cwd is required/);
 	await assert.rejects(driver.start({ cwd: "/r", prompt: "  " }), /prompt must not be empty/);
 });
