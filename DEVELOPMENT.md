@@ -22,6 +22,59 @@ Host 入口必须通过 `test/host-import.test.mjs` 的纯 ESM 导入回归。�
 
 中查看。禁止只依赖单元测试里的宽松 mock 判断 Host 可加载。
 
+### 插件设置卡不显示（2026-09-01 实测，重大经验）
+
+**症状**：Settings → Plugins 里完全看不到 `dsh-sub-cli` 卡片；Host 侧 CLI 工具（`cli_check` / `cli_codex_direct` 等）全部正常。
+
+**结论：这是两个叠加故障，且第二层才是主因。只修好第一层不会恢复显示。**
+
+#### 第一层：注册失败（inject 声明与访问点不一致）
+
+未提交改动把插件 `inject` 里的 `connection` 删了，但代码仍在访问 `ctx.connection`：
+
+```js
+var inject = ["slots", "locale", "settingsScope"];       // 少声明 connection
+var api = ctx.connection && ctx.connection.api;          // 仍在访问
+```
+
+动态 Client 守卫（`dsh-cordis-client-runner`）对**未声明的服务访问**直接 `rejectGuard()` 抛错；而 `apply()` 外层 `try/catch` 只写日志，于是 `ctx.slots.inject(...)` 永远执行不到 → 卡片从未注册。
+
+> **规则**：`inject` 数组与代码里每一个 `ctx.<service>` 访问必须逐项对齐。改一处就要改另一处。
+
+#### 第二层：渲染期崩溃（真正的元凶）
+
+`connection` 的实际键只有 `isLoopback` / `generation` / `rpc` / `registerGenerationSource` / `start`——**根本没有 `api`**。所以 `api` 恒为 `undefined`：
+
+```js
+props.api.llm.models({})   // TypeError: Cannot read properties of undefined
+```
+
+致命点：**`SetupRow` 在卡片折叠时也会挂载**（`hidden` 只是加属性，不阻止挂载），因此一打开设置面板就抛异常，**整个 Plugins 标签页被 React 卸载**——表现为「不是卡片空白，而是整块 UI 没了」。
+
+同理 `remote.llm` 只有 `listProviders` / `listConfigurableProviders` / `discoverModels`，**也没有 `models`**：这套旧 API 已整体退役。
+
+#### 修复
+
+以官方插件 `dsh-client-ui-settings-plugins` 的真实用法为准（`session.modelCatalog()` → `{ok, value:{groups}}`）：
+
+1. `inject` 改为 `["slots", "locale", "settingsScope", "remote", "remote.session"]`；
+2. 模型目录改用 `ctx.get("remote.session").modelCatalog()`，seat 缺失 / 方法缺失 / 请求失败**全部降级返回 `[]`**；
+3. `SetupRow` 改用 `props.loadCatalog` 并加 `typeof` 守卫，删除失效的 `props.api`。
+
+#### 沉淀的四条经验
+
+1. **「注册成功」不等于「能显示」**。必须分别验证注册（slot 里有条目）与渲染（组件不抛错）。本次浏览器探针证实 `settings.plugin.item` 里已有 `dsh-sub-cli`，才把方向从「注册」转到「渲染」——**这是定位的转折点**。
+2. **折叠 ≠ 不挂载**。`hidden` / CSS 隐藏的容器里，副作用（数据请求）照常执行；崩溃会向上冒泡掀掉整个页面。
+3. **优先用 `ctx.get(...)` 防御式读取**，并给回调加 `typeof` 守卫。这样即使 DSH API 再次漂移，也只降级为空下拉，不会拖垮整页。
+4. **`try/catch` 吞异常会掩盖失败**。它让第一层 bug 静默了数天。后续应让 `catch` 分支在 UI 上给出可见提示，而非只 `console.error`。
+
+#### 排查手法（可复用）
+
+- **活体探针优先于读日志**。用 `cordis_define` + `cordis_run` 起临时插件：Host 侧读 `clientModules.graph()` 确认 bundle 合成与 `inject` 解析；Client 侧读 `slots.entries("settings.plugin.item")` 确认注册、并对注册到的组件做 `React.createElement` 验证渲染。用完 `cordis_undefine` 清理。
+- **React 在动态沙箱里是 Builtin，不在 `window` 上**。探针里写 `window.React` 会误报 `Cannot read properties of undefined`——那是探针 bug，不是产品问题。
+- **`package.json` 的 `dsh.client.inject` 不热重载**（Host 按 source key 缓存 `pkgMeta`），但 `client.js` 走 HMR 即时生效。改前者需重启 DSH。
+- **`dsh.client.inject` 里解析不到的包是静默跳过的**（`arriveGraphRow`），不会报错；`react` / `dsh-client-ui-primitives` / `dsh-client-ui-slots` 是浏览器 seed 词，无需声明。别把它们的缺失误判为故障原因。
+
 ## CLI 工具的工作模式策略（已确认）
 
 ### 产品要求

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **探测 OK 回声误拦**：部分供应商/模型（如 zzztoken 上的 deepseek-v4-pro）把 `Reply with exactly: OK` 回声成 `OK\nOK`，此前会被严格相等校验误判为"连通失败"，导致 `cli_codex` 被预检拦截、用户改配置后不易感知。新增纯函数 `isOkReply`（所有非空行均为 OK 即通过），且报错带 `provider / model` 名，路由一目了然。
 - **长任务提前 end_turn 无完整结果**：部分模型在长多步工具任务中输出计划句后即提前结束 turn。服务层加入有界自动补全（同 thread nudge，最多 3 次），一次 `cli_codex_direct` 调用即可返回完整报告；驱动统计 `commandExecution` 轮次供判定，拿到完整块后清理进度噪音（长度 ≥100 字符才替换）。
 - **e2e 会话段 PATH 缺失**：双模式段最初只传隔离 env，`codex` 二进制是 `#!/usr/bin/env node` shim，缺 `process.env.PATH` 导致 app-server 以 127 退出；改为 `{ ...process.env, ...隔离 env }` 后真实验证通过。
+- **插件设置卡不显示（两层叠加故障）**：Settings → Plugins 完全看不到卡片，而 Host 侧 CLI 工具全部正常。
+  - 第一层（注册失败）：未提交改动从 `inject` 删除了 `connection`，代码却仍访问 `ctx.connection`，触发动态 Client 守卫拒绝，异常被 `try/catch` 吞掉，`ctx.slots.inject(...)` 从未执行。
+  - 第二层（渲染崩溃，主因）：`connection` 并不提供 `api`（实际键仅 `isLoopback`/`generation`/`rpc`/`registerGenerationSource`/`start`），`props.api.llm.models({})` 抛 `TypeError`；且 `SetupRow` 在卡片**折叠时也挂载**（`hidden` 不阻止挂载），异常掀掉整个 Plugins 标签页——表现为整块 UI 消失而非卡片空白。
+  - 修复：`inject` 改为 `["slots", "locale", "settingsScope", "remote", "remote.session"]`；模型目录改用 `ctx.get("remote.session").modelCatalog()`（对齐官方 `dsh-client-ui-settings-plugins` 用法），并对 seat 缺失 / 方法缺失 / 请求失败全链路降级返回 `[]`；`SetupRow` 改用 `props.loadCatalog` 并加 `typeof` 守卫。
+  - 经验：注册成功 ≠ 能显示，须分别验证；折叠容器仍执行副作用，崩溃会向上冒泡；优先 `ctx.get` 防御式读取，使 API 再次漂移时只降级不崩页。
+- **移除失效的 `dsh.client.inject` 声明**：`plugin/package.json` 中 `@deepseek-ai/dsh-client-runtime`（该版本部署不存在、symlink 悬空）、`dsh-client-ui-slots`、`dsh-client-ui-primitives` 均解析不到。后两者是浏览器 seed 词（`react` 同样），`require` 直接命中无需声明；`inject` 中解析不到的包在 `arriveGraphRow` 静默跳过，无害但属冗余。同步清理对应的 `peerDependencies` / `peerDependenciesMeta`。
 
 ### Verified（真实环境，2026-08-31）
 

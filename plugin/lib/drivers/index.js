@@ -7,9 +7,13 @@
 import { CodexAppServerDriver } from "./codex-app-server.js";
 import { CodexAppServerProvider, registerCodexAppServerProvider } from "./codex-provider.js";
 import { createCodexSubprocessTransportFactory } from "./subprocess-transport.js";
+import { ClaudeStreamJsonDriver } from "./claude-stream-json.js";
+import { QwenStreamJsonDriver } from "./qwen-stream-json.js";
 import { assertManagedCliDriver } from "./types.js";
 
 export { CodexAppServerProvider, registerCodexAppServerProvider };
+export { ClaudeStreamJsonDriver } from "./claude-stream-json.js";
+export { QwenStreamJsonDriver } from "./qwen-stream-json.js";
 
 /**
  * Assemble the managed CLI driver map. Each entry must pass the
@@ -23,8 +27,10 @@ export { CodexAppServerProvider, registerCodexAppServerProvider };
  *   drivers?: Record<string, object>
  * }} options
  *   `drivers` lets the caller inject non-default drivers (e.g. test fakes
- *   or future claude/qwen implementations) without changing this module.
- *   The default map currently only contains the Codex app-server driver.
+ *   or future custom implementations) without changing this module.
+ *   The default map registers Codex (app-server), Claude (subprocess +
+ *   stream-json), and Qwen (subprocess + stream-json) when their binaries
+ *   are present in the unified directory.
  */
 export function createManagedCliDrivers({ subprocess, dirSource, prepare, drivers = {} }) {
 	const map = { ...drivers };
@@ -32,6 +38,12 @@ export function createManagedCliDrivers({ subprocess, dirSource, prepare, driver
 		map.codex = new CodexAppServerDriver({
 			createTransport: createCodexSubprocessTransportFactory({ subprocess, dirSource, prepare })
 		});
+	}
+	if (!map.claude) {
+		map.claude = new ClaudeStreamJsonDriver({ subprocess, dirSource, prepare });
+	}
+	if (!map.qwen) {
+		map.qwen = new QwenStreamJsonDriver({ subprocess, dirSource, prepare });
 	}
 	const ids = Object.keys(map);
 	if (!ids.length) throw new TypeError("createManagedCliDrivers requires at least one driver");
