@@ -34,17 +34,16 @@
 |------|:------------------:|:--------------------------:|:-----------------------:|
 | 文件读写（Read / Write / Edit / Glob / Grep） | ✅ | ✅ | ✅ |
 | Shell 命令（exec / Bash） | ✅ | ✅ | ✅ |
-| **WebSearch（联网搜索）** | ❌ CLI 内部无 | ✅ **CLI 自带，需要 DSH 批准权限** | ❌ CLI 内部无 |
-| **WebFetch（抓取 URL）** | ❌ | ✅ **CLI 自带，需要 DSH 批准权限** | ❌ |
 | 内部子代理（Agent / Task / spawn） | ✅ | ✅ | ✅ |
 
-**用哪个 CLI 做什么**：
+**分工原则：主控调研，CLI 执行。**
 
-- **联网搜索 / 抓 URL**：用 Claude Code 的 `cli_claude_direct`（它自带 `WebSearch` + `WebFetch`）。Qwen 和 Codex 内部都没有 web 工具——**不要让它们做 web 任务**。
-- **代码工作（读 / 写 / 改 / 跑命令）**：三个 CLI 都能做，按你习惯选。
+- **联网调研 / 抓 URL**：由主控用 DSH 自带的 `advanced_search` / `web_fetch` / `platform_search` 直接完成，**不派给任何 CLI**——派发会被能力门禁拒绝并提示此分工。Claude Code 虽内置 WebSearch/WebFetch，但它们是 Anthropic 的 server-side 工具，仅在供应商执行此类工具时才可用（官方 API 或全透传中转；chat 型中转实测不可用），因此不作为依赖路径。
+- **代码工作（读 / 写 / 改 / 跑命令）**：三个 CLI 完全对称，按习惯选。
 - **多步复杂任务**：用 Relay 子代理（`cli_<cli>_subagent`），让子代理持续推进。
+- **如需 CLI 处理调研相关材料**：主控先调研，把材料作为任务内容派给 CLI。
 
-**DSH 自己的工具也可以用**：`advanced_search` / `web_fetch` / `platform_search` / `free_search_test`——这些是 DSH Host 提供的，不依赖 CLI。要搜"过去 24 小时 GitHub 趋势"这种需求，直接用 `advanced_search` 最快。
+> 设置卡里的「联网」权限开关与调研无关：它是进程沙箱旋钮（勾选 → 沙箱升到"完全"，CLI 进程可联网，npm install / git clone 不受影响；不勾 → 工作区可写）。三个 CLI 均显示同一开关。
 
 ## 安装
 

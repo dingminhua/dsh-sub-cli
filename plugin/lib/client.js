@@ -57,7 +57,6 @@ window.__ModuleLoader__.load({
       "row.write": "写文件",
       "row.exec": "执行命令",
       "row.network": "联网",
-      "row.noWebTools": "此 CLI 无内置联网工具（联网权限不适用）",
       "row.approval": "未勾选时",
       "row.approvalHint": "未勾选的权限被用到时，按此选择。",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
@@ -128,7 +127,6 @@ window.__ModuleLoader__.load({
       "row.write": "Write files",
       "row.exec": "Run commands",
       "row.network": "Network",
-      "row.noWebTools": "This CLI ships no built-in web tools (network N/A)",
       "row.approval": "When unchecked",
       "row.approvalHint": "When an unchecked capability comes up, follow this choice.",
       "row.autoContinueMax": "Max nudges (0 = off)",
@@ -236,18 +234,15 @@ window.__ModuleLoader__.load({
     // preset SELECT was removed from the UI (the checkboxes are their own
     // visualization), so there is no reverse presetIdOf any more.
 
-    // webTools marks whether the CLI itself ships web tools (WebSearch /
-    // WebFetch) that the "联网" permission toggle can actually gate. Verified
-    // by querying each CLI for its tool list (2026-09-01): Claude Code
-    // exposes WebSearch + WebFetch; Codex and Qwen Code have no web tools —
-    // their stream-json system/init `tools` arrays contain no web_* entries.
-    // For CLIs without webTools the settings card hides the network toggle
-    // entirely (an enabled toggle would be a false promise) and forces
-    // network:false in the persisted profile.
+    // The "联网" permission toggle is a pure sandbox dial, identical for every
+    // CLI: checked → the CLI process may reach the network (danger-full-access
+    // tier, so npm install / git clone keep working), unchecked →
+    // workspace-write. It is NOT about web research — research is the
+    // controller's job (DSH's own search tools), never delegated to a CLI.
     var CLIS = [
-      { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex", webTools: false, testHint: "测试将验证该供应商是否支持 responses 协议（Codex 所需，含工具续接）" },
-      { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude", webTools: true, testHint: "测试将验证该供应商是否支持 Anthropic Messages 协议（含 tool_use 续接）" },
-      { id: "qwen", name: "Qwen Code", npm: "@qwen-code/qwen-code", bin: "qwen", webTools: false, testHint: "测试将验证该供应商是否支持 Chat Completions 协议（含 tool_calls）" }
+      { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex", testHint: "测试将验证该供应商是否支持 responses 协议（Codex 所需，含工具续接）" },
+      { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude", testHint: "测试将验证该供应商是否支持 Anthropic Messages 协议（含 tool_use 续接）" },
+      { id: "qwen", name: "Qwen Code", npm: "@qwen-code/qwen-code", bin: "qwen", testHint: "测试将验证该供应商是否支持 Chat Completions 协议（含 tool_calls）" }
     ];
     var SETTINGS_NS = "dsh-sub-cli";
 
@@ -350,31 +345,26 @@ window.__ModuleLoader__.load({
         React.createElement("div", { className: "dsc-perm-block", style: { gridColumn: "1 / -1" } },
           React.createElement("div", { className: "dsc-perm-toggles" },
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, network: props.cli && props.cli.webTools ? permission.network : false, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.read"))
             ),
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, network: props.cli && props.cli.webTools ? permission.network : false, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, network: permission.network, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.write"))
             ),
             React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, network: props.cli && props.cli.webTools ? permission.network : false, approval: permission.approval }); } }),
+              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, network: permission.network, approval: permission.approval }); } }),
               React.createElement("span", null, t("row.exec"))
             ),
-            // 联网 toggle only for CLIs that actually ship web tools. Qwen/Codex
-            // have no WebSearch/WebFetch inside the CLI, so an enabled network
-            // toggle would be a false promise; render an explanatory note
-            // instead and force network:false in every persisted profile.
-            props.cli && props.cli.webTools
-              ? React.createElement("label", { className: "dsc-perm-toggle" },
-                  React.createElement("input", { type: "checkbox", checked: permission.network, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: e.target.checked, approval: permission.approval }); } }),
-                  React.createElement("span", null, t("row.network"))
-                )
-              : React.createElement("span", { className: "dsc-perm-note" }, t("row.noWebTools"))
+            // The network toggle is the same sandbox dial for every CLI.
+            React.createElement("label", { className: "dsc-perm-toggle" },
+              React.createElement("input", { type: "checkbox", checked: permission.network, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: e.target.checked, approval: permission.approval }); } }),
+              React.createElement("span", null, t("row.network"))
+            )
           ),
           React.createElement("div", { className: "dsc-perm-approval" },
             React.createElement("label", { className: "dsc-ac-max" }, t("row.approval"),
-              React.createElement("select", { value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: props.cli && props.cli.webTools ? permission.network : false, approval: e.target.value }); } },
+              React.createElement("select", { value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, network: permission.network, approval: e.target.value }); } },
                 APPROVAL_OPTIONS.map(function (a) { return React.createElement("option", { key: a.id, value: a.id }, a.label); })
               )
             ),

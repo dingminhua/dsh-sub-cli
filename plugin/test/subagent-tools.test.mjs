@@ -70,7 +70,8 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 });
 
 test("a network task is refused before any CLI starts", async () => {
-	// Codex/Qwen ship no web tool, so the capability gate must reject up front.
+	// Web research is the controller's job: the gate must reject it up front
+	// for every CLI, Claude included.
 	for (const toolName of ["cli_codex_direct", "cli_qwen_direct"]) {
 		const fixture = context();
 		let dispatched = false;
@@ -79,19 +80,26 @@ test("a network task is refused before any CLI starts", async () => {
 		const tool = fixture.tools.get(toolName);
 		await assert.rejects(
 			tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
-			/没有内置联网工具/
+			/主控直接执行/
 		);
 		assert.equal(dispatched, false, `${toolName} must not start a CLI for a network task`);
 	}
 });
 
-test("Claude Code may run a network task", async () => {
+test("Claude Code refuses research tasks like the others: research is the controller's", async () => {
+	// Symmetric gate: even Claude Code (whose WebSearch only works with
+	// server-side-tool relays) is refused for web research — the controller
+	// researches itself and hands the material to a CLI as task content.
 	const fixture = context();
-	const managedCliAgents = { async dispatch() { return { session: { sessionId: "s-claude" }, output: "searched" }; } };
+	let dispatched = false;
+	const managedCliAgents = { async dispatch() { dispatched = true; return { session: { sessionId: "s-claude" }, output: "searched" }; } };
 	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 	const tool = fixture.tools.get("cli_claude_direct");
-	const result = await tool.execute({ description: "联网调查", prompt: "搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL });
-	assert.equal(result.output, "searched");
+	await assert.rejects(
+		tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
+		/主控直接执行/
+	);
+	assert.equal(dispatched, false, "no CLI may start for a research task");
 });
 
 test("rejects empty titles and prompts before dispatching", async () => {

@@ -49,9 +49,6 @@ export const CLI_REGISTRY = [
 		// verifies exactly this (and the tool-continuation it needs).
 		protocol: "responses",
 		protocolLabel: "OpenAI Responses 协议（Codex 所需，含工具续接）",
-		// The CLI ships no web tool of its own, so a network task must be refused
-		// before launch rather than failing once the process is already running.
-		webTools: false,
 		install: "安装 Codex，把可执行文件放到统一目录的 bin/codex。"
 	},
 	{
@@ -77,8 +74,6 @@ export const CLI_REGISTRY = [
 		},
 		protocol: "anthropic",
 		protocolLabel: "Anthropic Messages 协议（Claude Code 所需，含 tool_use 续接）",
-		// Claude Code is the only managed CLI shipping WebSearch + WebFetch.
-		webTools: true,
 		install: "安装 Claude Code，把可执行文件放到统一目录的 bin/claude。"
 	},
 	{
@@ -100,8 +95,6 @@ export const CLI_REGISTRY = [
 		},
 		protocol: "openai-chat",
 		protocolLabel: "Chat Completions 协议（Qwen Code 所需，含 tool_calls 续接）",
-		// No built-in web tool; network tasks are refused before launch.
-		webTools: false,
 		install: "安装 Qwen Code，把可执行文件放到统一目录的 bin/qwen。"
 	}
 ];

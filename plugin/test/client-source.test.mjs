@@ -5,13 +5,16 @@ import { CLI_REGISTRY } from "../lib/registry.js";
 
 const source = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
-test("client webTools flags agree with the registry", () => {
-	// The client half cannot import the registry (it uses node builtins), so it
-	// repeats the flags. If the two drift, the settings card promises a network
-	// toggle the capability gate then refuses — keep them in lockstep.
+test("the network toggle is a sandbox dial shown for every CLI", () => {
+	// The webTools story is gone: research is the controller's job, so the
+	// settings card renders the same network toggle for all three CLIs and
+	// never persists network:false behind the user's back.
+	assert.doesNotMatch(source, /webTools/, "no webTools marker remains in the client");
+	assert.doesNotMatch(source, /"row\.noWebTools"/, "the per-CLI note is gone");
+	assert.doesNotMatch(source, /network: props\.cli/, "no conditional network persistence");
+	// Every CLI row still names the CLI; the toggle persists what the user set.
 	for (const entry of CLI_REGISTRY) {
-		const flag = new RegExp(`id: "${entry.id}"[^}]*webTools: ${entry.webTools}`);
-		assert.match(source, flag, `client.js webTools for ${entry.id} must match registry (${entry.webTools})`);
+		assert.match(source, new RegExp(`id: "${entry.id}"`), `CLI row for ${entry.id} still exists`);
 	}
 });
 

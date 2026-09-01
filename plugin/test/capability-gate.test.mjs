@@ -29,25 +29,29 @@ test("bare web vocabulary in a local task does not trip the gate", () => {
 	assert.equal(needsNetwork("read the http header parsing code"), false);
 });
 
-test("Codex and Qwen refuse network tasks before launch", () => {
-	for (const cli of ["codex", "qwen"]) {
+test("every CLI refuses web research: the controller researches itself", () => {
+	// Division of labour: research belongs to the controller (DSH's own search
+	// tools), so the gate refuses research tasks for ALL CLIs symmetrically —
+	// including Claude Code, whose built-in WebSearch only works when the relay
+	// executes server-side tools.
+	for (const cli of ["codex", "claude", "qwen"]) {
 		const result = checkCapability(cli, "联网搜索最近 24 小时 AI 新闻");
-		assert.equal(result.ok, false, `${cli} must refuse a network task`);
-		// The message names the CLI that can do it and the DSH fallback tools.
-		assert.match(result.reason, /Claude Code/);
+		assert.equal(result.ok, false, `${cli} must refuse a research task`);
+		assert.match(result.reason, /主控直接执行/);
 		assert.match(result.reason, /advanced_search/);
+		// The old story — "use Claude Code, it ships WebSearch" — is gone.
+		assert.doesNotMatch(result.reason, /Claude Code（自带/);
 	}
 });
 
-test("Claude Code is allowed to run network tasks", () => {
-	assert.equal(checkCapability("claude", "联网搜索最近 24 小时 AI 新闻").ok, true);
+test("code/file/command tasks pass for every CLI", () => {
+	for (const cli of ["codex", "claude", "qwen"]) {
+		assert.equal(checkCapability(cli, "读一下这段代码并解释").ok, true);
+		assert.equal(checkCapability(cli, "run the unit tests").ok, true);
+	}
 });
 
-test("Codex and Qwen still accept non-network tasks", () => {
-	assert.equal(checkCapability("codex", "读一下这段代码").ok, true);
-	assert.equal(checkCapability("qwen", "run the unit tests").ok, true);
-});
-
-test("an unknown CLI is left to the later stages", () => {
-	assert.equal(checkCapability("nope", "联网搜索").ok, true);
+test("an unknown CLI id still runs the prompt check", () => {
+	assert.equal(checkCapability("nope", "联网搜索").ok, false);
+	assert.equal(checkCapability("", "读代码").ok, true);
 });

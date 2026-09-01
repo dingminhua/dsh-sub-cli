@@ -1,12 +1,12 @@
 // Capability gating: decide up front whether a task can be handed to a managed
 // CLI at all, instead of launching a process that is guaranteed to fail.
 //
-// The only capability enforced today is network access. Codex and Qwen Code ship
-// no web tool of their own (see `webTools` in registry.js), so a task that needs
-// one is refused before the CLI starts — with a message that names the CLI that
-// can do it and the DSH tools that also can.
-
-import { cliById } from "./registry.js";
+// Web research is the controller's job, not the CLIs'. None of the managed
+// CLIs is used for online investigation: DSH itself ships advanced_search /
+// web_fetch / platform_search, and the CLI whose built-in WebSearch would even
+// work depends on the relay executing server-side tools. So a research task is
+// refused before ANY CLI starts — with a message that keeps the division of
+// labour explicit: the controller researches, the CLIs execute code/file work.
 
 /**
  * Markers that a task needs live internet access. Match the task's INTENT,
@@ -40,22 +40,21 @@ export function needsNetwork(prompt) {
 }
 
 /**
- * Refuse a task the CLI cannot perform, naming the alternatives.
- * @param {string} cliId - managed CLI id.
+ * Refuse a web-research task on behalf of every managed CLI, naming the
+ * division of labour: the controller researches, the CLI executes.
+ * @param {string} cliId - managed CLI id (kept for future per-CLI gates).
  * @param {string} prompt - the task text.
  * @returns {{ok: true} | {ok: false, reason: string}}
  */
 export function checkCapability(cliId, prompt) {
-	const entry = cliById(cliId);
-	// An unknown CLI is not this gate's business; later stages reject it.
-	if (!entry) return { ok: true };
-	if (entry.webTools !== false) return { ok: true };
+	// Unknown CLI is not this gate's business; later stages reject it.
+	if (!cliId) return { ok: true };
 	if (!needsNetwork(prompt)) return { ok: true };
 	return {
 		ok: false,
 		reason:
-			`${entry.name} 没有内置联网工具，无法执行需要访问网络的任务，已拒绝执行（未启动进程）。` +
-			`需要联网的任务请改用 Claude Code（自带 WebSearch / WebFetch），或直接使用 DSH 自带的 ` +
-			`advanced_search / web_fetch / platform_search 工具。`
+			"联网调研由主控直接执行（DSH 自带 advanced_search / web_fetch / platform_search），不派给外部 CLI。" +
+			"如需 CLI 处理调研相关材料，请先由主控完成调研，再把材料作为任务内容派给它；" +
+			"代码、文件、命令类任务不受影响，照常派发。"
 	};
 }
