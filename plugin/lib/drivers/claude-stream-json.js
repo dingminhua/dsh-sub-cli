@@ -219,7 +219,7 @@ export class ClaudeStreamJsonDriver {
 		const handle = this.subprocess.spawn({
 			argv,
 			cwd: request.cwd,
-			env: ctx.env,
+			env: ctx.env ?? request.env,
 			signal,
 			stdio: { stdin: "pipe", stdout: "pipe", stderr: "inherit" },
 			graceMs: request.timeoutMs ?? this.turnTimeoutMs

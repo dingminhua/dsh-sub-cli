@@ -171,17 +171,23 @@ export class QwenStreamJsonDriver {
 	}
 
 	#spawnTurn(ctx, request, { mode, prompt, resumeSessionId = null, signal = null }) {
-		// Qwen has no --input-format flag: a single user message is appended as
-		// `--prompt <text>` (the value, not a stream). The output, however, is a
-		// single JSON object on stdout when `--output-format stream-json` is set.
+		// Qwen's real protocol (verified against `qwen --help` on 2026-09-01):
+		//   - --output-format stream-json : one JSON object per turn on stdout
+		//   - --prompt (no value)         : enable stdin-prompt mode (Qwen reads
+		//                                   from stdin until EOF). Required for
+		//                                   BOTH new and resume turns; without it
+		//                                   Qwen prints "No input provided via stdin".
+		//   - --session-id <uuid>         : seed a new session id
+		//   - --resume <id>               : reattach the on-disk session history
+		//   - --model <name>              : model id (from settings.json providers)
+		// No --input-format, no --effort, no --permission-mode, no --cwd.
 		const args = [
 			"-p",
 			"--output-format", "stream-json"
 		];
-		// Both new and resume turns pass the prompt explicitly via --prompt
-		// (Qwen has no stdin protocol). The first turn also seeds a session id;
-		// subsequent turns use --resume to reattach the on-disk history.
-		if (typeof prompt === "string" && prompt) args.push("--prompt", prompt);
+		// --prompt is required for BOTH new and resume turns; the prompt text
+		// is read from stdin (see the write+closeStdin block below).
+		if (typeof prompt === "string" && prompt) args.push("--prompt");
 		if (request.model) args.push("--model", request.model);
 		// Qwen has no --effort flag (verified against `qwen --help`); if the user
 		// configured a reasoning effort we silently skip it instead of letting the
@@ -189,12 +195,11 @@ export class QwenStreamJsonDriver {
 		if (request.reasoningEffort) console.warn(`[dsh-sub-cli] qwen driver: ignoring reasoningEffort=${request.reasoningEffort}; Qwen has no --effort flag`);
 		if (mode === "resume" && resumeSessionId) args.push("--resume", resumeSessionId);
 		else if (mode === "new") args.push("--session-id", ctx.sessionId);
-		args.push("--cwd", request.cwd);
 		const argv = winShimArgv(ctx.bin, args);
 		const handle = this.subprocess.spawn({
 			argv,
 			cwd: request.cwd,
-			env: ctx.env,
+			env: ctx.env ?? request.env,
 			signal,
 			stdio: { stdin: "pipe", stdout: "pipe", stderr: "inherit" },
 			graceMs: request.timeoutMs ?? this.turnTimeoutMs
@@ -202,8 +207,17 @@ export class QwenStreamJsonDriver {
 		const transport = new SubprocessLineTransport(handle);
 		return (async () => {
 			try {
+				// Qwen's stream-json output includes system/init/assistant events
+				// (Anthropic-compatible NDJSON), not just a single result line. We
+				// write the prompt with a trailing newline and then close stdin so
+				// Qwen sees EOF and proceeds; without the close Qwen hangs
+				// waiting for more input (verified against the real CLI on 2026-09-01).
+				if (typeof prompt === "string" && prompt) {
+					await transport.write(prompt + "\n");
+					transport.closeStdin?.();
+				}
 				const { events, result } = await runTurn({ transport, timeoutMs: request.timeoutMs ?? this.turnTimeoutMs });
-				// Qwen emits no init event; session id comes from the result or the ctx.
+				// Session id comes from the result or the ctx.
 				const resolvedSessionId = result?.session_id || resumeSessionId || ctx.sessionId;
 				ctx.actualSessionId = resolvedSessionId;
 				return {

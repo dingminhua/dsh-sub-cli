@@ -19,7 +19,12 @@ function fakeHandle({ argv, env, cwd, stdio, signal, graceMs }) {
 	const donePromise = new Promise((r) => { resolveDone = r; });
 	return {
 		argv: argvCopy, env, cwd, stdio, signal, graceMs,
-		stdin: { _written: [], write(text, cb) { this._written.push(text); cb && cb(null); } },
+		stdin: {
+			_written: [],
+			_ended: false,
+			write(text, cb) { this._written.push(text); cb && cb(null); },
+			end() { this._ended = true; }
+		},
 		stdout: {
 			_listeners: new Set(),
 			on(event, listener) { if (event === "data") this._listeners.add(listener); },
@@ -64,7 +69,7 @@ test("driver exposes the standard capability shape", () => {
 	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.interrupt, false);
 });
 
-test("start composes the expected argv (no --input-format, prompt via --prompt)", async () => {
+test("start composes the expected argv (stdin-prompt mode, no --input-format, no --effort)", async () => {
 	const handles = [];
 	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
 	const run = await driver.start({ cwd: "/repo", prompt: "Hi there", model: "qwen3-coder-plus" });
@@ -74,21 +79,27 @@ test("start composes the expected argv (no --input-format, prompt via --prompt)"
 	assert.equal(value.threadId, "qwen-session-1");
 	assert.equal(value.text, "Hello, world.");
 	const args = handles[0].argv.slice(1);
-	// Qwen-specific argv: -p, --output-format, --prompt, --model, --session-id, --cwd.
+	// Qwen-specific argv: -p, --output-format, --prompt (boolean), --model, --session-id, --cwd.
 	assert.ok(args.includes("-p"), "must use -p");
 	assert.ok(args.includes("--output-format") && args[args.indexOf("--output-format") + 1] === "stream-json", "must set --output-format stream-json");
-	assert.ok(args.includes("--prompt") && args[args.indexOf("--prompt") + 1] === "Hi there", "prompt passed via --prompt (Qwen has no --input-format)");
+	assert.ok(args.includes("--prompt"), "--prompt enables stdin-prompt mode (no value)");
+	// The prompt text goes through stdin, NOT as an argv element:
+	assert.ok(!args.includes("Hi there"), "prompt text must not appear in argv");
 	assert.ok(args.includes("--model") && args[args.indexOf("--model") + 1] === "qwen3-coder-plus");
 	assert.ok(args.includes("--session-id"), "first turn uses --session-id to seed");
-	assert.ok(args.includes("--cwd") && args[args.indexOf("--cwd") + 1] === "/repo");
+	// Qwen has NO --cwd flag (Unknown argument: cwd); cwd is passed via Node's
+	// spawn({cwd: ...}) option, which the DSH subprocess service supports.
+	assert.ok(!args.includes("--cwd"), "Qwen has no --cwd flag; cwd is set via spawn options");
 	// Negative: Qwen has no --input-format, --verbose, --permission-mode, --effort.
 	assert.ok(!args.includes("--input-format"), "Qwen has no --input-format");
 	assert.ok(!args.includes("--verbose"), "Qwen does not need --verbose");
 	assert.ok(!args.includes("--permission-mode"), "Qwen has no --permission-mode");
 	assert.ok(!args.includes("--effort"), "Qwen has no --effort");
 	assert.equal(handles[0].cwd, "/repo");
-	// Driver does NOT write to stdin (Qwen has no input pipe protocol).
-	assert.equal(handles[0].stdin._written.length, 0);
+	// Driver writes the prompt to stdin.
+	assert.equal(handles[0].stdin._written.length, 1);
+	assert.equal(handles[0].stdin._written[0], "Hi there\n");
+	assert.equal(handles[0].stdin._ended, true, "stdin must be closed (EOF) after writing the prompt so Qwen proceeds");
 });
 
 test("reasoningEffort is silently dropped (Qwen has no --effort flag)", async () => {
@@ -111,16 +122,16 @@ test("reasoningEffort is silently dropped (Qwen has no --effort flag)", async ()
 	}
 });
 
-test("followup reuses the resolved session id via --resume", async () => {
+test("followup reuses the resolved session id via --resume (no --prompt, no stdin write)", async () => {
 	const handles = [];
 	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
 	const first = await driver.start({ cwd: "/r", prompt: "first" });
 	seedSuccessResult(handles[0].stdout, "session-abc");
 	const firstValue = await first.result;
 	assert.equal(firstValue.threadId, "session-abc");
-	// Followup: --resume replaces --session-id; the new prompt is also --prompt.
-	// Followup: --resume continues the on-disk session; the new prompt is
-	// injected via --prompt (Qwen has no stdin protocol).
+	// Followup: --resume reattaches; we do NOT pass --prompt or write stdin
+	// (Qwen's behaviour with --resume + --prompt together is undefined; safer
+	// to let the resumed session's history drive the next turn).
 	const followupPromise = first.followup("second message", {});
 	seedSuccessResult(handles[1].stdout, "session-abc");
 	await followupPromise;
@@ -128,7 +139,8 @@ test("followup reuses the resolved session id via --resume", async () => {
 	assert.ok(args.includes("--resume"));
 	assert.equal(args[args.indexOf("--resume") + 1], "session-abc");
 	assert.ok(!args.includes("--session-id"), "followup must not reissue --session-id");
-	assert.ok(args.includes("--prompt") && args[args.indexOf("--prompt") + 1] === "second message");
+	assert.ok(!args.includes("--prompt"), "followup must not pass --prompt");
+	assert.equal(handles[1].stdin._written.length, 0, "followup does not write to stdin");
 });
 
 test("is_error result event surfaces a real Error with the CLI message", async () => {

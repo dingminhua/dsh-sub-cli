@@ -23,7 +23,7 @@ export class SubprocessLineTransport {
 		this.onData = (chunk) => this.consume(chunk);
 		handle.stdout.on("data", this.onData);
 		void handle.done.then(
-			(outcome) => this.close(outcome?.exitCode === 0 ? null : new Error(`Codex app-server exited ${String(outcome?.exitCode)}`)),
+			(outcome) => this.close(outcome?.exitCode === 0 ? null : new Error(`subprocess exited ${String(outcome?.exitCode)}`)),
 			(error) => this.close(asError(error))
 		);
 	}
@@ -53,10 +53,18 @@ export class SubprocessLineTransport {
 	}
 
 	write(text) {
-		if (this.closed) return Promise.reject(new Error("Codex subprocess transport is closed"));
+		if (this.closed) return Promise.reject(new Error("subprocess transport is closed"));
 		return new Promise((resolve, reject) => {
 			this.handle.stdin.write(text, (error) => error ? reject(asError(error)) : resolve());
 		});
+	}
+
+	// Signal EOF on stdin so the child sees a finished prompt. CLIs that
+	// read from stdin (Qwen's --prompt mode, etc.) block until they get
+	// EOF, so the driver must call this after writing the prompt.
+	closeStdin() {
+		if (this.closed) return;
+		try { this.handle.stdin.end(); } catch {}
 	}
 
 	close(error) {

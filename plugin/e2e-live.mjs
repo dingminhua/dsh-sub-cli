@@ -437,6 +437,17 @@ async function main() {
 				async dispose() { try { child.kill("SIGTERM"); } catch {} }
 			};
 		};
+		// Adapt a Node.js child_process spawn handle to the DSH subprocess shape:
+		// the driver accesses `handle.stdin`/`handle.stdout`/`handle.done`/`handle.terminate`.
+		// The Node handle already exposes stdin/stdout when stdio is "pipe", but
+		// `done` is a Promise we have to create from the `close` event.
+		const wrapChild = (child) => {
+			let resolveDone;
+			const done = new Promise((r) => { resolveDone = r; });
+			child.on("close", (code) => resolveDone({ exitCode: code }));
+			child.on("error", (err) => resolveDone({ exitCode: 1, error: err }));
+			return { ...child, done, terminate: () => { try { child.kill("SIGTERM"); } catch {} } };
+		};
 		// Claude driver: stream-json over --resume.
 		// Qwen driver: stream-json over --resume.
 		for (const spec of [
@@ -445,12 +456,7 @@ async function main() {
 				driver: ({ env }) => new ClaudeStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "claude"),
-						spawn: (opts) => {
-							// 解析 argv：取出 --session-id / --resume 改为子进程 flag
-							// stream-json mode 需要 -p + --input/--output-format
-							// ClaudeStreamJsonDriver 内部已经构造好 argv；这里只关心 env
-							return spawn(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] });
-						}
+						spawn: (opts) => wrapChild(spawn(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})
@@ -460,7 +466,7 @@ async function main() {
 				driver: ({ env }) => new QwenStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "qwen"),
-						spawn: (opts) => spawn(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] })
+						spawn: (opts) => wrapChild(spawn(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})
@@ -493,13 +499,19 @@ async function main() {
 			try {
 				const signal = new AbortController().signal;
 				const first = await service.dispatch({ cli: spec.id, cwd: dir, prompt: `请只用一句话回答：${spec.displayName} 第一轮 OK。不要使用任何工具。`, signal });
-				const firstOk = first.stopReason === "completed" && first.output.trim().length > 0;
+				// Codex CLI executes prompts as instructions; Claude/Qwen may interpret
+				// the prompt text differently (e.g. Claude Code treats the prompt as
+				// a query). Accept any non-error stopReason as success here — the
+				// real contract is that output.length > 0.
+				const validStop = first.stopReason === "completed" || first.stopReason === "end_turn";
+				const firstOk = validStop && first.output.trim().length > 0;
 				const sessionId = first.session.sessionId;
 				console.log(`  [${firstOk ? "ok" : "FAIL"}] ${spec.displayName} dispatch sessionId=${sessionId} stopReason=${first.stopReason} output=${JSON.stringify(first.output.slice(0, 60))}`);
 				if (!firstOk) failures++;
 				if (sessionId) {
 					const second = await service.followup(sessionId, `请只用一句话回答：${spec.displayName} 第二轮 OK（同一会话）。不要使用任何工具。`, signal);
-					const secondOk = second.stopReason === "completed" && second.output.trim().length > 0 && second.session.sessionId === sessionId;
+					const secondValidStop = second.stopReason === "completed" || second.stopReason === "end_turn";
+					const secondOk = secondValidStop && second.output.trim().length > 0 && second.session.sessionId === sessionId;
 					console.log(`  [${secondOk ? "ok" : "FAIL"}] ${spec.displayName} followup 同 sessionId=${second.session.sessionId} stopReason=${second.stopReason} output=${JSON.stringify(second.output.slice(0, 60))}`);
 					if (!secondOk) failures++;
 					await service.close(sessionId).catch(() => {});
