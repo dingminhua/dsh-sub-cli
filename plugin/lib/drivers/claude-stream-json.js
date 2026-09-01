@@ -212,13 +212,6 @@ export class ClaudeStreamJsonDriver {
 		if (request.reasoningEffort) args.push("--effort", request.reasoningEffort);
 		if (mode === "resume" && resumeSessionId) args.push("--resume", resumeSessionId);
 		else if (mode === "new") args.push("--session-id", ctx.sessionId);
-		// Disable web tools: stream-json mode cannot satisfy their permission
-		// requests, so Claude Code currently surfaces "WebSearch 不可用：工具请求
-		// 权限时未获授权" instead of silently failing. Disabling them up-front
-		// keeps the LLM from forming a plan that depends on a tool the harness
-		// can never grant (use DSH's native `advanced_search` / `web_fetch` for
-		// that instead).
-		args.push("--disallowed-tools", "WebSearch,WebFetch");
 		// Constrain the file scope to the working directory; mirrors the
 		// interactive TUI's default and matches the sandbox tier.
 		args.push("--add-dir", request.cwd);
