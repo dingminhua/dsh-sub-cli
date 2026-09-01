@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **auto-continue 配置化**：设置项 `autoContinue.<cli>.enabled/max`（SCHEMA + 设置卡每 CLI 开关与续接次数，默认 `true`/`3`），服务经 `autoContinueSource` 读取；`enabled:false` 时原样返回不续接，`max` 覆盖默认上限。**泛化评估**：续接依赖同一 thread 的 followup，`INTENT_TAIL` 正则跨语言（中文句号+英文句点），对 Codex 会话式调用生效；Claude/Qwen 驱动接入后同样适用同一评估逻辑。
 - **双模式端到端自动化**：`e2e-live.mjs` 新增 Codex 双模式会话段——用真实 `CodexAppServerDriver` + `ManagedCliAgentsService` + 真实 codex app-server 与当前路由跑 `dispatch`（直连）与 `bindChild/submitFromChild`（代理提交路径），断言两轮同一 session 且输出完整，`npm run test:live` 一键复跑。
 - **e2e 纯断言**：`e2e-live.mjs` 顶部新增纯逻辑断言——`CLI_SUBAGENT_TOOLS` 不含 `cli_codex` 别名、`isOkReply` 容忍 `OK\nOK` 回声并拒绝非 OK 行。CI 的 `pnpm test`（`node --test test/*.test.mjs`）已覆盖新增单测（isOkReply、别名移除、持久化、autoContinue），无需改动 workflow。
+- **能力矩阵文档**：README.md 新增"各 CLI 内置工具能力"一节，含 Markdown 表格，说明三个 CLI 各有哪些内置工具（Codex/Qwen 无 web 工具，Claude Code 自带 WebSearch + WebFetch），并指引用户何时用 CLI 搜网、何时用 DSH 自带的 `advanced_search`。Qwen/Codex 内部工具列表为纯文档说明，不修改 driver 代码。
 - 单元测试新增：Claude/Qwen driver 13 个（argv 组合、沙箱映射、session-id 提取、followup --resume、error 转换、多段文本拼接）；session-tools 3 个（全部 12 工具注册、followup/status/sessions/interrupt 调用路由）；subagent-tools 3 个（Claude/Qwen session-mode dispatch、session-mode 拒绝后台模式）。
 
 ### Changed

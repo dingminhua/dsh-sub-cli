@@ -27,6 +27,26 @@
 - **会话持久化**：会话注册表（含远程 thread id）写入统一目录的 `sessions.json`，Host 重启后 `cli_<cli>_followup` 直接按 `sessionId` 恢复并 reattach 同一 thread，无需重新创建。
 - **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_<cli>_direct` 即返回完整报告。每个 CLI 可在设置卡里开关（`enabled`）并调整续接次数（`max`，默认 3）。**泛化评估结论**：该机制依赖"同一 thread 的 followup"，对所有持续会话式调用生效（Codex/Claude/Qwen），`INTENT_TAIL` 正则同时识别中英文意图句。
 
+## 各 CLI 内置工具能力
+
+本插件不动 CLI 的工具——CLI 自己有什么工具就用什么。三个 CLI 在 `cli_<cli>_direct` / `cli_<cli>_subagent` 持续会话路径下实际能调用的工具：
+
+| 能力 | Codex (app-server) | Claude Code (stream-json) | Qwen Code (stream-json) |
+|------|:------------------:|:--------------------------:|:-----------------------:|
+| 文件读写（Read / Write / Edit / Glob / Grep） | ✅ | ✅ | ✅ |
+| Shell 命令（exec / Bash） | ✅ | ✅ | ✅ |
+| **WebSearch（联网搜索）** | ❌ CLI 内部无 | ✅ **CLI 自带，需要 DSH 批准权限** | ❌ CLI 内部无 |
+| **WebFetch（抓取 URL）** | ❌ | ✅ **CLI 自带，需要 DSH 批准权限** | ❌ |
+| 内部子代理（Agent / Task / spawn） | ✅ | ✅ | ✅ |
+
+**用哪个 CLI 做什么**：
+
+- **联网搜索 / 抓 URL**：用 Claude Code 的 `cli_claude_direct`（它自带 `WebSearch` + `WebFetch`）。Qwen 和 Codex 内部都没有 web 工具——**不要让它们做 web 任务**。
+- **代码工作（读 / 写 / 改 / 跑命令）**：三个 CLI 都能做，按你习惯选。
+- **多步复杂任务**：用 Relay 子代理（`cli_<cli>_subagent`），让子代理持续推进。
+
+**DSH 自己的工具也可以用**：`advanced_search` / `web_fetch` / `platform_search` / `free_search_test`——这些是 DSH Host 提供的，不依赖 CLI。要搜"过去 24 小时 GitHub 趋势"这种需求，直接用 `advanced_search` 最快。
+
 ## 安装
 
 在 DSH 中通过插件目录添加：
