@@ -24,8 +24,8 @@ import { ManagedCliAgentsService } from "./managed-cli-agents.js";
 import { registerManagedSessionTools } from "./session-tools.js";
 import { registerRelaySubmitTool } from "./relay-tools.js";
 import { permissionReason } from "./permissions.js";
-import { attachRelayLifecycle, registerCodexSubagentTool } from "./relay-subagent.js";
-import { registerManagedCodexRelayProvider } from "./relay-provider.js";
+import { attachRelayLifecycle, registerCodexSubagentTool, registerManagedCliSubagentTools } from "./relay-subagent.js";
+import { registerManagedCodexRelayProvider, registerManagedCliRelayProvider } from "./relay-provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
@@ -296,9 +296,17 @@ export async function apply(ctx) {
 		managedCliAgents
 	});
 	registerManagedSessionTools({ tools: ctx.tools }, managedCliAgents);
-	registerManagedCodexRelayProvider({ subagents: ctx.subagents }, managedCliAgents);
+	// Per-CLI Relay subagent provider: each child binds itself to the right
+	// managed thread (codex → Codex app-server, claude → Claude stream-json,
+	// qwen → Qwen stream-json). One Relay submit tool is shared across all CLIs.
+	for (const cli of ["codex", "claude", "qwen"]) {
+		registerManagedCliRelayProvider({ subagents: ctx.subagents }, { cli, service: managedCliAgents });
+	}
 	registerRelaySubmitTool({ tools: ctx.tools }, managedCliAgents);
 	attachRelayLifecycle(ctx, managedCliAgents);
+	registerManagedCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, (cliId) => preflightCli(ctx, cliId));
+	// Back-compat: keep cli_codex_subagent registered via the legacy entry point
+	// so any caller still importing `registerCodexSubagentTool` keeps working.
 	registerCodexSubagentTool({ subagents: ctx.subagents, tools: ctx.tools }, managedCliAgents, (cliId) => preflightCli(ctx, cliId));
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native

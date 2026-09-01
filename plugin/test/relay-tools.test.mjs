@@ -3,10 +3,11 @@ import test from "node:test";
 import { registerRelaySubmitTool, RELAY_SUBMIT_TOOL } from "../lib/relay-tools.js";
 
 function fixture(){
-	let tool,seen;
-	const service={async submitFromChild(id,prompt,signal){seen={id,prompt,signal};return{session:{sessionId:"s1",status:"ready"},output:"codex result"};}};
-	registerRelaySubmitTool({tools:{register(v){tool=v;}}},service);
-	return{get tool(){return tool;},get seen(){return seen;}};
+	let tool, seen;
+	const registeredNames = new Set();
+	const service = { async submitFromChild(id, prompt, signal) { seen = { id, prompt, signal }; return { session: { sessionId: "s1", status: "ready" }, output: "codex result" }; } };
+	registerRelaySubmitTool({ tools: { registeredNames, register(v) { tool = v; } } }, service);
+	return { get tool() { return tool; }, get seen() { return seen; } };
 }
 
 test("relay submit identifies caller child and forwards to service",async()=>{
@@ -19,9 +20,10 @@ test("relay submit identifies caller child and forwards to service",async()=>{
 
 test("relay submit replaces permission rejection with full-settings guidance",async()=>{
 	let tool;
-	registerRelaySubmitTool({tools:{register(v){tool=v;}}},{async submitFromChild(){throw new Error('Rejected("rejected by user")');}});
+	const registeredNames = new Set();
+	registerRelaySubmitTool({tools:{registeredNames, register(v){tool=v;}}}, {async submitFromChild(){throw new Error('Rejected("rejected by user")');}});
 	await assert.rejects(
-		tool.execute({prompt:"task"},{agent:{session:{id:"child-1"}},signal:new AbortController().signal}),
+		tool.execute({prompt:"task"},{agent:{session:{id:"child-1"},provider:"managed-codex-relay"},signal:new AbortController().signal}),
 		(error)=>error.code==="CLI_PERMISSION_CONFIGURATION_REQUIRED" && /Codex → 权限/.test(error.message) && /“完全”/.test(error.message)
 	);
 });
