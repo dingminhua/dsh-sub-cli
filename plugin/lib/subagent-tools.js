@@ -9,11 +9,20 @@ import { withPermissionGuidance } from "./permission-guidance.js";
 
 // Codex exposes two explicit modes only: cli_codex_direct (主控直连 Codex，不建
 // Relay 子代理) 和 cli_codex_subagent (DSH 代理子代理)。cli_codex 别名已移除，
-// 避免"直连/代理"边界不清。Claude/Qwen 走一次性 provider。
+// 避免"直连/代理"边界不清。
+//
+// Claude and Qwen mirror the same split: `cli_<cli>_direct` (managed session
+// via ManagedCliAgentsService) and `cli_<cli>` (one-shot headless via the
+// managed-<cli> provider). The session-capable tools take precedence as the
+// default for any user who says "用 Claude Code 继续跟进这个任务" (续接
+// implies session); the one-shot tools remain for short, self-contained
+// tasks.
 export const CLI_SUBAGENT_TOOLS = [
-	{ cli: "codex", toolName: "cli_codex_direct", displayName: "Codex", mode: "direct", provider: "managed-codex-app-server" },
-	{ cli: "claude", toolName: "cli_claude_code", displayName: "Claude Code", provider: "managed-claude" },
-	{ cli: "qwen", toolName: "cli_qwen", displayName: "Qwen Code", provider: "managed-qwen" }
+	{ cli: "codex", toolName: "cli_codex_direct", displayName: "Codex", mode: "session", provider: null },
+	{ cli: "claude", toolName: "cli_claude_direct", displayName: "Claude Code", mode: "session", provider: null },
+	{ cli: "claude", toolName: "cli_claude_code", displayName: "Claude Code", mode: "oneshot", provider: "managed-claude" },
+	{ cli: "qwen", toolName: "cli_qwen_direct", displayName: "Qwen Code", mode: "session", provider: null },
+	{ cli: "qwen", toolName: "cli_qwen", displayName: "Qwen Code", mode: "oneshot", provider: "managed-qwen" }
 ];
 
 export { MANAGED_PROVIDERS };
@@ -50,11 +59,13 @@ async function settleBackground(start, signal) {
 }
 
 function definition(spec, ctx, opts) {
-	const isSessionCli = spec.cli === "codex" && opts.managedCliAgents;
-	// cli_codex_subagent is its own relay tool; CLI_SUBAGENT_TOOLS here only
-	// holds the direct path (codex) and the one-shot paths (claude/qwen).
-	const naming = spec.mode === "direct"
-		? "Direct 模式：由当前主控直接调用外部 CLI，不创建 DSH Relay 子代理。"
+	// Session-mode tools (cli_codex_direct, cli_claude_direct, cli_qwen_direct)
+	// take the ManagedCliAgentsService path; the one-shot tools
+	// (cli_claude_code, cli_qwen) keep the SubagentProvider path.
+	const isSessionMode = spec.mode === "session";
+	const isSessionCli = isSessionMode && opts.managedCliAgents;
+	const naming = isSessionMode
+		? "Direct 模式：由当前主控直接调用外部 CLI 的持续会话，不创建 DSH Relay 子代理。返回 sessionId 后可用对应的 cli_<cli>_followup 工具续接同一 thread。"
 		: "";
 	return defineTool({
 		name: spec.toolName,
@@ -82,11 +93,11 @@ function definition(spec, ctx, opts) {
 				if (pre && !pre.ok) throw new Error(`${spec.displayName} 未通过连通测试，已拦截本次执行：${pre.error}`);
 			};
 			if (isSessionCli) {
-				if (args.run_in_background === true) throw new Error("Codex 持续会话暂不使用 jobs；请前台创建会话，再用 cli_codex_followup 继续同一 thread。");
+				if (args.run_in_background === true) throw new Error(`${spec.displayName} 持续会话暂不使用 jobs；请前台创建会话，再用 cli_${spec.cli}_followup 继续同一 thread。`);
 				await preflight();
 				const cwd = exec.agent.session?.header?.cwd;
 				try {
-					const value = await opts.managedCliAgents.dispatch({ cli: "codex", cwd, prompt, signal: exec.signal, agent: exec.agent });
+					const value = await opts.managedCliAgents.dispatch({ cli: spec.cli, cwd, prompt, signal: exec.signal, agent: exec.agent });
 					return {
 						kind: "session",
 						sessionId: value.session.sessionId,
@@ -94,7 +105,7 @@ function definition(spec, ctx, opts) {
 						output: value.output
 					};
 				} catch (error) {
-					throw withPermissionGuidance(error, "codex");
+					throw withPermissionGuidance(error, spec.cli);
 				}
 			}
 			const request = (signal) => ctx.subagents.start(spec.provider, {

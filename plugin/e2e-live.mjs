@@ -30,6 +30,8 @@ import { winShimArgv } from "./lib/dispatch.js";
 import { codexToml, gateToml, qwenSettings, fingerprint, stripTrailingV1, isOkReply } from "./lib/verify.js";
 import { CLI_SUBAGENT_TOOLS } from "./lib/subagent-tools.js";
 import { CodexAppServerDriver } from "./lib/drivers/codex-app-server.js";
+import { ClaudeStreamJsonDriver } from "./lib/drivers/claude-stream-json.js";
+import { QwenStreamJsonDriver } from "./lib/drivers/qwen-stream-json.js";
 import { ManagedCliAgentsService } from "./lib/managed-cli-agents.js";
 
 // ── minimal settings.yaml extraction (only the bits the plugin owns) ─────────
@@ -404,6 +406,114 @@ async function main() {
 			console.log("");
 		} else {
 			console.log(`── Codex 双模式会话（跳过：缺安装/路由/凭据，见上方逐 CLI 诊断─────`);
+		}
+	}
+
+	// ── Claude / Qwen 双模式会话验证（stream-json NDJSON + 真实网络）───────────
+	// 这两个 CLI 没有 app-server：每次 turn spawn 一个独立 CLI 进程，--session-id
+	// 首次注册会话、--resume 后续续接；service 层把两次调用的 sessionId 锁到同
+	// 一记录，验证 "followup 后 sessionId 不变" 即证明持续会话路径真的生效。
+	{
+		const sc = (entry, dir, env, perm) => spawn(binPath(dir, entry.bin), ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
+		const sq = (entry, dir, env, perm) => spawn(binPath(dir, entry.bin), ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
+		const makeLineTransport = (child) => {
+			const listeners = new Set();
+			const closeListeners = new Set();
+			let buf = "";
+			child.stdout.on("data", (chunk) => {
+				buf += chunk.toString();
+				let nl;
+				while ((nl = buf.indexOf("\n")) >= 0) {
+					const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+					for (const l of [...listeners]) { try { l(line); } catch {} }
+				}
+			});
+			child.on("close", (code) => { for (const l of [...closeListeners]) l(new Error(`process exited ${code}`)); });
+			child.on("error", (error) => { for (const l of [...closeListeners]) l(error); });
+			return {
+				write(text) { return new Promise((res, rej) => child.stdin.write(text, (e) => (e ? rej(e) : res()))); },
+				onLine(l) { listeners.add(l); return () => listeners.delete(l); },
+				onClose(l) { closeListeners.add(l); return () => closeListeners.delete(l); },
+				async dispose() { try { child.kill("SIGTERM"); } catch {} }
+			};
+		};
+		// Claude driver: stream-json over --resume.
+		// Qwen driver: stream-json over --resume.
+		for (const spec of [
+			{
+				id: "claude", displayName: "Claude Code",
+				driver: ({ env }) => new ClaudeStreamJsonDriver({
+					subprocess: {
+						resolveExecutable: () => binPath(dir, "claude"),
+						spawn: (opts) => {
+							// 解析 argv：取出 --session-id / --resume 改为子进程 flag
+							// stream-json mode 需要 -p + --input/--output-format
+							// ClaudeStreamJsonDriver 内部已经构造好 argv；这里只关心 env
+							return spawn(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] });
+						}
+					},
+					dirSource: () => dir
+				})
+			},
+			{
+				id: "qwen", displayName: "Qwen Code",
+				driver: ({ env }) => new QwenStreamJsonDriver({
+					subprocess: {
+						resolveExecutable: () => binPath(dir, "qwen"),
+						spawn: (opts) => spawn(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] })
+					},
+					dirSource: () => dir
+				})
+			}
+		]) {
+			const entry = cliById(spec.id);
+			const route = models[spec.id];
+			const pc = route && route.provider ? providers[route.provider] : null;
+			const key = pc ? creds[pc.apiKeyEnv] : null;
+			if (!existsSync(binPath(dir, entry.bin)) || !route || !route.provider || !route.model || !pc || !key) {
+				console.log(`── ${spec.displayName} 双模式会话（跳过：缺安装/路由/凭据）`);
+				continue;
+			}
+			console.log(`── ${spec.displayName} 双模式会话（stream-json NDJSON）─────────`);
+			const env = { ...process.env, ...envFor(entry, dir), [pc.apiKeyEnv]: key };
+			if (entry.id === "claude") {
+				env.ANTHROPIC_BASE_URL = stripTrailingV1(pc.baseURL);
+				env.ANTHROPIC_API_KEY = key;
+				env.ANTHROPIC_AUTH_TOKEN = key;
+				env.ANTHROPIC_MODEL = route.model;
+			}
+			const permission = permissions[spec.id] ?? "workspace-write";
+			const driver = spec.driver({ env, permission });
+			const service = new ManagedCliAgentsService({
+				drivers: { [spec.id]: driver },
+				routeSource: () => ({ provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort }),
+				permissionSource: () => permission,
+				approvalRequest: async () => (normalizePermission(permission).approval === "never" ? "rejected" : "allowed-once")
+			});
+			try {
+				const signal = new AbortController().signal;
+				const first = await service.dispatch({ cli: spec.id, cwd: dir, prompt: `请只用一句话回答：${spec.displayName} 第一轮 OK。不要使用任何工具。`, signal });
+				const firstOk = first.stopReason === "completed" && first.output.trim().length > 0;
+				const sessionId = first.session.sessionId;
+				console.log(`  [${firstOk ? "ok" : "FAIL"}] ${spec.displayName} dispatch sessionId=${sessionId} stopReason=${first.stopReason} output=${JSON.stringify(first.output.slice(0, 60))}`);
+				if (!firstOk) failures++;
+				if (sessionId) {
+					const second = await service.followup(sessionId, `请只用一句话回答：${spec.displayName} 第二轮 OK（同一会话）。不要使用任何工具。`, signal);
+					const secondOk = second.stopReason === "completed" && second.output.trim().length > 0 && second.session.sessionId === sessionId;
+					console.log(`  [${secondOk ? "ok" : "FAIL"}] ${spec.displayName} followup 同 sessionId=${second.session.sessionId} stopReason=${second.stopReason} output=${JSON.stringify(second.output.slice(0, 60))}`);
+					if (!secondOk) failures++;
+					await service.close(sessionId).catch(() => {});
+				} else {
+					console.log(`  [FAIL] ${spec.displayName} 未拿到 sessionId，无法续接`);
+					failures++;
+				}
+			} catch (error) {
+				console.log(`  [FAIL] ${spec.displayName} 双模式会话异常: ${error instanceof Error ? error.message : String(error)}`);
+				failures++;
+			} finally {
+				await service.dispose().catch(() => {});
+			}
+			console.log("");
 		}
 	}
 

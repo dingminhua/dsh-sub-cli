@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Code / Qwen Code 持续会话驱动**：`lib/drivers/claude-stream-json.js` 和 `lib/drivers/qwen-stream-json.js` 实现完整的 NDJSON stream-json 驱动。每条 turn spawn 一个独立进程，`-p --input-format stream-json --output-format stream-json`；`--session-id <uuid>` 首次注册会话，`--resume <session-id>` 后续续接；`--cwd` 传递工作目录（Qwen）；`--permission-mode` 传递沙箱层级（Claude）。支持 tool_use 工具调用块提取、`error_during_execution` 错误转异常、`cli_<cli>_followup` 可直接续接同一 `--resume` 会话。
+- **Session 工具全 CLI 覆盖**：`lib/session-tools.js` 现在为 codex、claude、qwen 三个 CLI 都生成 `cli_<cli>_followup/status/sessions/interrupt` 工具（qwen 无 interrupt，stream-json 无 SIGINT 支持）。`registerManagedSessionTools` 一次调用注册全部 12 个工具。
+- **Claude / Qwen 会话模式工具**：`cli_claude_direct` 和 `cli_qwen_direct` 注册为 session-mode 工具，走 `ManagedCliAgentsService.dispatch` 持续会话路径，返回 `sessionId` 后可用 `cli_<cli>_followup` 续接。`cli_claude_code` 和 `cli_qwen` 保持 one-shot 一次性路径（后台 job 支持），向后兼容现有测试。
+- **Claude / Qwen e2e 双模式验证**：`e2e-live.mjs` 新增 Claude Code 和 Qwen Code 各一条双模式会话段——用真实 `ClaudeStreamJsonDriver`/`QwenStreamJsonDriver` + `ManagedCliAgentsService` + 真实 CLI 与当前路由，跑 `dispatch`（创建会话）→ `followup`（续接同一 sessionId），验证两轮同一会话且输出完整。`npm run test:live` 一键复跑。
 - **Codex 会话持久化**：`ManagedCliAgentsService` 注入可选的持久化 seam（`persist.load/save`，缺省保持内存态），`dispatch/followup/release/close` 状态变更后自动保存纯数据记录（含远程 thread id，序列化不含 run/权限等活体状态），`restore()` 在插件启动时恢复非终态会话。Host 侧用 DSH fs 服务把会话写进统一目录的 `sessions.json`，Host 重启后 `cli_codex_followup` 按 `sessionId` 直接 reattach 同一 Codex thread。
-- **auto-continue 配置化**：设置项 `autoContinue.<cli>.enabled/max`（SCHEMA + 设置卡每 CLI 开关与续接次数，默认 `true`/`3`），服务经 `autoContinueSource` 读取；`enabled:false` 时原样返回不续接，`max` 覆盖默认上限。**泛化评估**：续接依赖同一 thread 的 followup，仅对 Codex 会话式调用生效；Claude/Qwen 走一次性 provider（每次全新进程、无 thread 可续接），暂不适用，后续接入会话式驱动可复用同一逻辑。
+- **auto-continue 配置化**：设置项 `autoContinue.<cli>.enabled/max`（SCHEMA + 设置卡每 CLI 开关与续接次数，默认 `true`/`3`），服务经 `autoContinueSource` 读取；`enabled:false` 时原样返回不续接，`max` 覆盖默认上限。**泛化评估**：续接依赖同一 thread 的 followup，`INTENT_TAIL` 正则跨语言（中文句号+英文句点），对 Codex 会话式调用生效；Claude/Qwen 驱动接入后同样适用同一评估逻辑。
 - **双模式端到端自动化**：`e2e-live.mjs` 新增 Codex 双模式会话段——用真实 `CodexAppServerDriver` + `ManagedCliAgentsService` + 真实 codex app-server 与当前路由跑 `dispatch`（直连）与 `bindChild/submitFromChild`（代理提交路径），断言两轮同一 session 且输出完整，`npm run test:live` 一键复跑。
 - **e2e 纯断言**：`e2e-live.mjs` 顶部新增纯逻辑断言——`CLI_SUBAGENT_TOOLS` 不含 `cli_codex` 别名、`isOkReply` 容忍 `OK\nOK` 回声并拒绝非 OK 行。CI 的 `pnpm test`（`node --test test/*.test.mjs`）已覆盖新增单测（isOkReply、别名移除、持久化、autoContinue），无需改动 workflow。
-- 单元测试新增 8 个：`persistable` 不序列化活体状态、restore 恢复后 reattach 同一 thread、restore 跳过 closed/无 thread 记录、dispatch 经 seam 落库、restore 后 followup 直接 reattach（attachOnly + resumeThreadId）、autoContinue `enabled:false` 不 nudge、`max` 限制续接次数等。
+- 单元测试新增：Claude/Qwen driver 13 个（argv 组合、沙箱映射、session-id 提取、followup --resume、error 转换、多段文本拼接）；session-tools 3 个（全部 12 工具注册、followup/status/sessions/interrupt 调用路由）；subagent-tools 3 个（Claude/Qwen session-mode dispatch、session-mode 拒绝后台模式）。
 
 ### Changed
 

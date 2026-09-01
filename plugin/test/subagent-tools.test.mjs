@@ -14,13 +14,19 @@ function context() {
 	return { ctx, tools };
 }
 
-test("registers Codex direct and the other one-shot CLI tools only", () => {
+test("registers 5 CLI tools: 3 session-mode + 2 one-shot (Claude/Qwen)", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
-	// 别名 cli_codex 已移除：只保留明确的直连/一次性路径。
-	assert.deepEqual([...fixture.tools.keys()], ["cli_codex_direct", "cli_claude_code", "cli_qwen"]);
+	// session-mode (managed thread) tools for each cli
+	assert.deepEqual([...fixture.tools.keys()], [
+		"cli_codex_direct",
+		"cli_claude_direct",
+		"cli_claude_code",
+		"cli_qwen_direct",
+		"cli_qwen"
+	]);
 	assert.equal(fixture.tools.has("cli_codex"), false);
-	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
+	assert.equal(CLI_SUBAGENT_TOOLS.length, 5);
 });
 
 test("delegates Codex through managed session service and returns sessionId", async () => {
@@ -50,7 +56,36 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 	);
 });
 
-test("Claude and Qwen keep the background job contract", async () => {
+test("Claude and Qwen session-mode tools dispatch through managed session service", async () => {
+	for (const toolName of ["cli_claude_direct", "cli_qwen_direct"]) {
+		const fixture = context();
+		let seen;
+		const managedCliAgents = { async dispatch(request) { seen = request; return { session: { sessionId: `s-${request.cli}`, status: "ready" }, output: "session-text" }; } };
+		registerCliSubagentTools(fixture.ctx, { managedCliAgents });
+		const tool = fixture.tools.get(toolName);
+		const agent = { id: "parent", session: { header: { cwd: "/repo" } } };
+		const result = await tool.execute({ description: "检查", prompt: "完整检查" }, { agent, signal: new AbortController().signal });
+		assert.equal(seen.cli, toolName.includes("claude") ? "claude" : "qwen");
+		assert.equal(seen.cwd, "/repo");
+		assert.equal(seen.prompt, "完整检查");
+		assert.equal(result.sessionId, `s-${seen.cli}`);
+		assert.equal(result.output, "session-text");
+	}
+});
+
+test("session-mode tools reject run_in_background explicitly", async () => {
+	for (const toolName of ["cli_codex_direct", "cli_claude_direct", "cli_qwen_direct"]) {
+		const fixture = context();
+		registerCliSubagentTools(fixture.ctx, { managedCliAgents: { async dispatch() { return { session: { sessionId: "x" }, output: "" }; } } });
+		const tool = fixture.tools.get(toolName);
+		await assert.rejects(
+			tool.execute({ description: "x", prompt: "y", run_in_background: true }, { agent: { id: "p", session: { header: { cwd: "/" } } }, signal: new AbortController().signal }),
+			/持续会话暂不使用 jobs/
+		);
+	}
+});
+
+test("Claude and Qwen one-shot tools keep the background job contract", async () => {
 	for (const toolName of ["cli_claude_code", "cli_qwen"]) {
 		const fixture = context();
 		let spec;
