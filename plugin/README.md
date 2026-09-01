@@ -5,7 +5,7 @@
 - 把 Codex、Claude Code、Qwen Code 放到一个**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**（`config-<cli>/`），通过该 CLI 自身的环境变量指向，**完全不碰**你系统里已装的 CLI 配置；
 - Web 插件配置卡片可配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
-- 注册 **`cli_codex_direct` / `cli_codex_subagent` / `cli_claude_direct` / `cli_claude_code` / `cli_qwen_direct` / `cli_qwen`** 工具，让 DSH 模型把自包含任务交给对应 CLI；Codex/Claude/Qwen 都有**直连**（`*_direct`，持续会话）与**一次性**（`cli_claude_code` / `cli_qwen`，后台 job 支持）两种明确模式，`cli_codex` 别名已移除；
+- 注册 **`cli_codex_direct` / `cli_codex_subagent` / `cli_claude_direct` / `cli_claude_code` / `cli_claude_subagent` / `cli_qwen_direct` / `cli_qwen` / `cli_qwen_subagent`** 工具，让 DSH 模型把自包含任务交给对应 CLI；每个 CLI 都有**直连**（`*_direct`，持续会话）与**代理**（`*_subagent`，DSH Relay 子代理转发）两种模式，`cli_claude_code` / `cli_qwen` 是 one-shot 路径（后台 job 支持）；`cli_codex` 别名已移除；
 - 每个 CLI 都有持续会话驱动（Codex: app-server，Claude/Qwen: stream-json NDJSON），并提供 **`cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions` / `cli_<cli>_interrupt`** 持续会话工具（qwen 无 interrupt）；
 - 注册 **`cli_dispatch`** 模型工具，让 DSH 模型无头调用外部 CLI 并回传输出。
 
@@ -40,7 +40,7 @@ npm install dsh-sub-cli
 2. 填写或浏览选择 **CLI 统一目录**（默认 `~/dsh-clis`）；
 3. 把需要的 CLI 二进制放入 `<目录>/bin/`；
 4. 为每个 CLI 选择 Provider、模型、推理强度并保存；
-5. 在对话中让 DSH 使用对应 CLI：日常委派使用 `cli_codex_direct` / `cli_codex_subagent` / `cli_claude_direct` / `cli_qwen_direct`（持续会话）；`cli_claude_code` / `cli_qwen` 用于一次性无头任务（后台 job 支持）；仅在模型提示词中要求时才用 `cli_dispatch`。
+5. 在对话中让 DSH 使用对应 CLI：日常委派使用 `cli_<cli>_direct`（持续会话，直连）或 `cli_<cli>_subagent`（DSH Relay 子代理，任务通过子代理转发）；`cli_claude_code` / `cli_qwen` 用于一次性无头任务（后台 job 支持）；仅在模型提示词中要求时才用 `cli_dispatch`。
 
 ### 持续会话（所有 CLI）
 
@@ -60,7 +60,16 @@ cli_<cli>_sessions()                   # 当前 Host 的会话列表（qwen 无�
 cli_<cli>_interrupt(sessionId)         # 中断当前 turn（qwen 不支持）
 ```
 
-这些是本插件的专用续接工具，不是 DSH 原生 `send_message`。每个会话同时只允许一个 active turn；重叠 follow-up 会明确返回 `SESSION_BUSY`。
+### Relay 子代理（所有 CLI）
+
+每个 CLI 都有 Relay 子代理——DSH 原生 continuable 子代理，任务通过 `managed_cli_submit` 转发给真实 CLI：
+
+```text
+cli_<cli>_subagent(description, prompt)  # codex / claude / qwen
+→ { kind: "continuable", subagentId }
+```
+
+之后用 `send_message` 继续、`interrupt_agent` 中断。这些是本插件的专用续接工具，不是 DSH 原生 `send_message`。每个会话同时只允许一个 active turn；重叠 follow-up 会明确返回 `SESSION_BUSY`。
 
 ## 配置
 
