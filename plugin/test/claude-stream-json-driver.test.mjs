@@ -186,3 +186,20 @@ test("start requires cwd and rejects empty prompt", async () => {
 	await assert.rejects(driver.start({ cwd: "", prompt: "x" }), /cwd is required/);
 	await assert.rejects(driver.start({ cwd: "/r", prompt: "  " }), /prompt must not be empty/);
 });
+
+// Web tools (WebSearch / WebFetch) are listed in Claude Code's stream-json
+// system/init event but the plugin cannot satisfy their permission prompts
+// (stream-json mode has no interactive permission UI). Forcing --disallowed-tools
+// up-front makes the LLM know they are unavailable before it plans, instead
+// of relying on a mid-turn "工具请求权限时未获授权" rejection.
+test("disables WebSearch and WebFetch via --disallowed-tools", async () => {
+	const handles = [];
+	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource });
+	const run = await driver.start({ cwd: "/r", prompt: "x" });
+	seedAnswer(handles[0].stdout, "s");
+	await run.result;
+	const args = handles[0].argv.slice(1);
+	const idx = args.indexOf("--disallowed-tools");
+	assert.notEqual(idx, -1, "--disallowed-tools must be present");
+	assert.equal(args[idx + 1], "WebSearch,WebFetch");
+});
