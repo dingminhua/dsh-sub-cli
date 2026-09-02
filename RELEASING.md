@@ -52,4 +52,9 @@ npm 账号启用 2FA 时，按 npm 交互提示在浏览器完成确认。
 
 ## 现状说明
 
-当前 `lib/index.js`（Host）通过 `installSettingsSection` 持久化设置、注册 `cli_dispatch` / `cli_check` 工具、并为托管 CLI 注册 `SubagentProvider`，还提供带 `check` / `test` / `remove` 的远程 `cli` 服务；`lib/client.js`（Client）实现设置卡片及每个 CLI 的安装/测试/更新/删除操作。尚未实现：真实“安装/更新”命令（需固化各 CLI 官方来源、版本协议与校验）、目录内容迁移、以及完整的 Windows 适配。
+当前已实现并实测（macOS + codex 0.149.1 / claude 2.1.247 / qwen 0.22.2，六轮端到端，见 `plugin/VERIFICATION-FLOW.md`）：
+
+- Host（`lib/index.js`）：设置持久化；`cli_install` / `cli_check` / `cli_test` / `cli_remove`（npm 安装到统一目录、版本探测、协议验证含工具续接、移除）；三 CLI 的 direct 持续会话（11 个 session 工具）、relay 子代理（`managed_cli_submit`）、无头 `cli_dispatch`；driver 层统一权限拦截（勾选静默放行 / 未勾选弹窗或自动拒绝）；会话持久化（`sessions.json`，Host 重启后 reattach 同一 thread）。
+- Client（`lib/client.js`）：设置卡片（Provider / 模型 / 推理强度 / 权限三档下拉 / approval / autoContinue / 轮次超时）及每 CLI 的安装 / 测试 / 更新 / 删除操作。
+
+尚未完成：Windows 真机验证（`winShimArgv` 已就位，清单见 `Windows-Test-Checklist.md`）；读取权限无运行时强制点（三档 UI 下 read 恒 true，仅手改 `settings.yaml` 才会出现 `read:false`，此时读操作仍放行——README 已注明）。

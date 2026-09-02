@@ -249,5 +249,38 @@ Qwen（aixforge deepseek-v4-flash）首写生成的 Write 参数里插了空格�
 
 ### 待办
 
-- 重启 DSH Desktop 加载本修复后，重跑一次干净三阶段（补 Qwen 删除的有效数据点）。
-- 复测 relay 子代理 `send_message` 续用（reattach 路径）在三个 CLI 上都正常工作。
+- ~~重启 DSH Desktop 加载本修复后，重跑一次干净三阶段（补 Qwen 删除的有效数据点）。~~ → 第六轮已完成
+- ~~复测 relay 子代理 `send_message` 续用（reattach 路径）在三个 CLI 上都正常工作。~~ → 第六轮已完成
+
+---
+
+## 实测记录（第六轮，2026-09-02 深夜，host 22:42 重启加载 1c74d0d 后）
+
+环境：DSH Desktop 重启（进程 22:42:17 起，晚于 lib 改动 22:16–22:17）；权限三 CLI 一致 `read=true / write=false / exec=false`。第五轮两项待办全部闭环。
+
+### 验证 A：reattach 修复（relay 子代理 send_message 续用）
+
+三个 relay 子代理跑完第一轮（纯回声任务，无磁盘副作用）进入空闲、会话 release 后，发第二条消息——修复前必炸的路径：
+
+| CLI | 第二轮结果 |
+|---|---|
+| Claude | ✅ `ROUND2-REATTACH-OK` |
+| Qwen | ✅ `ROUND2-REATTACH-OK`（第五轮连炸 4 次的通道） |
+| Codex | ✅ turn 干净完成、零 driver 错误（输出为 kimi-k3 读到工作区源码的措辞噪声，非通道故障） |
+
+### 验证 B：干净三阶段（严格执行"等全部 completion 再推进"）
+
+| 阶段 | Codex | Claude | Qwen |
+|---|---|---|---|
+| 写入（relay × 3，新暗号 23B/25B/22B） | ✅ 逐字节一致 | ✅ 逐字节一致 | ✅ **首写即逐字节精确** |
+| 读取（direct × 3，3×3 互读） | ✅ | ✅ | ✅ 首轮 9/9 一字不差 |
+| 删除（relay × 3） | ✅ 磁盘确认消失 | ✅ 磁盘确认消失 | ✅ **磁盘确认消失**（有效数据点补上） |
+
+每阶段等齐全部 completion 通知后才推进；最终复核三文件消失、无残留、脚手架清理干净。
+
+### 结论
+
+- **第五轮三发现全部闭环**：reattach bug 修复并实测验证；Qwen 删除疑点排除（干净重测下真实生效，此前系编排竞态）；Qwen 首写噪声本轮未复现（首写即精确），维持"磁盘校验为准"纪律。
+- **read 权限语义核查**（用户提问触发）：读取不产生权限事件（driver 层只读工具直接放行，`toolCapability` 返回 null 的工具不触发 `onPermissionRequest`；Codex 仅 command/fileChange/permissions 三类发请求）；三档 preset read 恒 true；UI 为单一三档下拉，用户无法取消 read——「读取默认权限、无需申请」与实现一致。仅手改 `settings.yaml` 可出现 `read:false`，此时读操作仍放行（无运行时强制点），README/RELEASING 已注明。
+- **发布就绪核对**：`npm pack --dry-run` 干净（36 文件 / 123KB，无测试与凭据混入）；README 权限描述、CHANGELOG（补齐三能力收敛 / driver 统一拦截 / reattach 修复三条目）、RELEASING 现状说明已对齐实际行为；单测 234/234。
+- 流程提醒（编排层）：Codex（kimi-k3）做回声类任务会被工作区源码带偏，措辞直接说「回复这个词」而非「让外部 CLI」；阶段推进等全部 completion 的纪律持续有效。

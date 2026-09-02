@@ -229,15 +229,10 @@ window.__ModuleLoader__.load({
       };
     }
 
-    // The stored tier → profile mapping stays for legacy string values; the
-    // preset SELECT was removed from the UI (the checkboxes are their own
-    // visualization), so there is no reverse presetIdOf any more.
-
-    // The "联网" permission toggle is a pure sandbox dial, identical for every
-    // CLI: checked → the CLI process may reach the network (danger-full-access
-    // tier, so npm install / git clone keep working), unchecked →
-    // workspace-write. It is NOT about web research — research is the
-    // controller's job (DSH's own search tools), never delegated to a CLI.
+    // The permission surface is a single tier dropdown (只读 ⊆ 可写 ⊆ 可调用
+    // 工具); read is granted in every tier, and exec carries egress intent —
+    // there is no separate network toggle. Web research is never delegated to
+    // a CLI (capability gate refuses it; the controller researches).
     var CLIS = [
       { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex", testHint: "测试将验证该供应商是否支持 responses 协议（Codex 所需，含工具续接）" },
       { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude", testHint: "测试将验证该供应商是否支持 Anthropic Messages 协议（含 tool_use 续接）" },
