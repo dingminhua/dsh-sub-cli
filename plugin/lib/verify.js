@@ -8,10 +8,9 @@
 // live configuration; a route change invalidates it and forces a re-probe.
 
 import path from "node:path";
-import os from "node:os";
 import { cliById, DEFAULT_PERMISSION } from "./registry.js";
 import { normalizePermission, deriveSandboxMode } from "./permissions.js";
-import { binPath, envFor, PLATFORM } from "./paths.js";
+import { binPath, envFor, resolveDir, PLATFORM } from "./paths.js";
 import { winShimArgv } from "./dispatch.js";
 
 export const SETTINGS_NS = "dsh-sub-cli";
@@ -295,19 +294,20 @@ export async function prepareManagedRun(ctx, cliId, dir) {
 }
 
 async function runEnsureDir(ctx, dir) {
+	// Windows: cmd /d /c mkdir <raw dir> — do NOT embed quotes in a single /c
+	// command string (Node spawn escapes them to \" and cmd fails with a syntax
+	// error). mkdir is a builtin; /c is fine, and Node quotes the spaced path.
 	const mk = PLATFORM === "win32"
-		? ["cmd.exe", "/d", "/s", "/c", `if not exist "${dir}" mkdir "${dir}"`]
+		? ["cmd.exe", "/d", "/c", "mkdir", dir]
 		: ["/bin/mkdir", "-p", dir];
 	const handle = ctx.subprocess.spawn({ argv: mk, cwd: ".", stdio: { stdin: "ignore", stdout: { maxBytes: 20000 }, stderr: { maxBytes: 20000 } }, graceMs: 20000 });
 	await handle.done;
 }
 
-/** The current unified dir from settings. */
+/** The current unified dir from settings. Delegates to paths.resolveDir so the
+ * path-resolution logic lives in exactly one place (paths.js). */
 export function currentDir(ctx) {
-	const section = currentSection(ctx);
-	const raw = section && section.cliDir;
-	const d = raw && raw.length ? raw : "~/dsh-clis";
-	return d.indexOf("~") === 0 ? os.homedir() + d.slice(1) : d;
+	return resolveDir(currentSection(ctx));
 }
 
 /** Map a coarse sandbox tier to Qwen Code's tools.approvalMode value.

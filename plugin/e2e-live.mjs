@@ -156,6 +156,17 @@ function readCredentials(file) {
 const MAX_OUTPUT = 200000;
 const RUN_TIMEOUT_MS = 180000;
 
+/**
+ * Spawn a managed CLI binary headlessly. On Windows the binary is a .cmd shim
+ * that Node cannot execFile/spawn directly (EINVAL), so it is wrapped through
+ * cmd.exe /d /s /c. On POSIX it spawns the bare path unchanged.
+ */
+function spawnCli(bin, args, opts) {
+	const wrapped = winShimArgv(bin, args);
+	const [exe, ...rest] = wrapped;
+	return spawn(exe, rest, opts);
+}
+
 function runCli({ finalArgv, env, timeoutMs = RUN_TIMEOUT_MS }) {
 	return new Promise((resolve) => {
 		const [exe, ...rest] = finalArgv;
@@ -354,7 +365,7 @@ async function main() {
 				// 必须继承 process.env：统一目录里的 codex 是 `#!/usr/bin/env node`
 				// shim，靠 PATH 定位 node；只传隔离 env 会 127。
 				const env = { ...process.env, ...envFor(entry, dir), [pc.apiKeyEnv]: key };
-				const child = spawn(bin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "inherit"], cwd: request.cwd });
+				const child = spawnCli(bin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "inherit"], cwd: request.cwd });
 				const listeners = new Set();
 				const closeListeners = new Set();
 				let buf = "";
@@ -414,8 +425,8 @@ async function main() {
 	// 首次注册会话、--resume 后续续接；service 层把两次调用的 sessionId 锁到同
 	// 一记录，验证 "followup 后 sessionId 不变" 即证明持续会话路径真的生效。
 	{
-		const sc = (entry, dir, env, perm) => spawn(binPath(dir, entry.bin), ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
-		const sq = (entry, dir, env, perm) => spawn(binPath(dir, entry.bin), ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
+		const sc = (entry, dir, env, perm) => spawnCli(binPath(dir, entry.bin), ["-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
+		const sq = (entry, dir, env, perm) => spawnCli(binPath(dir, entry.bin), ["-p", "--input-format", "stream-json", "--output-format", "stream-json"], { env, cwd: dir, stdio: ["pipe", "pipe", "inherit"] });
 		const makeLineTransport = (child) => {
 			const listeners = new Set();
 			const closeListeners = new Set();
@@ -456,7 +467,7 @@ async function main() {
 				driver: ({ env }) => new ClaudeStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "claude"),
-						spawn: (opts) => wrapChild(spawn(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
+						spawn: (opts) => wrapChild(spawnCli(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})
@@ -466,7 +477,7 @@ async function main() {
 				driver: ({ env }) => new QwenStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "qwen"),
-						spawn: (opts) => wrapChild(spawn(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
+						spawn: (opts) => wrapChild(spawnCli(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})

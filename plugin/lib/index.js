@@ -145,28 +145,51 @@ async function runCommand(ctx, argv, signal) {
 }
 
 /**
- * Move the plugin-managed content (bin/, config-<cli>/, vendor/) from the old
- * unified dir to the new one. Never overwrites an existing destination.
+ * Move the plugin-managed content (bin/, config-<cli>/, vendor/, sessions.json)
+ * from the old unified dir to the new one. Never overwrites an existing
+ * destination. Failures are logged (not silently swallowed) so a cross-volume
+ * `move` failure or a locked file is visible instead of losing content quietly.
+ * Returns the list of { name, ok, error } results.
  */
 async function migrateDir(ctx, oldDir, newDir) {
-	if (!oldDir || !newDir || oldDir === newDir) return;
-	const names = [...managedNames(CLI_REGISTRY), "vendor"];
+	if (!oldDir || !newDir || oldDir === newDir) return [];
+	const names = [...managedNames(CLI_REGISTRY), "vendor", "sessions.json"];
 	const fs = ctx.get("fs");
 	const exists = async (p) => (fs ? (await fs.lstat(p, {}, undefined).catch(() => undefined)) !== undefined : false);
+	const results = [];
 	for (const name of names) {
 		const src = path.join(oldDir, name);
 		const dst = path.join(newDir, name);
 		if (!(await exists(src))) continue;
-		if (await exists(dst)) continue; // keep existing destination (no overwrite)
+		if (await exists(dst)) { results.push({ name, ok: true, skipped: "dest-exists" }); continue; }
+		// Windows: pass raw args (no embedded-quote command string) so Node spawn
+		// quotes spaced paths correctly. mkdir/move are cmd builtins run via /c.
 		const mk = PLATFORM === "win32"
-			? ["cmd.exe", "/d", "/s", "/c", `if not exist "${newDir}" mkdir "${newDir}"`]
+			? ["cmd.exe", "/d", "/c", "mkdir", newDir]
 			: ["/bin/mkdir", "-p", newDir];
-		await runCommand(ctx, mk).catch(() => {});
+		const mkResult = await runCommand(ctx, mk).catch((e) => ({ exitCode: 1, stderr: String(e) }));
+		if (mkResult.exitCode !== 0) {
+			// mkdir failure is non-fatal if the dir already exists (race); continue
+			// to move only when we can proceed, otherwise record and skip the move.
+			if (!(await exists(newDir))) { results.push({ name, ok: false, error: `mkdir ${newDir}: ${mkResult.stderr || mkResult.exitCode}` }); continue; }
+		}
 		const mv = PLATFORM === "win32"
-			? ["cmd.exe", "/d", "/s", "/c", `move "${src}" "${dst}"`]
+			? ["cmd.exe", "/d", "/c", "move", src, dst]
 			: ["/bin/mv", src, dst];
-		await runCommand(ctx, mv).catch(() => {});
+		try {
+			const r = await runCommand(ctx, mv);
+			const ok = r.exitCode === 0;
+			if (!ok) results.push({ name, ok: false, error: r.stderr || `exit ${r.exitCode}` });
+			else results.push({ name, ok: true });
+		} catch (error) {
+			results.push({ name, ok: false, error: error instanceof Error ? error.message : String(error) });
+		}
 	}
+	const failed = results.filter((r) => r && r.ok === false);
+	if (failed.length) {
+		console.error(`[dsh-sub-cli] 目录迁移部分失败 ${oldDir} -> ${newDir}: ${failed.map((f) => `${f.name}(${f.error})`).join("; ")}`);
+	}
+	return results;
 }
 
 /** Reconcile after a dir change: migrate content, then record the new dir. */
@@ -413,7 +436,7 @@ export async function apply(ctx) {
 			const cliId = args && typeof args.cli === "string" ? args.cli : "";
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
-			const result = await installManagedCli({ spawn: ctx.subprocess, dir: currentDir(), entry, signal: exec.signal });
+			const result = await installManagedCli({ spawn: ctx.subprocess, fs: ctx.get("fs"), dir: currentDir(), entry, signal: exec.signal });
 			return result;
 		}
 	}));

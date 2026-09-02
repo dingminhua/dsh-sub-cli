@@ -24,7 +24,9 @@ test("binName appends .cmd on Windows, bare otherwise", () => {
 });
 
 test("binPath and configDirPath build the unified layout", () => {
-	assert.equal(binPath("/d", "codex", "darwin"), "/d/bin/codex");
+	// Construct expectations with path.join so they hold on both POSIX and
+	// Windows (path.join yields "\" on win32). Never hardcode "/" separators.
+	assert.equal(binPath("/d", "codex", "darwin"), path.join("/d", "bin", "codex"));
 	assert.equal(binPath("/d", "codex", "win32"), path.join("/d", "bin", "codex.cmd"));
 	assert.equal(configDirPath("/d", "config-codex"), path.join("/d", "config-codex"));
 });
@@ -36,6 +38,7 @@ test("managedNames = bin + every config dir", () => {
 test("envFor points the CLI config-env at its isolated dir", () => {
 	const codex = CLI_REGISTRY.find((e) => e.id === "codex");
 	const env = envFor(codex, "/d");
-	assert.equal(env.CODEX_HOME, "/d/config-codex");
+	// configDirPath uses path.join (platform separator); mirror it.
+	assert.equal(env.CODEX_HOME, path.join("/d", "config-codex"));
 	assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
 });

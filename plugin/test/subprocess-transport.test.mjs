@@ -7,6 +7,7 @@ import {
 	createCodexSubprocessTransportFactory
 } from "../lib/drivers/subprocess-transport.js";
 import { createManagedCliDrivers } from "../lib/drivers/index.js";
+import { binPath } from "../lib/paths.js";
 
 function deferred() {
 	let resolve;
@@ -65,7 +66,9 @@ test("Codex subprocess factory uses managed binary, isolated env, cwd and piped 
 	});
 	const transport = await createTransport({ cwd: "/repo" });
 	assert.deepEqual(prepared, { cli: "codex", dir: "/managed" });
-	assert.deepEqual(spec.argv, ["/managed/bin/codex-resolved", "app-server", "--stdio"]);
+	// binPath is platform-native (codex / codex.cmd); the fake resolver appends
+	// "-resolved" to whatever path it was given.
+	assert.deepEqual(spec.argv, [`${binPath("/managed", "codex")}-resolved`, "app-server", "--stdio"]);
 	assert.equal(spec.cwd, "/repo");
 	assert.deepEqual(spec.env, { CODEX_HOME: "/managed/config-codex" });
 	assert.deepEqual(spec.stdio, { stdin: "pipe", stdout: "pipe", stderr: "inherit" });
