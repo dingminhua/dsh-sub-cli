@@ -24,7 +24,8 @@ import {
 	isCodexMetadataWarning,
 	localizeCliError,
 	isOkReply,
-	permissionOf
+	permissionOf,
+	ensureCliProviderConfig
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
@@ -409,4 +410,87 @@ test("permissionOf returns a normalized capability profile for a CLI", () => {
 	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, approval: "ask" });
 	// Other CLIs are independent.
 	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, approval: "ask" });
+});
+
+test("ensureCliProviderConfig skips the qwen write when content matches", async () => {
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	const rendered = qwenSettings(route, pc, "read-only");
+	let wrote = null;
+	const ctx = sampleCtx({
+		value: { models: { qwen: route }, permissions: {} },
+		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
+	});
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => rendered,
+				writeText: async (target, content) => { wrote = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r = await ensureCliProviderConfig(ctx, qwen, route);
+	assert.equal(r.ok, true);
+	assert.equal(r.uptodate, true);
+	assert.equal(wrote, null, "no fs write when the on-disk settings match the rendered content");
+});
+
+test("ensureCliProviderConfig rewrites qwen settings when content differs", async () => {
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	const rendered = qwenSettings(route, pc, "read-only");
+	let wrote = null;
+	const ctx = sampleCtx({
+		value: { models: { qwen: route }, permissions: {} },
+		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
+	});
+	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => JSON.stringify({ selectedAuthType: "openai" }, null, 2),
+				writeText: async (target, content) => { wrote = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r = await ensureCliProviderConfig(ctx, qwen, route);
+	assert.equal(r.ok, true);
+	assert.equal(r.uptodate, false);
+	assert.ok(wrote, "the write happened for stale content");
+	assert.equal(wrote.content, rendered);
+});
+
+test("ensureCliProviderConfig treats a missing qwen settings file as stale", async () => {
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	let wrote = null;
+	const ctx = sampleCtx({
+		value: { models: { qwen: route }, permissions: {} },
+		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
+	});
+	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => { throw new Error("ENOENT"); },
+				writeText: async (target, content) => { wrote = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r = await ensureCliProviderConfig(ctx, qwen, route);
+	assert.equal(r.ok, true);
+	assert.equal(r.uptodate, false);
+	assert.ok(wrote, "a missing file is (re)created");
 });

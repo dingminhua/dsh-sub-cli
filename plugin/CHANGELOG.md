@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Qwen 配置无条件重写在默认沙箱部署下锁死全通道**：`ensureCliProviderConfig` 对 qwen 每次运行都重写 `config-qwen/settings.json`，而宿主 fs 沙箱默认 `workspace-write`（`DSH_PERMISSION_MODE` 未设）时统一目录的写被拒（`FS_SANDBOX_DENIED`），导致 qwen 的 `cli_test` / `cli_<cli>_direct` / `cli_<cli>_subagent` 在默认部署下必挂。修复：为 qwen 增加「内容一致」短路（盘上文件与 `qwenSettings()` 渲染内容逐字节相同时跳过重写，对齐 codex 的指纹门模式；qwen 配置为插件整体托管、无可保留用户字段，故门取内容而非指纹）。预写一次正确内容后整条链路免写运行。附带把 `readGateFingerprint` 重构到共用 `readTextIfAny` 助手上。新增 3 个单测（内容一致不写 / 内容不同重写 / 文件缺失重建），套件 **244/244**。
 - **探测 OK 回声误拦**：部分供应商/模型（如 zzztoken 上的 deepseek-v4-pro）把 `Reply with exactly: OK` 回声成 `OK\nOK`，此前会被严格相等校验误判为"连通失败"，导致 `cli_codex` 被预检拦截、用户改配置后不易感知。新增纯函数 `isOkReply`（所有非空行均为 OK 即通过），且报错带 `provider / model` 名，路由一目了然。
 - **长任务提前 end_turn 无完整结果**：部分模型在长多步工具任务中输出计划句后即提前结束 turn。服务层加入有界自动补全（同 thread nudge，最多 3 次），一次 `cli_codex_direct` 调用即可返回完整报告；驱动统计 `commandExecution` 轮次供判定，拿到完整块后清理进度噪音（长度 ≥100 字符才替换）。
 - **e2e 会话段 PATH 缺失**：双模式段最初只传隔离 env，`codex` 二进制是 `#!/usr/bin/env node` shim，缺 `process.env.PATH` 导致 app-server 以 127 退出；改为 `{ ...process.env, ...隔离 env }` 后真实验证通过。

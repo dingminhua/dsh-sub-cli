@@ -228,16 +228,20 @@ export function parseGateFingerprint(tomlText) {
 	return m ? m[1] : null;
 }
 
-/** Read the embedded gate fingerprint from the on-disk config (or null). */
-async function readGateFingerprint(ctx, cfgPath, fs) {
+/** Read a config file's current text (or null when missing/unreadable). */
+async function readTextIfAny(ctx, cfgPath, fs) {
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.readText !== "function") return null;
 	try {
 		const target = await fs.resolve(cfgPath, {}, undefined);
-		const text = await fs.readText(target, undefined);
-		return parseGateFingerprint(text);
+		return await fs.readText(target, undefined);
 	} catch {
-		return null; // file missing/unreadable → treated as not-yet-configured
+		return null;
 	}
+}
+
+/** Read the embedded gate fingerprint from the on-disk config (or null). */
+async function readGateFingerprint(ctx, cfgPath, fs) {
+	return parseGateFingerprint(await readTextIfAny(ctx, cfgPath, fs));
 }
 
 /**
@@ -256,14 +260,23 @@ export async function ensureCliProviderConfig(ctx, entry, route) {
 	const fs = ctx.get("fs");
 	if (entry.id === "claude") return { supported: true, ok: true, uptodate: true, cfgPath: cfgDir };
 	const cfgPath = path.join(cfgDir, entry.id === "qwen" ? "settings.json" : "config.toml");
+	const content = entry.id === "qwen" ? qwenSettings(route, pc, permissionOf(ctx, entry.id)) : gateToml(codexToml(route, pc), route, pc, fp);
 	if (entry.id === "codex") {
 		const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
 		if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
+	// Qwen 的 settings.json 由插件整体托管（渲染为固定对象，无可保留的用户字段），
+	// 所以门是「内容一致」而非指纹：盘上文件与将写入内容逐字节相同时跳过重写。
+	// 这不只是省一次写——宿主 fs 沙箱默认 workspace-write 时统一目录的写会被
+	// 拒（FS_SANDBOX_DENIED），无条件重写会让 qwen 的 test/direct/subagent 全
+	// 通道在默认部署下必挂；预写一次正确内容后此短路让整条链路免写运行。
+	if (entry.id === "qwen") {
+		const existing = await readTextIfAny(ctx, cfgPath, fs);
+		if (existing === content) return { supported: true, ok: true, uptodate: true, cfgPath };
+	}
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
 	}
-	const content = entry.id === "qwen" ? qwenSettings(route, pc, permissionOf(ctx, entry.id)) : gateToml(codexToml(route, pc), route, pc, fp);
 	try {
 		await runEnsureDir(ctx, cfgDir);
 		const target = await fs.resolve(cfgPath, {}, undefined);
