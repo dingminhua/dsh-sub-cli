@@ -268,36 +268,48 @@ Qwen（aixforge deepseek-v4-flash）首写生成的 Write 参数里插了空格�
 - **验证方式**：本会话内用插件自己的渲染函数预写正确配置（codex 带指纹门、qwen 待修复加载后走内容门）→ codex `cli_test` 立即转绿。qwen 的补验**待 host 重启加载 `f9ca22e` 后**执行。
 - **遗留设计缺口**（记录在案）：`cli_install` / 首次 `cli_test` 仍需写统一目录，在默认沙箱部署下会被拒——插件进程侧的写（fs 服务）没有对应的沙箱白名单。当前工作流：由主控在 danger 档会话里用宿主命令预写/预装（本轮实测可行），或用户以 danger 档运行一次 `cli_test`。长期方案需宿主侧为统一目录提供写许可（如 profile 级配置），超出本插件边界。
 
-### 阶段一 写入（relay 子代理 × 2，暗号 19B / 20B）
+### 阶段一 写入（暗号 19B / 20B / 18B；qwen 首写 relay，重建用 direct 通道）
 
 | CLI | 通道 | 结果 |
 |---|---|---|
-| Codex | relay subagent | ✅ 19B 逐字节匹配、无尾随换行 |
-| Claude | relay subagent | ✅ 20B 逐字节匹配、无尾随换行 |
-| Qwen | — | ⏳ 待 host 重启加载修复后补验 |
+| Codex | relay subagent（首写）/ qwen direct（重建） | ✅ 19B 逐字节匹配、无尾随换行 |
+| Claude | relay subagent（首写）/ claude direct（重建） | ✅ 20B 逐字节匹配、无尾随换行 |
+| Qwen | relay subagent | ✅ 18B 逐字节匹配、无尾随换行 |
 
-### 阶段二 读取核对（direct 会话 × 2，互读）
+### 阶段二 读取核对（direct 会话 × 3，完整 3×3 互读）
 
-| 会话 \ 文件 | codex/test.md | claude/test.md |
-|---|---|---|
-| Codex (direct) | ✅ | ✅ |
-| Claude (direct) | ✅ | ✅ |
+| 会话 \ 文件 | codex/test.md | claude/test.md | qwen/test.md |
+|---|---|---|---|
+| Codex (direct) | ✅ | ✅ | ✅ |
+| Claude (direct) | ✅ | ✅ | ✅ |
+| Qwen (direct) | ✅ | ✅ | ✅ |
 
-4/4 复述一字不差（Claude 回复带一句前置说明，复述行本身精确）。
+9/9 复述一字不差（本轮无复述截断/幻觉噪声；Claude 回复带一句前置说明，复述行本身精确）。
 
-### 阶段三 删除（relay 子代理 × 2）
+### 阶段三 删除（relay 子代理 × 3）
 
 | CLI | 通道 | 结果 |
 |---|---|---|
 | Codex | relay subagent | ✅ 磁盘确认消失 |
 | Claude | relay subagent | ✅ 磁盘确认消失 |
+| Qwen | relay subagent | ✅ 磁盘确认消失 |
 
 **最终复核**：verification/ 目录全空、无 `.bak`/`.orig` 残留、脚手架已清理、权限已还原。
 
+### qwen 补验阶段又发现并修复两个缺陷（`b010bde`）
+
+host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**「内容一致」字节门的两个后继缺陷**：
+
+1. **qwen 启动即迁移自身 settings.json**（实证：盘上文件 mtime = 首次 `cli_test` 时刻，内容从 `selectedAuthType` 变为 `security.auth.selectedType` + `$version: 4`）→ 字节门首跑必破，之后每次 dispatch 都撞沙箱写拒绝。修复：字节门升级为**语义门** `qwenSettingsCurrent()`——只比对插件拥有的字段（openai 路由条目 model/envKey/baseUrl、`tools.approvalMode: yolo`、auth 类型兼容新旧两种位形），qwen 自己的 `$version` / `security` 等字段不碰。
+2. **read-only 档 argv 追加 `--sandbox` 在无 docker 的机器上静默死亡**：`--sandbox` shell 出去依赖 docker/podman，本机（Windows）无 docker → qwen 退出码 0、空回复，`cli_test` 表现为"未返回预期的 OK（实际：空）"且无从定位。修复：模板移除 `--sandbox` 分支——权限执行本就是 driver 层的职责（yolo 启动 + tool_use 拦截），探测/一次性路径的 launch 形态必须与 driver 通道一致；registry 单测与 e2e 断言同步更新。
+
+单测 246/246（+5）。host 第二次重启（04:02:42，晚于 `b010bde` 提交 04:02:07）后 `cli_test qwen` 三绿：语义门过、OK 回复、chat 工具续接探测通过。
+
 ### 结论
 
-- codex + claude 双 CLI 三阶段**干净通过**（新装版本 0.152.1 / 2.1.258 上首次验证）。
-- qwen 通道待 host 重启加载 `f9ca22e` 后补跑完整三阶段（其配置写缺陷已修复并有单测覆盖）。
+- **三 CLI × 三阶段全部干净通过**（冷装新版本 codex 0.152.1 / claude 2.1.258 / qwen 0.22.3；写入通道覆盖 relay subagent 与 direct 两种）。
+- 冷装实测共修复三个默认部署必现缺陷（qwen 无条件重写 × 默认 workspace-write 沙箱 / 字节门对自迁移配置失效 / `--sandbox` 依赖 docker 静默死亡），全部有单测锁定。
+- 权限纪律再验证：只读档下 claude direct 的 Write 被驱动层正确弹窗拦截（callId 拒绝），升档后静默放行——三档模型在真实端到端下行为符合预期。
 
 ---
 
