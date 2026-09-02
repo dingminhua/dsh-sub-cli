@@ -254,6 +254,53 @@ Qwen（aixforge deepseek-v4-flash）首写生成的 Write 参数里插了空格�
 
 ---
 
+## 实测记录（第七轮，2026-09-02 晚，Windows 全新环境冷装）
+
+环境：Windows（DSH Desktop profile desktop，本机首次冷装）；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3（均由 `dsh plugin add` 后首次安装）；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash；权限临时升 danger（write/exec 全勾，验证后已还原 `permissions: {}`）。
+
+本轮背景是**全新机器冷装**（非既有环境回归），暴露并修复了一个默认部署必现缺陷：
+
+### 本轮新发现：宿主 fs 沙箱默认 workspace-write 锁死 qwen 全通道
+
+- **现象**：`cli_test` codex/qwen 均报 `cannot write ... config-<cli>...: file access denied under workspace-write mode`（claude 因从不写盘幸免）。
+- **根因**（两层叠加）：① 插件的 fs 调用不带 session 上下文 → `sandboxPolicy.resolve()` 回落部署默认 `DSH_PERMISSION_MODE ?? "workspace-write"`（未设）；② `ensureCliProviderConfig` 对 qwen **无条件重写** settings.json——即使盘上内容已正确也写，于是默认沙箱部署下必挂。codex 有指纹门短路（盘上指纹=当前指纹则跳过）所以只影响 qwen。
+- **修复**（`f9ca22e`）：qwen 增加「内容一致」短路（盘上文件与 `qwenSettings()` 渲染逐字节相同则跳过重写；qwen 配置整体托管、无用户字段可保留，故门取内容而非指纹）；`readGateFingerprint` 重构到共用 `readTextIfAny`。单测 244/244（+3：内容一致不写 / 内容不同重写 / 文件缺失重建）。
+- **验证方式**：本会话内用插件自己的渲染函数预写正确配置（codex 带指纹门、qwen 待修复加载后走内容门）→ codex `cli_test` 立即转绿。qwen 的补验**待 host 重启加载 `f9ca22e` 后**执行。
+- **遗留设计缺口**（记录在案）：`cli_install` / 首次 `cli_test` 仍需写统一目录，在默认沙箱部署下会被拒——插件进程侧的写（fs 服务）没有对应的沙箱白名单。当前工作流：由主控在 danger 档会话里用宿主命令预写/预装（本轮实测可行），或用户以 danger 档运行一次 `cli_test`。长期方案需宿主侧为统一目录提供写许可（如 profile 级配置），超出本插件边界。
+
+### 阶段一 写入（relay 子代理 × 2，暗号 19B / 20B）
+
+| CLI | 通道 | 结果 |
+|---|---|---|
+| Codex | relay subagent | ✅ 19B 逐字节匹配、无尾随换行 |
+| Claude | relay subagent | ✅ 20B 逐字节匹配、无尾随换行 |
+| Qwen | — | ⏳ 待 host 重启加载修复后补验 |
+
+### 阶段二 读取核对（direct 会话 × 2，互读）
+
+| 会话 \ 文件 | codex/test.md | claude/test.md |
+|---|---|---|
+| Codex (direct) | ✅ | ✅ |
+| Claude (direct) | ✅ | ✅ |
+
+4/4 复述一字不差（Claude 回复带一句前置说明，复述行本身精确）。
+
+### 阶段三 删除（relay 子代理 × 2）
+
+| CLI | 通道 | 结果 |
+|---|---|---|
+| Codex | relay subagent | ✅ 磁盘确认消失 |
+| Claude | relay subagent | ✅ 磁盘确认消失 |
+
+**最终复核**：verification/ 目录全空、无 `.bak`/`.orig` 残留、脚手架已清理、权限已还原。
+
+### 结论
+
+- codex + claude 双 CLI 三阶段**干净通过**（新装版本 0.152.1 / 2.1.258 上首次验证）。
+- qwen 通道待 host 重启加载 `f9ca22e` 后补跑完整三阶段（其配置写缺陷已修复并有单测覆盖）。
+
+---
+
 ## 实测记录（第六轮，2026-09-02 深夜，host 22:42 重启加载 1c74d0d 后）
 
 环境：DSH Desktop 重启（进程 22:42:17 起，晚于 lib 改动 22:16–22:17）；权限三 CLI 一致 `read=true / write=false / exec=false`。第五轮两项待办全部闭环。
