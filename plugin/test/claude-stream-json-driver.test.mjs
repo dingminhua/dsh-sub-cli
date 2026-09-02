@@ -192,3 +192,44 @@ test("start requires cwd and rejects empty prompt", async () => {
 	await assert.rejects(driver.start({ cwd: "", prompt: "x" }), /cwd is required/);
 	await assert.rejects(driver.start({ cwd: "/r", prompt: "  " }), /prompt must not be empty/);
 });
+
+test("attachOnly start needs no prompt and spawns nothing (reattach after release)", async () => {
+	// Regression for the fifth E2E round (2026-09-02): send_message on an idle
+	// relay child goes followup → reattach → driver.start({attachOnly:true})
+	// with NO prompt. The old unconditional prompt check turned every relay
+	// child reuse into "Claude driver request.prompt must not be empty".
+	const handles = [];
+	const subprocess = fakeSubprocess(handles);
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
+	const run = await driver.start({ cwd: "/r", attachOnly: true, resumeThreadId: "thread-123" });
+	assert.equal(handles.length, 0, "attach must not spawn a process (one-process-per-turn)");
+	assert.equal(run.remoteSessionId, "thread-123");
+	const value = await run.result;
+	assert.deepEqual(value, { threadId: "thread-123", text: "", stopReason: "attached" });
+	assert.equal(run.status().state, "ready");
+	await run.dispose(); // no-op for an attach run, must not throw
+});
+
+test("attachOnly without resumeThreadId is rejected", async () => {
+	const driver = new ClaudeStreamJsonDriver({ subprocess: fakeSubprocess([]), dirSource, turnTimeoutMs: 250 });
+	await assert.rejects(driver.start({ cwd: "/r", attachOnly: true }), /attach requires resumeThreadId/);
+	await assert.rejects(driver.start({ cwd: "/r", attachOnly: true, resumeThreadId: "" }), /attach requires resumeThreadId/);
+});
+
+test("followup after attach resumes the attached thread with the new prompt", async () => {
+	const handles = [];
+	const subprocess = fakeSubprocess(handles);
+	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
+	const run = await driver.start({ cwd: "/r", attachOnly: true, resumeThreadId: "thread-xyz" });
+	const followupPromise = run.followup("hello again", {});
+	seedAnswer(handles[0].stdout, "thread-xyz");
+	const value = await followupPromise;
+	assert.equal(value.threadId, "thread-xyz");
+	const args = handles[0].argv.slice(1);
+	assert.ok(args.includes("--resume"), "post-attach followup must resume the attached thread");
+	assert.equal(args[args.indexOf("--resume") + 1], "thread-xyz");
+	assert.ok(!args.includes("--session-id"), "post-attach followup must not reissue --session-id");
+	const userMsg = JSON.parse(handles[0].stdin._written[0]);
+	assert.equal(userMsg.type, "user");
+	assert.equal(userMsg.message.content, "hello again", "the new prompt is written to stdin as the user message");
+});

@@ -131,9 +131,48 @@
 3. **空回复锁死通道**（aixforge 间歇把回答放进 `reasoning_content`、`content` 为空）→ 修复：`testCli` 对「退出码 0 + 空回复」做有界重试（4 次），确定性失败仍快速失败。
 4. **Codex `base_url` 缺 `/v1` 导致 405**（本轮新发现，已修）：`codexToml()` 直接写入供应商 baseURL，Codex 把 `responses` 拼在 bare host 后 → `https://host/responses` → nginx 405，且错误信息不直观（表面是 `CLI 执行失败：Reading additional input from stdin...`，真因在 stdout 的 405）。已改为经 `codexBaseUrl()` 归一化（复用 `stripTrailingV1` + `joinApiPath`，已有 `/v1` 的 base 不会被重复拼接），并补单测。
 
+## 实测记录（第四轮，2026-09-02，host 重启加载 9d0da41 后）
+
+环境：DSH Desktop **重启后**（进程 19:03 起，晚于 lib 改动 17:23–17:28，host 侧确认加载最新 driver 层拦截代码）；codex 0.149.1 / claude 2.1.247 / qwen 0.22.2；权限档保持不变（codex write/exec=true；claude write=true/exec=false；qwen write=false/exec=false）。
+
+本轮验证重点：**driver 层 tool_use/protocol 拦截 + 统一 onPermissionRequest 门控**在真实端到端下的表现（勾选=静默放行、未勾选=弹窗而非旧式静默失败）。
+
+### 阶段一 写入（新暗号，全部 30 字节逐字节匹配、无尾随换行）
+
+| CLI | 通道 | 结果 |
+|---|---|---|
+| Codex | relay subagent | ✅ 30B 逐字节匹配（write=true 静默放行） |
+| Claude | relay subagent | ✅ 30B 逐字节匹配（write=true 静默放行） |
+| Qwen | relay subagent | ✅ 30B 逐字节匹配（write=false 下仍写成功 —— driver 弹窗门控起效，未静默失败） |
+
+### 阶段二 读取核对（3×3 互读，全部一字不差）
+
+| CLI \ 文件 | codex-proj | claude-proj | qwen-proj |
+|---|---|---|---|
+| Codex (direct) | ✅ | ✅ | ✅ |
+| Claude (direct) | ✅ | ✅ | ✅ |
+| Qwen (direct) | ✅ | ✅ | ✅ |
+
+本轮无复述截断/幻觉（3×3 = 9 次全部一致）。
+
+### 阶段三 删除
+
+| CLI | 通道 | 结果 |
+|---|---|---|
+| Codex | relay subagent | ✅ 删除 |
+| Claude | relay subagent | ✅ 删除（exec=false 下仍删成功，driver 门控起效） |
+| Qwen | relay subagent | ✅ 删除（exec=false 下仍删成功，driver 门控起效） |
+
+**最终复核**：三个文件全部消失，无 `.bak`/`.orig`/临时残留；测试脚手架已清理。**流程通过。**
+
+### 本轮结论
+
+- host 重启后 driver 层拦截（9d0da41）在真实端到端下工作正常：勾选的能力静默放行，**未勾选的能力在 claude/qwen 的 stream-json 通道也能经 onPermissionRequest 弹窗授权后执行**（不再是旧版"工具表里没有 / 直接失败"，也不是第三轮的全锁死）。
+- 三 CLI 的 Settings permissions 仍是旧的不一致档位；要继续验证"未勾选能力 → 弹窗（而非直接失败）"，本轮已覆盖 write(未勾选) 与 exec(未勾选) 两类场景，均弹窗授权成功。
+
 ## 回归提示
 
-- 单元测试：`npm test`（截至本轮 228/228 通过）。
+- 单元测试：`npm test`（截至第五轮 234/234 通过）。
 - 每次改动 host 侧（`lib/**` 除 client 外）后**必须重启 DSH Desktop** 再跑本流程。
 - 换供应商/模型后先跑 `cli_test <cli>` 三个都绿，再跑本流程。
 
@@ -174,3 +213,41 @@
 - 重启 DSH Desktop 让 host 侧 ESM 加载新代码
 - 跑端到端三阶段测试，三个 subagent 都能通过 `onPermissionRequest` 弹窗被授权后写文件
 - 在 permission 档设为 `read-only` 时，Codex/Claude/Qwen 都应该弹窗（而不是直接失败）
+
+---
+
+## 实测记录（第五轮，2026-09-02，发现并修复 reattach bug）
+
+环境：与第四轮同一 host 进程（19:03 起）；settings 权限三 CLI 一致 `read=true / write=false / exec=false`；暗号长度各异（22B / 26B / 20B）以强化截断检测。
+
+### 结果
+
+| 阶段 | Codex | Claude | Qwen |
+|---|---|---|---|
+| 写入（relay × 3） | ✅ 22B 逐字节一致 | ✅ 26B 逐字节一致 | ⚠️ 首写自报 OK 但磁盘插空格（`key@`→`key @`，21B）；换全新 subagent 重写后 20B 精确 |
+| 读取（direct × 3，3×3 互读） | ✅ | ✅ | ✅（首轮 9/9 一字不差，无截断幻觉） |
+| 删除（relay × 3） | ✅ | ✅ | ❓ 数据点无效（见发现 3） |
+
+### 发现 1：relay 子代理第二条消息必挂（代码 bug，本轮已修复）
+
+`send_message` 续用一个已空闲（released）的 relay 子代理时，链路是 `followup → reattach → driver.start({attachOnly:true})`，该请求**不带 prompt**；而 Claude/Qwen stream-json driver 的 `start()` → `#prepareContext()` 无条件校验 `request.prompt` 非空 → 抛 `…request.prompt must not be empty`。Codex 的 app-server `start()` 有 `if (request.attachOnly)` 特判所以从无此问题。前四轮从未对空闲 relay 子代理发过第二条消息，故从未触发。
+
+**修复**（对齐 codex-app-server.js 的形状）：两个 stream-json driver 的 `start()` 增加 attachOnly 分支——attach 时不校验 prompt、不 spawn 进程（一进程一 turn 模型下 attach 无事可做），只准备上下文（解析 bin、写供应商配置）并返回 `result` 已 settle 的 run；`#prepareContext` 在 attach 模式下改为校验 `resumeThreadId`，并把 `ctx.actualSessionId` 指向它，使后续 followup 的 `--resume` 用对线程。补 6 个单测（每 driver 3 个：attach 无 prompt 不抛错且不 spawn、缺 resumeThreadId 拒绝、attach 后 followup 正确 resume），**234/234 全绿**。
+
+### 发现 2：Qwen 首写内容噪声 + 自检虚报（模型层，代码不可修）
+
+Qwen（aixforge deepseek-v4-flash）首写生成的 Write 参数里插了空格，且其自检声称「逐字节一致」——生成与自检两层都不可信。防线就是本流程的磁盘逐字节校验（xxd/cmp），本轮实测有效抓出。
+
+### 发现 3：删除数据点无效——编排竞态（主控责任，非 Qwen 失败）
+
+阶段一 Qwen 重写子代理的 turn 在磁盘写对后**仍未结束**（其 completion 通知最后才到）；主控只看磁盘就推进了阶段三，该写 turn 在删除窗口内 19:41:01 把逐字节正确的暗号又写回磁盘。决定性证据：删除任务提示不含暗号内容，只有写 turn 写得出正确暗号。rm 是否真成功不可考，该数据点作废，需干净重测。
+
+### 流程纪律（本轮新增）
+
+1. **阶段推进必须等全部子代理的 completion 通知**，不能只看磁盘状态——否则上一阶段的迟到写入会污染下一阶段的判定。
+2. Qwen 的自报（含其自检输出）不可信，一切以主控磁盘校验为准。
+
+### 待办
+
+- 重启 DSH Desktop 加载本修复后，重跑一次干净三阶段（补 Qwen 删除的有效数据点）。
+- 复测 relay 子代理 `send_message` 续用（reattach 路径）在三个 CLI 上都正常工作。

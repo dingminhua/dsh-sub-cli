@@ -241,7 +241,28 @@ export class ClaudeStreamJsonDriver {
 	}
 
 	async start(request) {
-		const ctx = await this.#prepareContext(request, { mode: "new" });
+		// Reattach path (managed-cli-agents.js reattach() after release()):
+		// the request carries attachOnly + resumeThreadId and NO prompt — the
+		// prompt arrives with the next followup(). Under the one-process-per-
+		// turn model attaching spawns nothing now; we only prepare the context
+		// (resolve binary, write provider config) and return a run whose
+		// followup() spawns `claude -p --resume <threadId>`. Mirrors Codex's
+		// attachOnly branch in codex-app-server.js.
+		const attachOnly = request?.attachOnly === true;
+		const ctx = await this.#prepareContext(request, { mode: attachOnly ? "attach" : "new" });
+		if (attachOnly) {
+			return {
+				id: randomUUID(),
+				product: "claude",
+				capabilities: this.capabilities,
+				get remoteSessionId() { return request.resumeThreadId; },
+				result: Promise.resolve({ threadId: request.resumeThreadId, text: "", stopReason: "attached" }),
+				followup: (prompt, options) => this.#followup(request, ctx, prompt, options),
+				interrupt: async () => false,
+				status: () => ({ state: "ready", sessionId: request.resumeThreadId, driverId: this.id }),
+				dispose: async () => {}
+			};
+		}
 		const result = this.#spawnTurn(ctx, request, { mode: "new", prompt: request.prompt });
 		const runRef = { sessionId: ctx.sessionId };
 		// Resolve the actual session id once the CLI announces it.
@@ -275,7 +296,13 @@ export class ClaudeStreamJsonDriver {
 	async #prepareContext(request, { mode }) {
 		if (!request || typeof request !== "object") throw new TypeError("Claude driver request must be an object");
 		if (typeof request.cwd !== "string" || !request.cwd) throw new Error("Claude driver request.cwd is required");
-		if (typeof request.prompt !== "string" || !request.prompt.trim()) throw new Error("Claude driver request.prompt must not be empty");
+		if (mode === "attach") {
+			// Reattach requests carry no prompt (the next followup supplies
+			// it); what they MUST carry is the remote thread to resume.
+			if (typeof request.resumeThreadId !== "string" || !request.resumeThreadId) throw new Error("Claude driver attach requires resumeThreadId");
+		} else if (typeof request.prompt !== "string" || !request.prompt.trim()) {
+			throw new Error("Claude driver request.prompt must not be empty");
+		}
 		const dir = this.dirSource();
 		const bin = binPath(dir, "claude");
 		let resolved = null;
@@ -296,7 +323,11 @@ export class ClaudeStreamJsonDriver {
 			env = ready.env;
 		}
 		const sessionId = request.sessionId || randomUUID();
-		return { bin: resolved, env, dir, sessionId, actualSessionId: null };
+		// In attach mode the "actual" session is the remote thread we reattach
+		// to; followup() resolves its --resume id from ctx.actualSessionId
+		// first, so the post-attach turn resumes the right thread.
+		const actualSessionId = mode === "attach" ? request.resumeThreadId : null;
+		return { bin: resolved, env, dir, sessionId, actualSessionId };
 	}
 
 	#spawnTurn(ctx, request, { mode, prompt, resumeId, options, signal = null }) {
