@@ -147,41 +147,27 @@ test("qwenSettings selects an OpenAI-compatible provider without persisting a ke
 	assert.equal(JSON.stringify(value).includes("sk-"), false);
 });
 
-test("qwenSettings maps the permission tier to tools.approvalMode so headless writes exist", () => {
-	// Without tools.approvalMode a headless -p qwen session registers NO write
-	// tools (default "auto" drops write_file/edit from the toolset — verified
-	// against qwen 0.22.2), so the write grant must ride the settings file.
-	const readWriteExec = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-		{ read: true, write: true, exec: true, approval: "ask" }
-	));
-	assert.equal(readWriteExec.tools.approvalMode, "yolo");
-	const readWrite = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-		{ read: true, write: true, exec: false, approval: "ask" }
-	));
-	assert.equal(readWrite.tools.approvalMode, "auto-edit");
-	const readOnly = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-		{ read: true, write: false, exec: false, approval: "ask" }
-	));
-	assert.equal(readOnly.tools.approvalMode, "plan");
-	// Missing permission defaults to the read-only tier (plan).
-	const absent = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" }
-	));
-	assert.equal(absent.tools.approvalMode, "plan");
-	// Legacy tier strings normalize through the same path.
-	const legacy = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+test("qwenSettings always uses tools.approvalMode:yolo — driver-layer enforcement is unified", () => {
+	// Permission enforcement is now entirely at the driver layer
+	// (onPermissionRequest hook → resolvePermission → ctx.approval.request).
+	// The CLI always runs at "yolo" so it registers all tools internally;
+	// the driver intercepts each tool_use and gates it against the user's
+	// stored permission profile. This unifies the UX across all three CLIs.
+	// Every tier maps to "yolo" in the settings file.
+	for (const tier of [
+		{ read: true, write: false, exec: false, approval: "ask" },
+		{ read: true, write: true, exec: false, approval: "ask" },
+		{ read: true, write: true, exec: true, approval: "ask" },
+		undefined,
 		"danger-full-access"
-	));
-	assert.equal(legacy.tools.approvalMode, "yolo");
+	]) {
+		const value = JSON.parse(qwenSettings(
+			{ provider: "aixforge", model: "deepseek-v4-flash" },
+			{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+			tier
+		));
+		assert.equal(value.tools.approvalMode, "yolo", `tier=${JSON.stringify(tier)} must map to yolo`);
+	}
 });
 
 test("codexToml points Codex at the supplier with responses wire", () => {

@@ -317,11 +317,16 @@ export function currentDir(ctx) {
  * CLI simply cannot mutate anything. Verified against qwen 0.22.2:
  * plan = read-only toolset; auto-edit = write/edit tools, edits auto-approved
  * (works for absolute paths outside the cwd too); yolo = everything, no
- * prompts (matches the danger tier where exec already implies full trust). */
+ * prompts (matches the danger tier where exec already implies full trust).
+ *
+ * Permission enforcement is now entirely at the driver layer
+ * (onPermissionRequest hook → resolvePermission → ctx.approval.request).
+ * The CLI always runs at "yolo" so it registers all tools internally; the
+ * driver intercepts each tool_use before it executes and gates it against the
+ * user's stored permission profile. This unifies the UX across all three CLIs.
+ */
 export function qwenApprovalMode(tier) {
-	if (tier === "danger-full-access") return "yolo";
-	if (tier === "workspace-write") return "auto-edit";
-	return "plan";
+	return "yolo";
 }
 
 /** Render Qwen Code settings for one OpenAI-compatible provider. The third

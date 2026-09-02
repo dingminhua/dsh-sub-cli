@@ -193,3 +193,94 @@ test("capability gate agrees with the derived tier for every combination", () =>
 		assert.equal(allowsCapability(p, "permissions"), p.exec === true, `permissions gate ${JSON.stringify(combo)}`);
 	}
 });
+
+// ── Unified permission request normalizer for all three CLIs ─────────────────
+
+import { normalizePermissionRequest, CLAUDE_APPROVAL_METHODS, QWEN_APPROVAL_METHODS } from "../lib/permissions.js";
+
+test("normalizePermissionRequest maps Claude Code tool names to the canonical capability keys", () => {
+	// Each tool name maps to one of: command, file-change, exec, or null (read-only).
+	assert.equal(CLAUDE_APPROVAL_METHODS.Bash, "command");
+	assert.equal(CLAUDE_APPROVAL_METHODS.Write, "file-change");
+	assert.equal(CLAUDE_APPROVAL_METHODS.MultiWrite, "file-change");
+	assert.equal(CLAUDE_APPROVAL_METHODS.Edit, "file-change");
+	assert.equal(CLAUDE_APPROVAL_METHODS.Delete, "file-change");
+	assert.equal(CLAUDE_APPROVAL_METHODS.WebSearch, "exec");
+	// Read tools are not enumerated — they pass through silently.
+});
+
+test("normalizePermissionRequest maps Qwen Code tool names to the canonical capability keys", () => {
+	assert.equal(QWEN_APPROVAL_METHODS.Bash, "command");
+	assert.equal(QWEN_APPROVAL_METHODS.Write, "file-change");
+	assert.equal(QWEN_APPROVAL_METHODS.Edit, "file-change");
+	assert.equal(QWEN_APPROVAL_METHODS.WebSearch, "exec");
+});
+
+test("normalizePermissionRequest returns a canonical request for a Claude Write tool_use", () => {
+	const request = normalizePermissionRequest("claude", "Write", {
+		toolInput: { file_path: "/Users/dmh2002/DshProject/dsh-brain-compaction/test.md" },
+		approvalId: "toolu_abc"
+	}, {
+		childId: "child-1",
+		pluginSessionId: "session-1",
+		remoteSessionId: "thread-1",
+		turnId: "turn-1"
+	});
+	assert.ok(request, "request should be returned for write tools");
+	assert.equal(request.cli, "claude");
+	assert.equal(request.capability, "file-change");
+	assert.equal(request.target, "/Users/dmh2002/DshProject/dsh-brain-compaction/test.md");
+	assert.equal(request.operation, "Claude Code:Write /Users/dmh2002/DshProject/dsh-brain-compaction/test.md");
+	assert.equal(request.remoteRequestId, "toolu_abc");
+	assert.equal(request.childId, "child-1");
+	assert.equal(request.pluginSessionId, "session-1");
+	assert.match(request.requestId, /^cli-permission-/);
+});
+
+test("normalizePermissionRequest returns a canonical request for a Claude Bash tool_use", () => {
+	const request = normalizePermissionRequest("claude", "Bash", {
+		toolInput: { command: "rm -rf build" }
+	}, { pluginSessionId: "session-1" });
+	assert.equal(request.cli, "claude");
+	assert.equal(request.capability, "command");
+	assert.equal(request.target, "rm -rf build");
+	assert.match(request.operation, /Claude Code:Bash/);
+});
+
+test("normalizePermissionRequest returns null for read-only tools (Read, Glob, Grep, etc.)", () => {
+	assert.equal(normalizePermissionRequest("claude", "Read", { toolInput: { file_path: "/x" } }), null);
+	assert.equal(normalizePermissionRequest("claude", "Glob", { toolInput: { pattern: "*.ts" } }), null);
+	assert.equal(normalizePermissionRequest("claude", "Grep", { toolInput: { pattern: "x" } }), null);
+	assert.equal(normalizePermissionRequest("claude", undefined, {}), null);
+	assert.equal(normalizePermissionRequest("claude", null, {}), null);
+});
+
+test("normalizePermissionRequest returns a canonical request for a Qwen Write tool_use", () => {
+	const request = normalizePermissionRequest("qwen", "Write", {
+		toolInput: { file_path: "/tmp/test.md", content: "hello" }
+	}, { pluginSessionId: "session-1" });
+	assert.equal(request.cli, "qwen");
+	assert.equal(request.capability, "file-change");
+	assert.equal(request.target, "/tmp/test.md");
+	assert.match(request.operation, /Qwen Code:Write/);
+});
+
+test("normalizePermissionRequest routes Codex calls through the existing normalizer", () => {
+	// Codex path keeps its protocol-specific shape: method is the protocol name.
+	const request = normalizePermissionRequest("codex", "item/commandExecution/requestApproval", {
+		threadId: "thread-1", turnId: "turn-1", itemId: "item-1", command: "npm install"
+	}, { pluginSessionId: "session-1" });
+	assert.equal(request.cli, "codex");
+	assert.equal(request.capability, "command");
+	assert.equal(request.target, "npm install");
+	assert.equal(request.remoteSessionId, "thread-1");
+});
+
+test("permissionReason names the correct CLI for non-Codex requests", () => {
+	const claude = normalizePermissionRequest("claude", "Write", { toolInput: { file_path: "/x" } }, { pluginSessionId: "s" });
+	assert.match(permissionReason(claude), /Claude Code/);
+	assert.match(permissionReason(claude), /file-change/);
+	const qwen = normalizePermissionRequest("qwen", "Bash", { toolInput: { command: "ls" } }, { pluginSessionId: "s" });
+	assert.match(permissionReason(qwen), /Qwen Code/);
+	assert.match(permissionReason(qwen), /command/);
+});

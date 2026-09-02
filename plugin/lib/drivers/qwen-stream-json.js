@@ -6,17 +6,17 @@
 // no app-server subcommand, so `--print` with stream-json is the headless
 // surface. `--resume <id>` reattaches the on-disk history.
 //
-// Permission model:
-//   Qwen expresses the caller's tier through settings.json
-//   (tools.approvalMode, written by qwenSettings in verify.js), NOT through
-//   CLI flags — qwen 0.22.2 has no --yolo / --permission-mode argv, and under
-//   the default "auto" approval mode a headless -p session registers NO
-//   write tools at all. The mapping (plan / auto-edit / yolo) rides the
-//   isolated config the driver's prepare step rewrites before every run.
-//
-//   Qwen's stream-json mode does not surface interactive permission requests
-//   in the same way as Codex's app-server. The caller chooses the tier
-//   before spawning.
+// Permission model (unified across all three managed CLIs):
+//   Qwen's headless -p mode composes its toolset from settings.json's
+//   `tools.approvalMode` (written by qwenSettings in verify.js). Previously
+//   the tier was read-only/workspace-write/danger — and lower tiers registered
+//   no tools at all, so a low-privileged turn could not even attempt
+//   `write_file`. Now the CLI always runs at `tools.approvalMode: "yolo"`
+//   so it registers every tool, and the driver intercepts each `tool_use`
+//   in the stream-json output and routes it through the same
+//   `onPermissionRequest` hook that Codex's app-server uses. resolvePermission
+//   in managed-cli-agents.js gates each request against the user's stored
+//   permission profile and surfaces a DSH approval dialog when needed.
 
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
@@ -25,6 +25,7 @@ import { probeStalledTurn } from "./turn-timeout.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
 import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
+import { normalizePermissionRequest, QWEN_APPROVAL_METHODS } from "../permissions.js";
 
 export const QWEN_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -34,8 +35,18 @@ export const QWEN_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	reasoningEffort: false,
 	cwd: true,
 	interrupt: false,
-	interactivePermissions: false
+	interactivePermissions: true
 });
+
+// Qwen's tool name → capability key. The actual set of tool names emitted by
+// Qwen under -p mode mirrors Claude's surface; the same mapping applies.
+function qwenToolCapability(toolName) {
+	if (!toolName) return null;
+	if (toolName === "Bash" || toolName === "NpmcliLifecyclePlugin") return "command";
+	if (toolName === "Write" || toolName === "MultiWrite" || toolName === "Edit" || toolName === "Delete") return "file-change";
+	if (toolName === "WebSearch" || toolName === "WebFetcher") return "exec";
+	return null; // read tool
+}
 
 // Extract final text from Qwen's result object. Qwen has no streaming events
 // (no assistant/user/...), so we look for the result field on the result event.
@@ -59,16 +70,36 @@ function countToolUses(events) {
 	return Number.isInteger(n) ? n : 0;
 }
 
+function buildQwenPermissionRequest({ toolName, toolInput, callId, pluginSessionId, childId, remoteSessionId, turnId }) {
+	return normalizePermissionRequest("qwen", toolName, {
+		toolInput: toolInput ?? null,
+		approvalId: callId ?? null,
+		itemId: callId ?? null
+	}, {
+		childId: childId ?? null,
+		pluginSessionId: pluginSessionId ?? null,
+		remoteSessionId: remoteSessionId ?? null,
+		turnId: turnId ?? null
+	});
+}
+
 /**
- * Run one Qwen turn to completion. The returned promise resolves when the
- * CLI emits a `result` event or the process closes. Caller owns subprocess
+ * Run one Qwen turn to completion. The returned promise resolves when
+ * the CLI emits a `result` event or the process closes. Caller owns subprocess
  * disposal.
+ *
+ * Tool interception: every `assistant` event's `tool_use` block is
+ * inspected. Read-only tools pass through silently; write/exec tools
+ * trigger `onPermissionRequest(toolName, toolInput, callId)`. The hook
+ * returns a `managed-permission-decision` (allowed-once / rejected /
+ * cancelled) and the driver thread-sleeps until the result arrives. A
+ * "rejected" outcome aborts the turn with an error so the upstream caller
+ * can react.
  */
-function runTurn({ transport, timeoutMs }) {
-	// Qwen has no --input-format, so the prompt is passed via --prompt on the
-	// command line (in #spawnTurn). Here we just read the single JSON result line.
+function runTurn({ transport, timeoutMs, onPermissionRequest, signal }) {
 	return new Promise((resolve, reject) => {
 		const events = [];
+		const decisions = [];
 		let settled = false;
 		let timer;
 		const finish = (ok, value) => {
@@ -86,15 +117,47 @@ function runTurn({ transport, timeoutMs }) {
 			let ev;
 			try { ev = JSON.parse(trimmed); } catch { return; }
 			events.push(ev);
+			// Tool interception. Qwen's NDJSON includes assistant events with
+			// tool_use blocks mirroring Claude's wire format.
+			if (ev?.type === "assistant" && Array.isArray(ev?.message?.content)) {
+				for (const block of ev.message.content) {
+					if (block?.type !== "tool_use") continue;
+					const toolName = block.name;
+					const toolInput = block.input;
+					const callId = block.id || null;
+					if (!qwenToolCapability(toolName)) continue;
+					if (typeof onPermissionRequest !== "function") {
+						decisions.push({ callId, toolName, capability: qwenToolCapability(toolName), outcome: "rejected", reason: "no permission hook" });
+						finish(false, new Error(`Qwen Code 请求执行 ${toolName} 但 driver 未提供权限钩子；拒绝以保护工作目录。`));
+						return;
+					}
+					// Synchronous listener: hand the async decision off via
+					// Promise.resolve().then() so the line parser can return
+					// and continue buffering. The decision handler calls
+					// finish() if the outcome is a reject/cancel.
+					Promise.resolve()
+						.then(() => onPermissionRequest({ toolName, toolInput, callId }))
+						.then((outcome) => {
+							if (settled) return;
+							decisions.push({ callId, toolName, capability: qwenToolCapability(toolName), outcome });
+							if (outcome === "rejected" || outcome === "cancelled" || outcome === "unavailable") {
+								finish(false, new Error(`用户${outcome === "cancelled" ? "取消" : "拒绝"}了 Qwen Code 的 ${toolName} 操作（callId=${callId}）。`));
+							}
+						})
+						.catch((error) => {
+							if (!settled) finish(false, error instanceof Error ? error : new Error(String(error)));
+						});
+				}
+			}
 			// Qwen emits exactly one JSON object on stdout (single-line output mode,
 			// not NDJSON). It is always the result; there is no init/assistant event.
 			if (ev?.type === "result" || ev?.subtype === "error_during_execution") {
-				const isError = ev.is_error === true || ev.subtype === "error_during_execution";
+				const isError = ev.is_error === true || ev?.subtype === "error_during_execution";
 				if (isError) {
 					const message = ev?.error?.message || ev?.result || "Qwen turn failed";
 					finish(false, new Error(message));
 				} else {
-					finish(true, { events, result: ev });
+					finish(true, { events, result: ev, decisions });
 				}
 			}
 		});
@@ -176,7 +239,7 @@ export class QwenStreamJsonDriver {
 		const signal = options?.signal ?? originalRequest.signal;
 		if (signal?.aborted) throw new Error("Qwen followup aborted before start");
 		const resumeId = options?.resumeSessionId || ctx.actualSessionId || ctx.sessionId;
-		return this.#spawnTurn(ctx, originalRequest, { mode: "resume", prompt, resumeSessionId: resumeId, signal });
+		return this.#spawnTurn(ctx, originalRequest, { mode: "resume", prompt, resumeId, options, signal });
 	}
 
 	async #prepareContext(request, { mode }) {
@@ -203,7 +266,7 @@ export class QwenStreamJsonDriver {
 		return { bin: resolved, env, dir, sessionId, actualSessionId: null };
 	}
 
-	#spawnTurn(ctx, request, { mode, prompt, resumeSessionId = null, signal = null }) {
+	#spawnTurn(ctx, request, { mode, prompt, resumeId, options, signal = null }) {
 		// Qwen's real protocol (verified against `qwen --help` on 2026-09-01):
 		//   - --output-format stream-json : one JSON object per turn on stdout
 		//   - --prompt (no value)         : enable stdin-prompt mode (Qwen reads
@@ -214,19 +277,16 @@ export class QwenStreamJsonDriver {
 		//   - --resume <id>               : reattach the on-disk session history
 		//   - --model <name>              : model id (from settings.json providers)
 		// No --input-format, no --effort, no --permission-mode, no --cwd.
+		// tools.approvalMode is fixed to "yolo" in qwenSettings (verify.js); the
+		// driver enforces per-tool permissions.
 		const args = [
 			"-p",
 			"--output-format", "stream-json"
 		];
-		// --prompt is required for BOTH new and resume turns; the prompt text
-		// is read from stdin (see the write+closeStdin block below).
 		if (typeof prompt === "string" && prompt) args.push("--prompt");
 		if (request.model) args.push("--model", request.model);
-		// Qwen has no --effort flag (verified against `qwen --help`); if the user
-		// configured a reasoning effort we silently skip it instead of letting the
-		// CLI reject the whole invocation with "Unknown argument: effort".
 		if (request.reasoningEffort) console.warn(`[dsh-sub-cli] qwen driver: ignoring reasoningEffort=${request.reasoningEffort}; Qwen has no --effort flag`);
-		if (mode === "resume" && resumeSessionId) args.push("--resume", resumeSessionId);
+		if (mode === "resume" && resumeId) args.push("--resume", resumeId);
 		else if (mode === "new") args.push("--session-id", ctx.sessionId);
 		const argv = winShimArgv(ctx.bin, args);
 		const handle = this.subprocess.spawn({
@@ -238,27 +298,36 @@ export class QwenStreamJsonDriver {
 			graceMs: request.timeoutMs ?? this.turnTimeoutMs
 		});
 		const transport = new SubprocessLineTransport(handle);
+		const onPermissionRequest = typeof request.onPermissionRequest === "function"
+			? request.onPermissionRequest
+			: (options && typeof options.onPermissionRequest === "function" ? options.onPermissionRequest : null);
 		return (async () => {
 			try {
-				// Qwen's stream-json output includes system/init/assistant events
-				// (Anthropic-compatible NDJSON), not just a single result line. We
-				// write the prompt with a trailing newline and then close stdin so
-				// Qwen sees EOF and proceeds; without the close Qwen hangs
-				// waiting for more input (verified against the real CLI on 2026-09-01).
 				if (typeof prompt === "string" && prompt) {
 					await transport.write(prompt + "\n");
 					transport.closeStdin?.();
 				}
-				const { events, result } = await runTurn({ transport, timeoutMs: request.timeoutMs ?? this.turnTimeoutMs });
-				// Session id comes from the result or the ctx.
-				const resolvedSessionId = result?.session_id || resumeSessionId || ctx.sessionId;
+				const { events, result, decisions } = await runTurn({
+					transport,
+					timeoutMs: request.timeoutMs ?? this.turnTimeoutMs,
+					onPermissionRequest: onPermissionRequest
+						? (tool) => onPermissionRequest(buildQwenPermissionRequest({
+							toolName: tool.toolName,
+							toolInput: tool.toolInput,
+							callId: tool.callId
+						}))
+						: null,
+					signal
+				});
+				const resolvedSessionId = result?.session_id || resumeId || ctx.sessionId;
 				ctx.actualSessionId = resolvedSessionId;
 				return {
 					threadId: resolvedSessionId,
 					text: extractFinalText(events),
 					toolRounds: countToolUses(events),
 					stopReason: result?.stop_reason || "completed",
-					usage: result?.usage || null
+					usage: result?.usage || null,
+					decisions
 				};
 			} finally {
 				await transport.dispose().catch(() => {});

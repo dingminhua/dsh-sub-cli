@@ -133,6 +133,44 @@
 
 ## 回归提示
 
-- 单元测试：`npm test`（截至本轮 220/220 通过）。
+- 单元测试：`npm test`（截至本轮 228/228 通过）。
 - 每次改动 host 侧（`lib/**` 除 client 外）后**必须重启 DSH Desktop** 再跑本流程。
 - 换供应商/模型后先跑 `cli_test <cli>` 三个都绿，再跑本流程。
+
+---
+
+## 设计变更：三个 CLI 权限管理统一（2026-09-02 第三轮修复）
+
+### 变更动机
+
+第二轮测试暴露的核心问题：**Codex 走 app-server 协议有中途授权通道，Claude Code / Qwen Code 走 stream-json 协议没有，权限在进程启动时就锁死**。这意味着三个 CLI 的"中途申请权限"体验不一致 — Codex 可以弹窗让用户临时授权，Claude/Qwen 必须提前把档位设到完全。
+
+### 变更方案
+
+**所有三个 CLI 启动时都用最高档**（CLI 内部不再拦截），**driver 层在解析 stream-json 的 `tool_use` / `app-server 的 protocol event` 时拦截，按 profile 检查 capability，调用统一的 `onPermissionRequest` 钩子**。钩子最终走 `managed-cli-agents.js#resolvePermission()` → `ctx.approval.request()` → GUI 弹窗。
+
+### 代码变更
+
+| 文件 | 变更 |
+|---|---|
+| `lib/permissions.js` | 新增 `CLAUDE_APPROVAL_METHODS` / `QWEN_APPROVAL_METHODS`（tool 名 → capability 映射）；新增 `normalizePermissionRequest(cli, method, params, context)` 统一三个 CLI 的 permission request normalizer；`permissionReason` 支持三个 CLI |
+| `lib/drivers/claude-stream-json.js` | `interactivePermissions: true`；`claudePermissionMode` 始终 `bypassPermissions`；`runTurn` 解析 `assistant` 事件中的 `tool_use` 块，按 `claudeToolCapability` 判断是否需要权限，调 `onPermissionRequest` 钩子；rejected/cancelled 直接 `finish(false, error)` 终止 turn |
+| `lib/drivers/qwen-stream-json.js` | 同上（Qwen 走 `tools.approvalMode: yolo`，driver 层统一拦截） |
+| `lib/verify.js` | `qwenApprovalMode` 始终 `yolo`（不再按 tier 映射）；provider 配置里的 `tools.approvalMode` 固定 `yolo` |
+| `lib/managed-cli-agents.js` | 无变更 — `resolvePermission` 链路已存在，dispatch/followup/reattach 三个入口都传 `onPermissionRequest` 钩子 |
+
+### 用户视角的变化
+
+| 场景 | 变更前 | 变更后 |
+|---|---|---|
+| Claude Code 用户在 `workspace-write` 档试图 Write 到工作目录外 | CLI 静默拒绝，driver 无法拦截 | driver 拦截，弹窗询问；通过则执行，拒绝则 turn 失败带明确原因 |
+| Qwen Code 用户在 `read-only` 档试图 Write | 工具表里没有 `write_file`，无事件可拦截 | 工具存在但 driver 拦截，弹窗询问；通过则执行（即使档位是 read-only，profile 不允许则弹窗） |
+| Codex 用户在 `read-only` 档试图 Bash | Codex app-server 发 protocol event，driver 拦截弹窗 | 不变 |
+
+**关键不变量**：profile 的 checkbox 仍然是唯一静默放行的依据。三个 CLI 走同一条 `resolvePermission` 路径，问的也是同一个 GUI 弹窗。
+
+### 待验证
+
+- 重启 DSH Desktop 让 host 侧 ESM 加载新代码
+- 跑端到端三阶段测试，三个 subagent 都能通过 `onPermissionRequest` 弹窗被授权后写文件
+- 在 permission 档设为 `read-only` 时，Codex/Claude/Qwen 都应该弹窗（而不是直接失败）

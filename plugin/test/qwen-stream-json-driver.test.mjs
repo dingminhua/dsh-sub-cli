@@ -82,7 +82,10 @@ test("driver exposes the standard capability shape", () => {
 	assert.equal(driver.id, "qwen-stream-json");
 	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.continuable, true);
 	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.durableResume, true);
-	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.interactivePermissions, false);
+	// interactivePermissions is now true: the driver intercepts every tool_use
+	// and routes it through the same onPermissionRequest hook as Codex. This
+	// unifies permission UX across all three CLIs.
+	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.interactivePermissions, true);
 	assert.equal(QWEN_STREAM_JSON_CAPABILITIES.interrupt, false);
 });
 

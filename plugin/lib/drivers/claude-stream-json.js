@@ -10,13 +10,16 @@
 //   ~/.claude/projects/<cwd>/; we carry `remoteSessionId` across calls so
 //   the next followup reuses it.
 //
-// Permission model:
-//   stream-json does not expose interactive permission requests the way
-//   Codex's app-server does. The caller picks a permission mode up-front
-//   (`--permission-mode`); the driver trusts the caller's choice and does
-//   not surface mid-turn permission prompts. The service layer is
-//   responsible for translating the user's profile into one of Claude's
-//   accepted mode values.
+// Permission model (unified across all three managed CLIs):
+//   The CLI runs at `--permission-mode bypassPermissions` (highest tier) so
+//   it registers every tool and never blocks internally. The driver then
+//   intercepts each `tool_use` event in the stream-json output and routes
+//   it through the same `onPermissionRequest` hook that Codex's app-server
+//   uses. resolvePermission() in managed-cli-agents.js gates the request
+//   against the user's stored permission profile, and the ask strategy
+//   surfaces a DSH approval dialog when the capability is not pre-granted.
+//   This gives the three CLIs identical permission UX: checked checkbox =
+//   silent allow, unchecked = interactive ask, "never" = auto-reject.
 
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
@@ -25,6 +28,7 @@ import { probeStalledTurn } from "./turn-timeout.js";
 import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
+import { normalizePermissionRequest, CLAUDE_APPROVAL_METHODS } from "../permissions.js";
 
 export const CLAUDE_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -34,19 +38,24 @@ export const CLAUDE_STREAM_JSON_CAPABILITIES = defineDriverCapabilities({
 	reasoningEffort: false,
 	cwd: true,
 	interrupt: false,
-	interactivePermissions: false
+	interactivePermissions: true
 });
 
-// Map a coarse sandbox tier (read-only / workspace-write / danger-full-access)
-// to Claude's --permission-mode value. Defaults to acceptEdits so a missing
-// tier still produces a workable session.
-function claudePermissionMode(sandboxTier) {
-	switch (sandboxTier) {
-		case "read-only": return "plan";
-		case "workspace-write": return "acceptEdits";
-		case "danger-full-access": return "bypassPermissions";
-		default: return "acceptEdits";
-	}
+// Map Claude Code's tool name to one of our three capability keys, or null
+// when the tool is read-only (no approval required).
+function claudeToolCapability(toolName) {
+	if (!toolName) return null;
+	if (toolName === "Bash" || toolName === "NpmcliLifecyclePlugin") return "command";
+	if (toolName === "Write" || toolName === "MultiWrite" || toolName === "Edit" || toolName === "Delete") return "file-change";
+	if (toolName === "WebSearch" || toolName === "WebFetcher") return "exec";
+	return null; // Read, Glob, Grep, etc. — not approval-worthy
+}
+
+// Claude Code is always launched at the highest tier; permission enforcement
+// lives in the driver. This intentionally removes the previous sandbox-tier
+// mapping so the three CLIs behave identically.
+function claudePermissionMode(_tier) {
+	return "bypassPermissions";
 }
 
 // Extract the final user-visible text from the assistant message events.
@@ -81,13 +90,43 @@ function countToolUses(events) {
 }
 
 /**
+ * Build a synthetic permission request for a tool_use block. The hook returned
+ * to managed-cli-agents.js calls resolvePermission() on the result; that
+ * function either allows silently (capability granted) or forwards the
+ * request to ctx.approval.request() for an interactive ask.
+ */
+function buildClaudePermissionRequest({ toolName, toolInput, callId, pluginSessionId, childId, remoteSessionId, turnId }) {
+	return normalizePermissionRequest("claude", toolName, {
+		toolInput: toolInput ?? null,
+		approvalId: callId ?? null,
+		itemId: callId ?? null
+	}, {
+		childId: childId ?? null,
+		pluginSessionId: pluginSessionId ?? null,
+		remoteSessionId: remoteSessionId ?? null,
+		turnId: turnId ?? null
+	});
+}
+
+/**
  * Run one Claude turn to completion. The returned promise resolves when
  * the CLI emits a `result` event or the process closes, whichever comes
  * first. Caller owns disposal of the underlying subprocess.
+ *
+ * Tool interception: every `assistant` event's `tool_use` block is
+ * inspected. Read-only tools pass through silently; write/exec tools
+ * trigger `onPermissionRequest(toolName, toolInput, callId)`. The hook
+ * returns a `managed-permission-decision` (allowed-once / rejected /
+ * cancelled) and the driver thread-sleeps until the result arrives. The
+ * "decision" string is recorded in the events log for traceability but
+ * is NOT injected back into the wire: Claude Code's stream-json protocol
+ * is one-way (no ack channel), so a "rejected" outcome aborts the turn
+ * with an error so the upstream caller can react.
  */
-function runTurn({ transport, prompt, timeoutMs }) {
+function runTurn({ transport, prompt, timeoutMs, onPermissionRequest, signal }) {
 	return new Promise((resolve, reject) => {
 		const events = [];
+		const decisions = []; // [{ callId, toolName, capability, outcome }]
 		let settled = false;
 		let timer;
 		const finish = (ok, value) => {
@@ -105,13 +144,51 @@ function runTurn({ transport, prompt, timeoutMs }) {
 			let ev;
 			try { ev = JSON.parse(trimmed); } catch { return; }
 			events.push(ev);
+			// Intercept tool_use blocks: gate them through onPermissionRequest
+			// before the CLI proceeds. Since the stream-json wire is one-way
+			// (the CLI does not consume anything from our side), the only way
+			// to "block" a tool call is to abort the turn with an error.
+			if (ev?.type === "assistant" && Array.isArray(ev?.message?.content)) {
+				for (const block of ev.message.content) {
+					if (block?.type !== "tool_use") continue;
+					const toolName = block.name;
+					const toolInput = block.input;
+					const callId = block.id || null;
+					if (!claudeToolCapability(toolName)) continue; // read-only — allow
+					if (typeof onPermissionRequest !== "function") {
+						decisions.push({ callId, toolName, capability: claudeToolCapability(toolName), outcome: "rejected", reason: "no permission hook" });
+						finish(false, new Error(`Claude Code 请求执行 ${toolName} 但 driver 未提供权限钩子；拒绝以保护工作目录。`));
+						return;
+					}
+					// Hand off to the service layer; await its decision. The
+					// listener is synchronous, so we must consume the promise
+					// here without awaiting — but the onPermissionRequest hook
+					// is async, so we attach a then() that calls finish() once
+					// the decision lands. Subsequent lines are still buffered
+					// and processed by the next onLine call.
+					Promise.resolve()
+						.then(() => onPermissionRequest({ toolName, toolInput, callId }))
+						.then((outcome) => {
+							if (settled) return;
+							decisions.push({ callId, toolName, capability: claudeToolCapability(toolName), outcome });
+							if (outcome === "rejected" || outcome === "cancelled" || outcome === "unavailable") {
+								finish(false, new Error(`用户${outcome === "cancelled" ? "取消" : "拒绝"}了 Claude Code 的 ${toolName} 操作（callId=${callId}）。`));
+							}
+						})
+						.catch((error) => {
+							if (!settled) finish(false, error instanceof Error ? error : new Error(String(error)));
+						});
+					// Mark settled if the decision was an instant reject (allowed-once path skips this).
+					if (settled) return;
+				}
+			}
 			if (ev?.type === "result") {
 				const isError = ev.is_error === true || ev.subtype === "error_during_execution";
 				if (isError) {
 					const message = ev?.error?.message || ev?.result || "Claude turn failed";
 					finish(false, new Error(message));
 				} else {
-					finish(true, { events, result: ev });
+					finish(true, { events, result: ev, decisions });
 				}
 			}
 		});
@@ -192,7 +269,7 @@ export class ClaudeStreamJsonDriver {
 		// Prefer the id we saw in the original turn, fall back to the
 		// caller-supplied one, then the seeded one.
 		const resumeId = options?.resumeSessionId || ctx.actualSessionId || ctx.sessionId;
-		return this.#spawnTurn(ctx, originalRequest, { mode: "resume", prompt, resumeSessionId: resumeId, signal });
+		return this.#spawnTurn(ctx, originalRequest, { mode: "resume", prompt, resumeId, options });
 	}
 
 	async #prepareContext(request, { mode }) {
@@ -222,7 +299,9 @@ export class ClaudeStreamJsonDriver {
 		return { bin: resolved, env, dir, sessionId, actualSessionId: null };
 	}
 
-	#spawnTurn(ctx, request, { mode, prompt, resumeSessionId = null, signal = null }) {
+	#spawnTurn(ctx, request, { mode, prompt, resumeId, options, signal = null }) {
+		// Always run at the highest tier so all tools register internally;
+		// the driver enforces permissions per tool_use.
 		const args = [
 			"-p",
 			"--verbose",
@@ -232,7 +311,7 @@ export class ClaudeStreamJsonDriver {
 		];
 		if (request.model) args.push("--model", request.model);
 		if (request.reasoningEffort) args.push("--effort", request.reasoningEffort);
-		if (mode === "resume" && resumeSessionId) args.push("--resume", resumeSessionId);
+		if (mode === "resume" && resumeId) args.push("--resume", resumeId);
 		else if (mode === "new") args.push("--session-id", ctx.sessionId);
 		// Constrain the file scope to the working directory; mirrors the
 		// interactive TUI's default and matches the sandbox tier.
@@ -247,18 +326,37 @@ export class ClaudeStreamJsonDriver {
 			graceMs: request.timeoutMs ?? this.turnTimeoutMs
 		});
 		const transport = new SubprocessLineTransport(handle);
+		// Build the per-turn permission hook. resolvePermission() in the
+		// service layer returns a managed decision; the onPermissionRequest
+		// passed via the service wraps that into a normalised ask flow.
+		const onPermissionRequest = typeof request.onPermissionRequest === "function"
+			? request.onPermissionRequest
+			: (options && typeof options.onPermissionRequest === "function" ? options.onPermissionRequest : null);
 		return (async () => {
 			try {
-				const { events, result } = await runTurn({ transport, prompt, timeoutMs: request.timeoutMs ?? this.turnTimeoutMs });
+				const { events, result, decisions } = await runTurn({
+					transport,
+					prompt,
+					timeoutMs: request.timeoutMs ?? this.turnTimeoutMs,
+					onPermissionRequest: onPermissionRequest
+						? (tool) => onPermissionRequest(buildClaudePermissionRequest({
+							toolName: tool.toolName,
+							toolInput: tool.toolInput,
+							callId: tool.callId
+						}))
+						: null,
+					signal
+				});
 				const init = events.find((ev) => ev?.type === "system" && ev?.subtype === "init");
-				const resolvedSessionId = init?.session_id || result?.session_id || resumeSessionId || ctx.sessionId;
+				const resolvedSessionId = init?.session_id || result?.session_id || resumeId || ctx.sessionId;
 				ctx.actualSessionId = resolvedSessionId;
 				return {
 					threadId: resolvedSessionId,
 					text: extractFinalText(events),
 					toolRounds: countToolUses(events),
 					stopReason: result?.stop_reason || "completed",
-					usage: result?.usage || null
+					usage: result?.usage || null,
+					decisions
 				};
 			} finally {
 				await transport.dispose().catch(() => {});

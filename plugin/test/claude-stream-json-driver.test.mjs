@@ -71,7 +71,10 @@ test("driver exposes the standard capability shape", () => {
 	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.continuable, true);
 	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.durableResume, true);
 	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.interrupt, false);
-	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.interactivePermissions, false);
+	// interactivePermissions is now true: the driver intercepts every tool_use
+	// and routes it through the same onPermissionRequest hook as Codex. This
+	// unifies permission UX across all three CLIs.
+	assert.equal(CLAUDE_STREAM_JSON_CAPABILITIES.interactivePermissions, true);
 });
 
 test("start composes the expected argv and surfaces the system/init session id", async () => {
@@ -89,14 +92,15 @@ test("start composes the expected argv and surfaces the system/init session id",
 		text: "Hello, world.",
 		toolRounds: 0,
 		stopReason: "end_turn",
-		usage: null
+		usage: null,
+		decisions: []
 	});
-	// argv sanity: -p, stream-json pair, permission-mode, model, session-id, --add-dir
+	// argv sanity: -p, stream-json pair, permission-mode (always bypassPermissions), model, session-id, --add-dir
 	const args = handles[0].argv.slice(1); // strip bin
 	assert.ok(args.includes("-p"));
 	assert.ok(args.includes("--input-format") && args[args.indexOf("--input-format") + 1] === "stream-json");
 	assert.ok(args.includes("--output-format") && args[args.indexOf("--output-format") + 1] === "stream-json");
-	assert.ok(args.includes("--permission-mode") && args[args.indexOf("--permission-mode") + 1] === "acceptEdits");
+	assert.ok(args.includes("--permission-mode") && args[args.indexOf("--permission-mode") + 1] === "bypassPermissions", "always bypassPermissions (driver enforces per-tool)");
 	assert.ok(args.includes("--model") && args[args.indexOf("--model") + 1] === "claude-sonnet-4-5");
 	assert.ok(args.includes("--session-id"));
 	assert.ok(args.includes("--add-dir") && args[args.indexOf("--add-dir") + 1] === "/repo");
@@ -110,21 +114,23 @@ test("start composes the expected argv and surfaces the system/init session id",
 	assert.equal(run.remoteSessionId, "init-session-123");
 });
 
-test("sandbox tier maps to the right --permission-mode", async () => {
+test("sandbox tier is ignored — Claude Code always runs at bypassPermissions", async () => {
+	// Permission enforcement is now entirely at the driver layer
+	// (onPermissionRequest hook → resolvePermission → ctx.approval.request).
+	// The CLI always runs at "bypassPermissions" so it registers all tools
+	// internally; the driver intercepts each tool_use and gates it against
+	// the user's stored permission profile. This unifies the UX across all
+	// three CLIs.
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
 	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
-	for (const [sandbox, expected] of [
-		["read-only", "plan"],
-		["workspace-write", "acceptEdits"],
-		["danger-full-access", "bypassPermissions"]
-	]) {
+	for (const sandbox of ["read-only", "workspace-write", "danger-full-access"]) {
 		const run = await driver.start({ cwd: "/r", prompt: "x", sandbox });
 		seedAnswer(handles[handles.length - 1].stdout, "s-" + sandbox);
-		await run.result; // drain so microtasks from result.then() settle before next start()
+		await run.result;
 		const args = handles[handles.length - 1].argv.slice(1);
 		const idx = args.indexOf("--permission-mode");
-		assert.equal(args[idx + 1], expected, `sandbox=${sandbox}`);
+		assert.equal(args[idx + 1], "bypassPermissions", `sandbox=${sandbox} must always be bypassPermissions`);
 	}
 });
 
@@ -170,7 +176,7 @@ test("extractFinalText concatenates multiple assistant text blocks", async () =>
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
 	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
-	const first = await driver.start({ cwd: "/r", prompt: "x" });
+	const first = await driver.start({ cwd: "/r", prompt: "x", onPermissionRequest: () => "allowed-once" });
 	handles[0].stdout.pushLine({ type: "system", subtype: "init", session_id: "s" });
 	handles[0].stdout.pushLine({ type: "assistant", message: { content: [{ type: "text", text: "Part 1. " }] } });
 	handles[0].stdout.pushLine({ type: "assistant", message: { content: [{ type: "tool_use", id: "x", name: "Bash", input: {} }] } });

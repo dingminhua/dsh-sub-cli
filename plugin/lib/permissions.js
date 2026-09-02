@@ -1,9 +1,37 @@
 import { randomUUID } from "node:crypto";
 
+// ── CLI-specific approval method → capability 映射 ───────────────────────────
+// Codex: app-server protocol — each protocol method maps to one capability key.
 export const CODEX_APPROVAL_METHODS = Object.freeze({
 	"item/commandExecution/requestApproval": "command",
 	"item/fileChange/requestApproval": "file-change",
 	"item/permissions/requestApproval": "permissions"
+});
+
+// Claude Code: stream-json protocol — each tool_use name maps to one capability.
+// These are the write-capable tools Claude Code may emit; read tools (Read,
+// WebFetch, Glob, Grep, etc.) are always allowed silently.
+export const CLAUDE_APPROVAL_METHODS = Object.freeze({
+	"Bash": "command",
+	"Write": "file-change",
+	"MultiWrite": "file-change",
+	"Edit": "file-change",
+	"Delete": "file-change",
+	"NpmcliLifecyclePlugin": "command",
+	"WebSearch": "exec",
+	"WebFetcher": "exec"
+});
+
+// Qwen Code: stream-json protocol — same mapping as Claude (Wenxin/Workspace-compatible tool names).
+export const QWEN_APPROVAL_METHODS = Object.freeze({
+	"Bash": "command",
+	"Write": "file-change",
+	"MultiWrite": "file-change",
+	"Edit": "file-change",
+	"Delete": "file-change",
+	"NpmcliLifecyclePlugin": "command",
+	"WebSearch": "exec",
+	"WebFetcher": "exec"
 });
 
 export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "rejected", "cancelled", "unavailable"]);
@@ -145,8 +173,84 @@ export function codexApprovalResponse(request, outcome) {
 }
 
 export function permissionReason(request) {
-	const actor = request.childId ? `Codex 子代理 ${request.childId}` : "Codex CLI";
+	const cliName = request.cli === "codex" ? "Codex" : request.cli === "claude" ? "Claude Code" : "Qwen Code";
+	const actor = request.childId ? `${cliName} 子代理 ${request.childId}` : `${cliName} CLI`;
 	const target = request.target ? `，目标：${request.target}` : "";
 	const reason = request.reason ? `，原因：${request.reason}` : "";
-	return `${actor} 请求 ${request.capability} 权限${target}${reason}。本次仅放行当前请求；拒绝后原 Codex turn 将收到拒绝结果并继续或结算。`;
+	return `${actor} 请求 ${request.capability} 权限${target}${reason}。本次仅放行当前请求；拒绝后原 CLI turn 将收到拒绝结果并继续或结算。`;
+}
+
+// ── Unified permission request normalizer for all three CLIs ─────────────────
+// Transforms each CLI's native event into the canonical form that
+// resolvePermission() in managed-cli-agents.js consumes.
+
+/** Map a tool name to the normalized permission capability key. */
+function toolCapability(toolName) {
+	if (!toolName || typeof toolName !== "string") return null;
+	if (toolName === "Bash" || toolName === "NpmcliLifecyclePlugin") return "command";
+	if (toolName === "Write" || toolName === "MultiWrite" || toolName === "Edit" || toolName === "Delete") return "file-change";
+	if (toolName === "WebSearch" || toolName === "WebFetcher") return "exec";
+	return null; // read tool — not an approval-worthy capability
+}
+
+/**
+ * Normalize a permission request from any managed CLI into the canonical form:
+ * { requestId, remoteRequestId, childId, cli, pluginSessionId, remoteSessionId,
+ *   turnId, itemId, capability, operation, target, reason, requestedScope,
+ *   supportedDecisions, createdAt, raw }
+ *
+ * @param {"codex"|"claude"|"qwen"} cli
+ * @param {string} method  — protocol method (Codex) or tool name (Claude/Qwen)
+ * @param {object} params  — protocol params or { toolName, toolInput, ... }
+ * @param {object} context — { requestId, childId, pluginSessionId, remoteSessionId, turnId, signal }
+ */
+export function normalizePermissionRequest(cli, method, params = {}, context = {}) {
+	if (!cli || !method) return null;
+
+	if (cli === "codex") {
+		// Delegate to existing Codex normalizer for protocol-level method mapping.
+		return normalizeCodexPermissionRequest(method, params, context);
+	}
+
+	// Claude Code / Qwen Code: method is the tool name; map to capability.
+	const capability = toolCapability(method);
+	if (!capability) return null; // read tool or unknown
+
+	const cliName = cli === "claude" ? "Claude Code" : "Qwen Code";
+	const remoteRequestId = context.remoteRequestId ?? params.approvalId ?? params.itemId ?? null;
+
+	// Build a human-readable operation label.
+	const toolName = method;
+	const toolInput = params?.toolInput;
+	let operation = `${cliName}:${toolName}`;
+	if (toolInput) {
+		if (toolInput.file_path || toolInput.path) operation += ` ${toolInput.file_path || toolInput.path}`;
+		else if (toolInput.command) operation += ` → ${String(toolInput.command).slice(0, 60)}`;
+		else if (toolInput.url) operation += ` → ${toolInput.url}`;
+	}
+
+	// Determine the target for display.
+	let target = null;
+	if (toolInput) {
+		target = toolInput.file_path || toolInput.path || toolInput.command || toolInput.url || null;
+	}
+
+	return Object.freeze({
+		requestId: context.requestId ?? `cli-permission-${randomUUID()}`,
+		remoteRequestId: remoteRequestId == null ? "" : String(remoteRequestId),
+		childId: context.childId ?? null,
+		cli,
+		pluginSessionId: context.pluginSessionId ?? null,
+		remoteSessionId: context.remoteSessionId ?? params.threadId ?? null,
+		turnId: context.turnId ?? null,
+		itemId: params.itemId ?? null,
+		capability,         // "command" | "file-change" | "exec"
+		operation,
+		target,
+		reason: params.reason ?? null,
+		requestedScope: null,
+		supportedDecisions: ["allowed-once", "rejected", "cancelled"],
+		createdAt: new Date().toISOString(),
+		raw: Object.freeze({ ...params })
+	});
 }
