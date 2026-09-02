@@ -295,8 +295,11 @@ async function main() {
 			console.log(`  [${ok ? "ok" : "FAIL"}] argv --permission-mode=${mode} 期望=${CLAUDE_MODE_BY_TIER[tier]}`);
 			if (!ok) failures++;
 		} else if (entry.id === "qwen") {
-			const ok = argv.includes("--sandbox") === (tier === "read-only");
-			console.log(`  [${ok ? "ok" : "FAIL"}] argv --sandbox=${argv.includes("--sandbox")} 期望=${tier === "read-only"}`);
+			// No CLI-side permission flag at any tier: boolean --sandbox needs
+			// docker/podman and dies silently (empty reply, exit 0) on stock
+			// machines. Enforcement lives in the driver layer.
+			const ok = !argv.includes("--sandbox");
+			console.log(`  [${ok ? "ok" : "FAIL"}] argv --sandbox=${argv.includes("--sandbox")} 期望=false(任意档位)`);
 			if (!ok) failures++;
 		}
 

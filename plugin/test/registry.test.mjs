@@ -42,11 +42,14 @@ test("permission tier maps into each CLI's argv", () => {
 	assert.ok(claude.argv("t", "", "workspace-write").includes("acceptEdits"));
 	assert.ok(claude.argv("t", "", "danger-full-access").includes("bypassPermissions"));
 	const qwen = cliById("qwen");
-	assert.deepEqual(qwen.argv("t", "", "read-only"), ["--sandbox", "--prompt", "t"]);
+	// Qwen carries no CLI-side permission flag (boolean --sandbox needs
+	// docker/podman and dies silently on stock machines); every tier launches
+	// the same shape and enforcement stays at the driver layer.
+	assert.deepEqual(qwen.argv("t", "", "read-only"), ["--prompt", "t"]);
 	assert.deepEqual(qwen.argv("t", "", "workspace-write"), ["--prompt", "t"]);
 	assert.deepEqual(qwen.argv("t", "", "danger-full-access"), ["--prompt", "t"]);
-	// Unknown tier falls back to the default (read-only).
-	assert.deepEqual(qwen.argv("t", "", "bogus"), ["--sandbox", "--prompt", "t"]);
+	// Unknown tier falls back to the default (read-only) — still no flag.
+	assert.deepEqual(qwen.argv("t", "", "bogus"), ["--prompt", "t"]);
 });
 
 test("headless argv includes unattended flags so codex never prompts for a TTY", () => {
@@ -100,8 +103,9 @@ test("every permission value derives the same coarse tier across all three CLIs"
 		assert.ok(codex.includes("-s") && codex.includes(c.tier), `codex ${label}`);
 		// Claude: --permission-mode mapped from the tier.
 		assert.ok(claude.includes("--permission-mode") && claude.includes(CLAUDE_MODE_BY_TIER[c.tier]), `claude ${label}`);
-		// Qwen: --sandbox only in read-only.
-		assert.equal(qwen.includes("--sandbox"), c.tier === "read-only", `qwen ${label}`);
+		// Qwen: no --sandbox at any tier (docker-dependent, dies silently on
+		// stock machines); enforcement is the driver layer's job.
+		assert.equal(qwen.includes("--sandbox"), false, `qwen ${label}`);
 	}
 });
 

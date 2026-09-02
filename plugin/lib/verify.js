@@ -265,14 +265,16 @@ export async function ensureCliProviderConfig(ctx, entry, route) {
 		const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
 		if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
-	// Qwen 的 settings.json 由插件整体托管（渲染为固定对象，无可保留的用户字段），
-	// 所以门是「内容一致」而非指纹：盘上文件与将写入内容逐字节相同时跳过重写。
-	// 这不只是省一次写——宿主 fs 沙箱默认 workspace-write 时统一目录的写会被
-	// 拒（FS_SANDBOX_DENIED），无条件重写会让 qwen 的 test/direct/subagent 全
-	// 通道在默认部署下必挂；预写一次正确内容后此短路让整条链路免写运行。
+	// Qwen 的门是「语义一致」：只比对插件拥有的字段（openai 路由条目、yolo
+	// approvalMode、auth 类型——兼容 selectedAuthType 旧位与 security.auth 迁移位），
+	// qwen 自己的字段（$version、security 结构等）不碰。字节级比对不可用：qwen
+	// 0.22.3 启动即迁移自身 settings.json（selectedAuthType → security.auth.selectedType
+	// + $version），首跑后字节门必破。这也不只是省一次写——宿主 fs 沙箱默认
+	// workspace-write 时统一目录的写会被拒（FS_SANDBOX_DENIED），无条件重写会让
+	// qwen 的 test/direct/subagent 全通道在默认部署下必挂。
 	if (entry.id === "qwen") {
 		const existing = await readTextIfAny(ctx, cfgPath, fs);
-		if (existing === content) return { supported: true, ok: true, uptodate: true, cfgPath };
+		if (existing !== null && qwenSettingsCurrent(existing, route, pc)) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
@@ -355,6 +357,29 @@ export function qwenSettings(route, pc, permission) {
 		},
 		tools: { approvalMode }
 	}, null, 2);
+}
+
+/**
+ * Whether an on-disk qwen settings.json already carries the live route.
+ * Qwen rewrites its own settings on startup (verified 0.22.3: it migrates
+ * top-level `selectedAuthType` into `security.auth.selectedType` and stamps
+ * `$version`), so a byte-exact gate breaks after the FIRST CLI run and every
+ * later dispatch then hits a sandbox-denied rewrite. Compare only the fields
+ * the plugin owns — the openai provider entry (model / envKey / baseUrl), the
+ * yolo approval posture, and the auth type in either its legacy or migrated
+ * spelling — and leave qwen's own fields untouched.
+ */
+export function qwenSettingsCurrent(text, route, pc) {
+	if (typeof text !== "string") return false;
+	let parsed;
+	try { parsed = JSON.parse(text); } catch { return false; }
+	const providers = parsed && parsed.modelProviders && Array.isArray(parsed.modelProviders.openai) ? parsed.modelProviders.openai : [];
+	const entry = providers.find((p) => p && p.id === route.model) || null;
+	if (!entry) return false;
+	if (entry.envKey !== pc.apiKeyEnv || entry.baseUrl !== pc.baseURL) return false;
+	if (!parsed.tools || parsed.tools.approvalMode !== qwenApprovalMode()) return false;
+	const auth = parsed.selectedAuthType ?? (parsed.security && parsed.security.auth && parsed.security.auth.selectedType);
+	return auth === "openai";
 }
 
 /**

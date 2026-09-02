@@ -25,7 +25,8 @@ import {
 	localizeCliError,
 	isOkReply,
 	permissionOf,
-	ensureCliProviderConfig
+	ensureCliProviderConfig,
+	qwenSettingsCurrent
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
@@ -437,6 +438,63 @@ test("ensureCliProviderConfig skips the qwen write when content matches", async 
 	assert.equal(r.ok, true);
 	assert.equal(r.uptodate, true);
 	assert.equal(wrote, null, "no fs write when the on-disk settings match the rendered content");
+});
+
+test("ensureCliProviderConfig skips the qwen write after qwen migrated its own settings", async () => {
+	// qwen 0.22.3 rewrites settings.json on startup: selectedAuthType moves into
+	// security.auth.selectedType and $version is stamped. The gate must accept
+	// the migrated shape (semantic match on plugin-owned fields), or every run
+	// after the first hits a sandbox-denied rewrite.
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	const migrated = JSON.stringify({
+		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "yolo" },
+		security: { auth: { selectedType: "openai" } },
+		$version: 4
+	}, null, 2);
+	let wrote = null;
+	const ctx = sampleCtx({
+		value: { models: { qwen: route }, permissions: {} },
+		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
+	});
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => migrated,
+				writeText: async (target, content) => { wrote = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r = await ensureCliProviderConfig(ctx, qwen, route);
+	assert.equal(r.ok, true);
+	assert.equal(r.uptodate, true);
+	assert.equal(wrote, null, "no fs write against qwen's own migrated settings shape");
+});
+
+test("qwenSettingsCurrent rejects a stale route in the migrated shape", () => {
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	const stale = JSON.stringify({
+		modelProviders: { openai: [{ id: "other-model", envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "yolo" },
+		security: { auth: { selectedType: "openai" } },
+		$version: 4
+	});
+	assert.equal(qwenSettingsCurrent(stale, route, pc), false);
+	const wrongBase = JSON.stringify({
+		modelProviders: { openai: [{ id: route.model, envKey: pc.apiKeyEnv, baseUrl: "https://elsewhere/v1" }] },
+		tools: { approvalMode: "yolo" },
+		security: { auth: { selectedType: "openai" } },
+		$version: 4
+	});
+	assert.equal(qwenSettingsCurrent(wrongBase, route, pc), false);
+	assert.equal(qwenSettingsCurrent("not json", route, pc), false);
+	assert.equal(qwenSettingsCurrent(null, route, pc), false);
 });
 
 test("ensureCliProviderConfig rewrites qwen settings when content differs", async () => {

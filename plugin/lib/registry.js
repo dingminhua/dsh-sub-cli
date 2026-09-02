@@ -84,11 +84,14 @@ export const CLI_REGISTRY = [
 		configDir: "config-qwen",
 		npm: "@qwen-code/qwen-code",
 		argv: (task, model, permission) => {
-			// Qwen only exposes a boolean `--sandbox`; map read-only → sandbox on,
-			// workspace-write / danger-full-access → no flag (Qwen has no finer
-			// granularity; document this limitation).
+			// No CLI-side permission flag for Qwen: its only candidate, boolean
+			// --sandbox, shells out to docker/podman and on stock machines
+			// (Windows without docker) the run dies silently with an empty reply
+			// and exit 0 — strictly worse than running ungated. Permission
+			// enforcement is the driver layer's job (launch at yolo, intercept
+			// each tool_use); this template only shapes the probe / one-shot
+			// dispatch launch, which must mirror the driver channels.
 			const args = [];
-			if (tierOf(permission) === "read-only") args.push("--sandbox");
 			if (model) args.push("--model", model);
 			args.push("--prompt", task);
 			return args;
