@@ -10,7 +10,7 @@
 import path from "node:path";
 import os from "node:os";
 import { cliById, DEFAULT_PERMISSION } from "./registry.js";
-import { normalizePermission } from "./permissions.js";
+import { normalizePermission, deriveSandboxMode } from "./permissions.js";
 import { binPath, envFor, PLATFORM } from "./paths.js";
 import { winShimArgv } from "./dispatch.js";
 
@@ -264,7 +264,7 @@ export async function ensureCliProviderConfig(ctx, entry, route) {
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
 	}
-	const content = entry.id === "qwen" ? qwenSettings(route, pc) : gateToml(codexToml(route, pc), route, pc, fp);
+	const content = entry.id === "qwen" ? qwenSettings(route, pc, permissionOf(ctx, entry.id)) : gateToml(codexToml(route, pc), route, pc, fp);
 	try {
 		await runEnsureDir(ctx, cfgDir);
 		const target = await fs.resolve(cfgPath, {}, undefined);
@@ -310,14 +310,47 @@ export function currentDir(ctx) {
 	return d.indexOf("~") === 0 ? os.homedir() + d.slice(1) : d;
 }
 
-/** Render Qwen Code settings for one OpenAI-compatible provider. */
-export function qwenSettings(route, pc) {
+/** Map a coarse sandbox tier to Qwen Code's tools.approvalMode value.
+ * Qwen's headless -p mode composes its toolset from the approval mode: under
+ * the default "auto" the session has NO write tools at all (no write_file /
+ * edit / shell), so a write-capability grant must be expressed here or the
+ * CLI simply cannot mutate anything. Verified against qwen 0.22.2:
+ * plan = read-only toolset; auto-edit = write/edit tools, edits auto-approved
+ * (works for absolute paths outside the cwd too); yolo = everything, no
+ * prompts (matches the danger tier where exec already implies full trust). */
+export function qwenApprovalMode(tier) {
+	if (tier === "danger-full-access") return "yolo";
+	if (tier === "workspace-write") return "auto-edit";
+	return "plan";
+}
+
+/** Render Qwen Code settings for one OpenAI-compatible provider. The third
+ * argument is the stored permission (profile object or legacy tier string);
+ * it decides tools.approvalMode, without which a headless Qwen session has no
+ * write-capable tools regardless of the plugin's own permission model. */
+export function qwenSettings(route, pc, permission) {
+	const approvalMode = qwenApprovalMode(deriveSandboxMode(normalizePermission(permission)));
 	return JSON.stringify({
 		selectedAuthType: "openai",
 		modelProviders: {
 			openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }]
-		}
+		},
+		tools: { approvalMode }
 	}, null, 2);
+}
+
+/**
+ * Codex appends `responses` straight onto `base_url` with no path insertion of
+ * its own, so the configured base MUST already end in `/v1`. A supplier whose
+ * baseURL is bare (`https://host/`) makes Codex request `https://host/responses`
+ * and the edge answers 405 — seen with zzztoken on 2026-09-02, where the only
+ * user-visible symptom was `CLI 执行失败：Reading additional input from stdin...`
+ * while the real cause sat in stdout
+ * (`unexpected status 405 Method Not Allowed ... url: https://host/responses`).
+ * Normalize once here; joinApiPath keeps an already-suffixed base untouched.
+ */
+export function codexBaseUrl(baseURL) {
+	return joinApiPath(stripTrailingV1(baseURL), "v1");
 }
 
 /** Render the Codex config.toml that points Codex at a supplier. Pure/testable. */
@@ -327,11 +360,12 @@ export function codexToml(route, pc) {
 		`model_provider = "${route.provider}"`,
 		`[model_providers.${route.provider}]`,
 		`name = "${route.provider}"`,
-		`base_url = "${pc.baseURL}"`,
+		`base_url = "${codexBaseUrl(pc.baseURL)}"`,
 		`env_key = "${pc.apiKeyEnv}"`,
 		`wire_api = "responses"`
 	].join("\n");
 }
+
 
 /**
  * Probe whether a supplier supports Responses tool continuation, which Codex
@@ -583,8 +617,10 @@ export function isCodexMetadataWarning(message) {
 }
 
 /**
- * Probe one CLI: write its supplier config, resolve key, run the CLI once, and
- * confirm it answers. Returns { ok, reply, version } or { ok:false, error }.
+ * Probe one CLI: write its supplier config, resolve key, run the CLI with the
+ * configured route, and confirm it answers. A transient supplier quirk (exit 0
+ * with an empty reply) is retried a bounded number of times; deterministic
+ * failures fail fast. Returns { ok, reply, version } or { ok:false, error }.
  */
 export async function testCli(ctx, cliId, signal) {
 	const entry = cliById(cliId);
@@ -600,22 +636,43 @@ export async function testCli(ctx, cliId, signal) {
 	const bin = binPath(dir, entry.bin, PLATFORM);
 	const resolved = await ctx.subprocess.resolveExecutable(bin, env, signal).catch(() => null);
 	if (!resolved) return { ok: false, error: `未找到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
-	const argv = winShimArgv(resolved, entry.argv("Reply with exactly: OK"), PLATFORM);
+	// Probe with the CONFIGURED route (model + permission), not the CLI's own
+	// defaults. Qwen without --model falls back to its built-in default model,
+	// which has no provider entry in the isolated settings — the run then dies
+	// with "Missing API key for OpenAI-compatible auth" even though the
+	// configured route is fine (codex/claude only masked this because their
+	// config files carry the model). Passing the real permission also makes the
+	// test exercise the exact launch argv a real dispatch/subagent run uses.
+	const argv = winShimArgv(resolved, entry.argv("Reply with exactly: OK", route.model, permissionOf(ctx, cliId)), PLATFORM);
 	let reply = "";
 	let stdout = "";
-	try {
-		const handle = ctx.subprocess.spawn({ argv, cwd: dir, env, signal, stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 60000 });
-		const outcome = await handle.done;
-		const out = handle.collected && handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : "";
-		stdout = out;
-		const err = handle.collected && handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : "";
-		if (outcome.exitCode !== 0) return { ok: false, error: localizeCliError(cliId, err.trim() || extractCodexError(out) || out.trim() || `退出码 ${outcome.exitCode}`) };
-		reply = extractCliReply(cliId, out);
-	} catch (error) {
-		return { ok: false, error: localizeCliError(cliId, error instanceof Error ? error.message : String(error)) };
+	// Bounded retry for a KNOWN transient supplier quirk: exit code 0 with an
+	// empty reply. Measured on aixforge + deepseek-v4-flash via Qwen Code: the
+	// supplier sometimes lands the whole answer in reasoning_content and returns
+	// an empty content field (curl repro ~20%, through the CLI ~50%); the CLI
+	// prints only content, so the run exits 0 with empty stdout. A verification
+	// failure is cached by fingerprint and then locks the CLI's
+	// direct/subagent channels via preflight, so one transient empty must not
+	// fail the test. Deterministic failures (non-zero exit: auth/config) and a
+	// NON-EMPTY wrong reply are not retried — they fail fast.
+	const PROBE_ATTEMPTS = 4;
+	for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
+		try {
+			const handle = ctx.subprocess.spawn({ argv, cwd: dir, env, signal, stdio: { stdin: "ignore", stdout: { maxBytes: 200000 }, stderr: { maxBytes: 200000 } }, graceMs: 60000 });
+			const outcome = await handle.done;
+			const out = handle.collected && handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : "";
+			const err = handle.collected && handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : "";
+			stdout = out;
+			if (outcome.exitCode !== 0) return { ok: false, error: localizeCliError(cliId, err.trim() || extractCodexError(out) || out.trim() || `退出码 ${outcome.exitCode}`) };
+			reply = extractCliReply(cliId, out);
+			// 兼容模型回声：isOkReply 接受 "OK\nOK"（多次 agent_message），只要每行
+			// 都是 OK 就算通过。空回复（退出 0）是瞬态签名 → 重试；非空回复
+			//（无论对错）就此定局。
+			if (reply.trim() !== "" || attempt === PROBE_ATTEMPTS) break;
+		} catch (error) {
+			return { ok: false, error: localizeCliError(cliId, error instanceof Error ? error.message : String(error)) };
+		}
 	}
-	// 兼容模型回声：isOkReply 接受 "OK\nOK"（多次 agent_message），只要每行
-	// 都是 OK 就算通过，避免把正常供应商/模型误判为连通失败。
 	if (!isOkReply(reply)) {
 		const codexError = cliId === "codex" ? extractCodexError(stdout) : "";
 		if (codexError) return { ok: false, error: localizeCliError(cliId, codexError) };

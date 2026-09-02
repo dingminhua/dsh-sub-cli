@@ -7,10 +7,12 @@
 // surface. `--resume <id>` reattaches the on-disk history.
 //
 // Permission model:
-//   Qwen maps permission tiers to CLI flags:
-//     read-only        → no extra flag (default; tools that mutate fail)
-//     workspace-write  → --sandbox write  (if supported; falls back silently)
-//     danger-full     → --no-sandbox (if supported)
+//   Qwen expresses the caller's tier through settings.json
+//   (tools.approvalMode, written by qwenSettings in verify.js), NOT through
+//   CLI flags — qwen 0.22.2 has no --yolo / --permission-mode argv, and under
+//   the default "auto" approval mode a headless -p session registers NO
+//   write tools at all. The mapping (plan / auto-edit / yolo) rides the
+//   isolated config the driver's prepare step rewrites before every run.
 //
 //   Qwen's stream-json mode does not surface interactive permission requests
 //   in the same way as Codex's app-server. The caller chooses the tier

@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
     var SETTINGS_CSS = ".dsc-card{display:grid;gap:12px;margin:18px 0;padding:14px 16px;background:var(--dsw-alias-bg-layer-1,#1c1d21);border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:12px}.dsc-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-grand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.dsc-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-input{width:100%;height:32px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-select{width:100%;height:32px;padding:0 28px 0 9px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit}.dsc-select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-route{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;padding:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}.dsc-cli{margin-top:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px}.dsc-cli-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.dsc-cli-test-hint{margin-top:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-cli-test-hint-error{color:#ef4444}.dsc-cli-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.dsc-cli-actions button{min-height:24px!important;height:24px!important;padding:0 7px!important;font-size:11px!important;line-height:22px!important}.dsc-cli-notice{margin:-2px 0 6px;font-size:11px;color:#2ed084;text-align:right}.dsc-cli-notice-error{color:#ef4444}.dsc-install-cmd{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529)}.dsc-install-cmd-pre{margin:0 0 6px;padding:8px;border-radius:6px;background:var(--dsw-alias-bg-layer-1,#1c1d21);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-all;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-guide{margin-top:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l2,#36373b)}.dsc-guide-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:8px}.dsc-guide-row{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);flex-wrap:wrap;padding:6px 0;border-bottom:1px dashed var(--dsw-alias-border-l2,#36373b)}.dsc-guide-row:last-child{border-bottom:0}.dsc-guide-row code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-bg-layer-2,#232529);padding:0 4px;border-radius:4px}.dsc-guide-ex{display:block;width:100%;color:var(--dsw-alias-label-tertiary,#999);margin-top:1px}.dsc-verified{font-size:11px;line-height:20px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}.dsc-verified-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-cli-install{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap}.dsc-cli-status{font:inherit;line-height:inherit;color:inherit}.dsc-conn-ok{color:var(--dsw-alias-label-success,#4ea77a)}.dsc-conn-fail{color:#ef4444}.dsc-dir-head{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-dir-note{font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary,#b8b8b8)}.dsc-model-hint{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-top:6px;text-align:center}@media(max-width:760px){.dsc-cli-title-row{align-items:flex-start}.dsc-cli-actions{max-width:58%}}.dsc-cli-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary,#e6e6e6);margin-bottom:6px}.dsc-cli-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:0 6px;border-radius:10px}.dsc-cli-badge-ok{background:rgba(46,208,130,0.15);color:#2ed084}.dsc-cli-badge-bad{background:rgba(242,90,90,0.15);color:#ef4444}.dsc-cli-ver{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}.dsc-footer{border-top:1px solid var(--dsw-alias-border-l2,#36373b);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 0 0}.dsc-footer-left{display:flex;align-items:center;gap:10px;min-width:0;margin-right:auto}.dsc-cheer{display:inline-flex;align-items:center;gap:4px;flex:none;text-decoration:underline;text-underline-offset:2px;color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5;transition:color .16s}.dsc-cheer-star{font-size:12px;line-height:1;display:inline-flex}.dsc-cheer:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}.dsc-cheer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}.dsc-footer-status{min-width:0;color:var(--dsw-alias-label-secondary,#b8b8b8);font-size:12px;line-height:1.5}.dsc-footer-error{flex:1;min-width:0;color:var(--dsw-alias-label-error,#ef4444);font-size:12px;line-height:1.5}.dsc-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8a8a8a)}.dsm-btn{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.dsm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:1px}.dsm-btn:disabled{opacity:.4;cursor:default}.dsm-btn-outline{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent}.dsm-btn-outline:hover:not(:disabled){color:var(--dsw-alias-label-primary,#e6e6e6);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-btn-primary{background:var(--dsw-alias-label-primary,#e6e6e6);color:var(--dsw-alias-bg-layer-3,#202126)}.dsm-btn-primary:hover:not(:disabled){opacity:.9}.dsm-plugin-card-body .dsc-card{margin:0;padding:12px 0 0;background:transparent;border:0;border-radius:0}.dsm-plugin-card-body .dsc-card .dsc-title{display:none}.dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}.dsm-plugin-card{border:1px solid var(--dsw-alias-border-l2,#36373b);background:var(--dsw-alias-bg-layer-3,#202126);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.dsm-plugin-card:hover{border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-open{background:var(--dsw-alias-bg-layer-2,#25262b);border-color:var(--dsw-alias-label-dimmed,#777)}.dsm-plugin-card-header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.dsm-plugin-card-header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:-2px}.dsm-plugin-card-head{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.dsm-plugin-card-title{color:var(--dsw-alias-label-primary,#e6e6e6);font-size:15px;font-weight:600;line-height:1.4}.dsm-plugin-card-description{color:var(--dsw-alias-label-tertiary,#999);font-size:13px;line-height:1.5}.dsm-plugin-card-chevron{color:var(--dsw-alias-label-tertiary,#999);flex:none;display:inline-flex;transition:transform .16s}.dsm-plugin-card-chevron-open{transform:rotate(180deg)}.dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}";
 
     // Fine-grained permission controls styles (appended to the main sheet).
-    var PERM_CSS = ".dsc-perm-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-perm-approval{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}.dsc-perm-note-inline{font-size:10px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.3;min-width:0;overflow-wrap:break-word}.dsc-perm-toggles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.dsc-perm-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);line-height:1.3;min-width:0}.dsc-perm-toggle input{accent-color:var(--dsw-alias-state-business-primary,#5686fe);margin:0;flex:none}.dsc-perm-toggle span{min-width:0;overflow-wrap:break-word}.dsc-perm-note{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.3;border:1px dashed var(--dsw-alias-border-l2,#36373b);border-radius:6px;padding:2px 6px;min-width:0;overflow-wrap:break-word}.dsc-ac-block{position:relative;width:100%;min-width:0;box-sizing:border-box;margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-ac-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;flex-wrap:wrap}.dsc-ac-max{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap;flex:none}.dsc-ac-max select{width:64px;height:28px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-ac-max select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-ac-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.4;min-width:0;overflow-wrap:break-word;word-break:break-word}";
+    var PERM_CSS = ".dsc-perm-block{margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-perm-toggles{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}.dsc-perm-approval{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap;flex:none;margin-left:auto}.dsc-perm-approval select{width:auto;min-width:56px;height:28px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-perm-approval select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-perm-tier{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap;flex:none}.dsc-perm-tier select{width:auto;min-width:110px;height:28px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-perm-tier select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-ac-block{position:relative;width:100%;min-width:0;box-sizing:border-box;margin-top:6px;padding-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#36373b);display:grid;gap:8px;grid-column:1/-1}.dsc-ac-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;flex-wrap:wrap}.dsc-ac-max{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary,#b8b8b8);white-space:nowrap;flex:none}.dsc-ac-max select{width:64px;height:28px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#232529);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;box-sizing:border-box}.dsc-ac-max select:focus{outline:2px solid var(--dsw-alias-state-business-primary,#5686fe);outline-offset:1px}.dsc-ac-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8a8a8a);line-height:1.4;min-width:0;overflow-wrap:break-word;word-break:break-word}";
 
     if (typeof document !== "undefined") {
       var cssId = "dsh-sub-cli/client.css";
@@ -52,12 +52,8 @@ window.__ModuleLoader__.load({
       "row.model": "模型",
       "row.effort": "推理强度",
       "row.permission": "权限",
-      "row.permHint": "能力开关按需开启；审批模式决定是否需要弹窗确认。",
-      "row.read": "读文件",
-      "row.write": "写文件",
-      "row.exec": "执行命令",
-            "row.approval": "未勾选时",
-      "row.approvalHint": "未勾选的权限被用到时，按此选择。",
+      "row.permHint": "只读包含读取；可写包含只读；可调用工具包含前两者并允许执行命令。",
+      "row.approval": "未勾选时触发",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
       "row.turnTimeout": "轮次超时",
@@ -121,12 +117,8 @@ window.__ModuleLoader__.load({
       "row.model": "Model",
       "row.effort": "Reasoning effort",
       "row.permission": "Permission",
-      "row.permHint": "Enable capabilities as needed; the approval mode decides whether a prompt appears.",
-      "row.read": "Read files",
-      "row.write": "Write files",
-      "row.exec": "Run commands",
-            "row.approval": "When unchecked",
-      "row.approvalHint": "When an unchecked capability comes up, follow this choice.",
+      "row.permHint": "Read-only includes reading; Writable includes read-only; Tool access includes both and allows running commands.",
+      "row.approval": "On unchecked trigger",
       "row.autoContinueMax": "Max nudges (0 = off)",
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
       "row.turnTimeout": "Turn timeout",
@@ -182,13 +174,23 @@ window.__ModuleLoader__.load({
       "guide.dispatchEx": "Have Codex run this task headlessly."
     };
 
-    // Fine-grained permission presets. Each carries the capability profile it
-    // maps to; `custom` is chosen in the UI when the profile matches none.
+    // Permission tiers shown as ONE mutually-exclusive dropdown. Each tier
+    // includes the content of every tier above it (read ⊆ write ⊆ tools), so
+    // the three old checkboxes are replaced by a single tier select. Stored
+    // values stay profile-shaped ({read,write,exec,approval}) for the host.
     var PERMISSION_PRESETS = [
       { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false, approval: "ask" } },
-      { id: "workspace-write", label: "工作区可写", profile: { read: true, write: true, exec: false, approval: "ask" } },
-      { id: "danger-full-access", label: "完全", profile: { read: true, write: true, exec: true, approval: "ask" } }
+      { id: "workspace-write", label: "可写", profile: { read: true, write: true, exec: false, approval: "ask" } },
+      { id: "danger-full-access", label: "可调用工具", profile: { read: true, write: true, exec: true, approval: "ask" } }
     ];
+    // Profile → tier id, mirroring the host's deriveSandboxMode: exec wins,
+    // then write, otherwise read-only. Used to select the dropdown value for
+    // any stored profile (legacy string tier, preset profile, or custom mix).
+    function presetIdOf(permission) {
+      if (permission && permission.exec) return "danger-full-access";
+      if (permission && permission.write) return "workspace-write";
+      return "read-only";
+    }
     // Approval is the strategy for UNCHECKED capabilities only: ask interactively
     // or auto-deny. "allow" is gone — checking the box already is the allow.
     var APPROVAL_OPTIONS = [
@@ -345,29 +347,29 @@ window.__ModuleLoader__.load({
         ),
         React.createElement("div", { className: "dsc-perm-block", style: { gridColumn: "1 / -1" } },
           React.createElement("div", { className: "dsc-perm-toggles" },
-            React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.read, onChange: function (e) { props.onPermissionChange({ read: e.target.checked, write: permission.write, exec: permission.exec, approval: permission.approval }); } }),
-              React.createElement("span", null, t("row.read"))
+            // One mutually-exclusive tier dropdown: 只读 ⊆ 可写 ⊆ 可调用工具.
+            // The selected preset's full profile is written on change, keeping
+            // the approval strategy (ask/never) for capabilities a lower tier
+            // does not grant.
+            React.createElement("label", { className: "dsc-perm-tier" }, t("row.permission"),
+              React.createElement("select", { value: presetIdOf(permission), onChange: function (e) {
+                var chosen = null;
+                for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === e.target.value) { chosen = PERMISSION_PRESETS[pi].profile; break; }
+                if (chosen) props.onPermissionChange({ read: chosen.read, write: chosen.write, exec: chosen.exec, approval: permission.approval });
+              } },
+                PERMISSION_PRESETS.map(function (p) { return React.createElement("option", { key: p.id, value: p.id }, p.label); })
+              )
             ),
-            React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.write, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: e.target.checked, exec: permission.exec, approval: permission.approval }); } }),
-              React.createElement("span", null, t("row.write"))
-            ),
-            React.createElement("label", { className: "dsc-perm-toggle" },
-              React.createElement("input", { type: "checkbox", checked: permission.exec, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: e.target.checked, approval: permission.approval }); } }),
-              React.createElement("span", null, t("row.exec"))
-            )
             // No network toggle: exec already carries egress intent — npm
             // install / git pull are ordinary commands, and the host-side
             // normalizer maps legacy network:true onto exec.
-          ),
-          React.createElement("div", { className: "dsc-perm-approval" },
-            React.createElement("label", { className: "dsc-ac-max" }, t("row.approval"),
+            // Approval rides the same row, right-aligned: it only fires when
+            // a capability NOT granted by the current tier is triggered.
+            React.createElement("label", { className: "dsc-perm-approval" }, t("row.approval"),
               React.createElement("select", { value: permission.approval, onChange: function (e) { props.onPermissionChange({ read: permission.read, write: permission.write, exec: permission.exec, approval: e.target.value }); } },
                 APPROVAL_OPTIONS.map(function (a) { return React.createElement("option", { key: a.id, value: a.id }, a.label); })
               )
-            ),
-            React.createElement("span", { className: "dsc-perm-note-inline" }, t("row.approvalHint"))
+            )
           )
         ),
         React.createElement("div", { className: "dsc-ac-block" },

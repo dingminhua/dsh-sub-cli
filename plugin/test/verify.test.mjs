@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
 	fingerprint,
 	codexToml,
+	codexBaseUrl,
 	qwenSettings,
 	stripTrailingV1,
 	joinApiPath,
@@ -146,6 +147,43 @@ test("qwenSettings selects an OpenAI-compatible provider without persisting a ke
 	assert.equal(JSON.stringify(value).includes("sk-"), false);
 });
 
+test("qwenSettings maps the permission tier to tools.approvalMode so headless writes exist", () => {
+	// Without tools.approvalMode a headless -p qwen session registers NO write
+	// tools (default "auto" drops write_file/edit from the toolset — verified
+	// against qwen 0.22.2), so the write grant must ride the settings file.
+	const readWriteExec = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		{ read: true, write: true, exec: true, approval: "ask" }
+	));
+	assert.equal(readWriteExec.tools.approvalMode, "yolo");
+	const readWrite = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		{ read: true, write: true, exec: false, approval: "ask" }
+	));
+	assert.equal(readWrite.tools.approvalMode, "auto-edit");
+	const readOnly = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		{ read: true, write: false, exec: false, approval: "ask" }
+	));
+	assert.equal(readOnly.tools.approvalMode, "plan");
+	// Missing permission defaults to the read-only tier (plan).
+	const absent = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" }
+	));
+	assert.equal(absent.tools.approvalMode, "plan");
+	// Legacy tier strings normalize through the same path.
+	const legacy = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		"danger-full-access"
+	));
+	assert.equal(legacy.tools.approvalMode, "yolo");
+});
+
 test("codexToml points Codex at the supplier with responses wire", () => {
 	const toml = codexToml(
 		{ provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "max" },
@@ -156,6 +194,31 @@ test("codexToml points Codex at the supplier with responses wire", () => {
 	assert.ok(toml.includes('base_url = "https://api.supxh.xin/v1"'));
 	assert.ok(toml.includes('env_key = "K3_BAOYUE_API_KEY"'));
 	assert.ok(toml.includes('wire_api = "responses"'));
+});
+
+test("codexToml forces a /v1 base so Codex does not hit the bare host", () => {
+	// Codex concatenates `responses` onto base_url itself, so a bare base
+	// (https://host/) makes it request https://host/responses → 405 behind
+	// nginx (zzztoken, 2026-09-02). The rendered base must end in /v1.
+	const bare = codexToml(
+		{ provider: "zzztoken", model: "deepseek-v4-flash", reasoningEffort: "max" },
+		{ baseURL: "https://api.zzztoken.cn/", apiKeyEnv: "ZZZTOKEN_API_KEY" }
+	);
+	assert.ok(bare.includes('base_url = "https://api.zzztoken.cn/v1"'));
+	const trailingSlash = codexToml(
+		{ provider: "zzztoken", model: "deepseek-v4-flash", reasoningEffort: "max" },
+		{ baseURL: "https://api.zzztoken.cn/v1/", apiKeyEnv: "ZZZTOKEN_API_KEY" }
+	);
+	assert.ok(trailingSlash.includes('base_url = "https://api.zzztoken.cn/v1"'), "an already-suffixed base is not doubled");
+	const alreadyV1 = codexToml(
+		{ provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "max" },
+		{ baseURL: "https://api.supxh.xin/v1", apiKeyEnv: "K3_BAOYUE_API_KEY" }
+	);
+	assert.ok(alreadyV1.includes('base_url = "https://api.supxh.xin/v1"'));
+	assert.equal(codexBaseUrl("https://api.example.com"), "https://api.example.com/v1");
+	assert.equal(codexBaseUrl("https://api.example.com/v1"), "https://api.example.com/v1");
+	assert.equal(codexBaseUrl("https://api.example.com/v1/"), "https://api.example.com/v1");
+	assert.equal(codexBaseUrl("https://api.example.com/base/v1"), "https://api.example.com/base/v1");
 });
 
 test("providerConfig resolves baseURL + apiKeyEnv from DSH provider settings", async () => {
