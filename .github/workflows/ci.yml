@@ -1,6 +1,8 @@
 # CI for dsh-sub-cli: run the plugin unit tests and dry-run the npm pack.
-# The suite is cross-platform (tests branch on process.platform and never
-# shell out to POSIX-only commands), so it runs on Linux and Windows alike.
+# The suite is cross-platform (tests branch only on win32 vs POSIX, mock
+# every subprocess, and never shell out to POSIX-only commands), so it runs
+# on Linux, macOS, and Windows alike — darwin and linux share one code path
+# and the darwin branch is unit-tested with an explicit platform: "darwin".
 # `pnpm test` needs no shell glob support: pnpm's script runner expands
 # test/*.test.mjs itself, so cmd.exe on Windows is fine.
 name: CI
@@ -16,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
