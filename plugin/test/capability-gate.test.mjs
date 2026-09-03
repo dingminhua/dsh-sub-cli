@@ -29,18 +29,26 @@ test("bare web vocabulary in a local task does not trip the gate", () => {
 	assert.equal(needsNetwork("read the http header parsing code"), false);
 });
 
-test("every CLI refuses web research: the controller researches itself", () => {
-	// Division of labour: research belongs to the controller (DSH's own search
-	// tools), so the gate refuses research tasks for ALL CLIs symmetrically —
-	// including Claude Code, whose built-in WebSearch only works when the relay
-	// executes server-side tools.
+test("negated network markers are boundary promises, not intent", () => {
+	// Regression: a discussion prompt promised "…不读写个人文件、不联网" and the
+	// bare substring "联网" refused the whole (fully offline) task. Negated
+	// forms must not count as network intent.
+	assert.equal(needsNetwork("只跑测试，不改系统设置、不读写个人文件、不联网"), false);
+	assert.equal(needsNetwork("本任务全程离线，无需联网即可完成"), false);
+	assert.equal(needsNetwork("无法上网的环境下也要能运行"), false);
+	// Positive forms right next to the negation tests must still hit.
+	assert.equal(needsNetwork("请联网查一下这个库的文档"), true);
+	assert.equal(needsNetwork("任务需要联网搜索最新文档"), true);
+});
+
+test("web research is no longer refused at the capability gate (flows to the permission A-gate)", () => {
+	// The user wants each CLI to attempt web research directly — their built-in
+	// tools differ, so real behaviour is the only way to know what works. The
+	// capability gate therefore passes research tasks through; the permission
+	// tier (exec ungranted → A-gate "cannot complete") is the only remaining gate.
 	for (const cli of ["codex", "claude", "qwen"]) {
 		const result = checkCapability(cli, "联网搜索最近 24 小时 AI 新闻");
-		assert.equal(result.ok, false, `${cli} must refuse a research task`);
-		assert.match(result.reason, /主控直接执行/);
-		assert.match(result.reason, /advanced_search/);
-		// The old story — "use Claude Code, it ships WebSearch" — is gone.
-		assert.doesNotMatch(result.reason, /Claude Code（自带/);
+		assert.equal(result.ok, true, `${cli} must no longer refuse a research task at this gate`);
 	}
 });
 
@@ -51,7 +59,7 @@ test("code/file/command tasks pass for every CLI", () => {
 	}
 });
 
-test("an unknown CLI id still runs the prompt check", () => {
-	assert.equal(checkCapability("nope", "联网搜索").ok, false);
+test("an unknown CLI id still passes (later stages reject it)", () => {
+	assert.equal(checkCapability("nope", "联网搜索").ok, true);
 	assert.equal(checkCapability("", "读代码").ok, true);
 });

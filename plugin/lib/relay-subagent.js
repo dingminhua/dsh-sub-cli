@@ -7,6 +7,7 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { RELAY_SUBMIT_TOOL } from "./relay-tools.js";
 import { checkCapability } from "./capability-gate.js";
+import { AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
 
 export function relayPersonaFor(cli) {
 	const name = cli === "qwen" ? "Qwen Code" : cli === "claude" ? "Claude Code" : "Codex";
@@ -57,7 +58,7 @@ export function attachRelayLifecycle(ctx, service) {
 function registerCliSubagentTool(ctx, { cli, displayName, preflight }) {
 	ctx.tools.register(defineTool({
 		name: `cli_${cli}_subagent`,
-		description: `创建一个 DSH 原生可持续 ${displayName} Relay 子代理。该子代理只负责把任务转发给真实 ${displayName} thread并报告结果；返回 subagentId 后可用 send_message 继续、interrupt_agent 中断。适合需要子代理卡片、Transcript 和持续协作的任务。`,
+		description: `创建一个 DSH 原生可持续 ${displayName} Relay 子代理。该子代理只负责把任务转发给真实 ${displayName} thread并报告结果；返回 subagentId 后可用 send_message 继续、interrupt_agent 中断。适合需要子代理卡片、Transcript 和持续协作的任务。\n\n${AUTHORIZATION_DISCIPLINE}`,
 		parameters: {
 			description: { type: "string", required: true, description: "子代理卡片显示的简短标题（3-5 个词）。" },
 			prompt: { type: "string", required: true, description: "首轮完整、自包含任务。" }

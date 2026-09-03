@@ -149,27 +149,80 @@ test("qwenSettings selects an OpenAI-compatible provider without persisting a ke
 	assert.equal(JSON.stringify(value).includes("sk-"), false);
 });
 
-test("qwenSettings always uses tools.approvalMode:yolo — driver-layer enforcement is unified", () => {
-	// Permission enforcement is now entirely at the driver layer
-	// (onPermissionRequest hook → resolvePermission → ctx.approval.request).
-	// The CLI always runs at "yolo" so it registers all tools internally;
-	// the driver intercepts each tool_use and gates it against the user's
-	// stored permission profile. This unifies the UX across all three CLIs.
-	// Every tier maps to "yolo" in the settings file.
-	for (const tier of [
-		{ read: true, write: false, exec: false, approval: "ask" },
-		{ read: true, write: true, exec: false, approval: "ask" },
-		{ read: true, write: true, exec: true, approval: "ask" },
-		undefined,
-		"danger-full-access"
+test("qwenSettings maps the tier onto qwen's own enforcement (plan / auto-edit / yolo)", () => {
+	// Qwen 的 stream-json 不发 tool_use 事件（0.22.3 实测：只有一条 result），
+	// 驱动层没有拦截点——它唯一的执法就是这份 settings.json 里的
+	// tools.approvalMode。因此档位必须写进 CLI 自身配置：
+	//   read-only → plan（写工具根本不注册，物理写不了）
+	//   workspace-write → auto-edit
+	//   danger-full-access → yolo
+	// 缺省/未知档位按最保守的 plan 处理（与 registry 的默认档位一致）。
+	for (const [tier, expected] of [
+		[{ read: true, write: false, exec: false, approval: "ask" }, "plan"],
+		[{ read: true, write: true, exec: false, approval: "ask" }, "auto-edit"],
+		[{ read: true, write: true, exec: true, approval: "ask" }, "yolo"],
+		[undefined, "plan"],
+		["danger-full-access", "yolo"]
 	]) {
 		const value = JSON.parse(qwenSettings(
 			{ provider: "aixforge", model: "deepseek-v4-flash" },
 			{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
 			tier
 		));
-		assert.equal(value.tools.approvalMode, "yolo", `tier=${JSON.stringify(tier)} must map to yolo`);
+		assert.equal(value.tools.approvalMode, expected, `tier=${JSON.stringify(tier)} must map to ${expected}`);
 	}
+});
+
+test("qwenSettings enables built-in webSearch only on the exec tier", () => {
+	// Qwen's web_search is opt-in: it only registers when tools.webSearch.enabled
+	// is true. The exec tier (danger-full-access) carries egress intent, so the
+	// plugin must write it there; lower tiers must NOT (no egress tool).
+	const danger = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		{ read: true, write: true, exec: true, approval: "ask" }
+	));
+	assert.equal(danger.tools.approvalMode, "yolo");
+	assert.deepEqual(danger.tools.webSearch, { enabled: true, model: "deepseek-v4-flash" }, "exec tier enables webSearch");
+
+	const readOnly = JSON.parse(qwenSettings(
+		{ provider: "aixforge", model: "deepseek-v4-flash" },
+		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+		{ read: true, write: false, exec: false, approval: "ask" }
+	));
+	assert.equal(readOnly.tools.approvalMode, "plan");
+	assert.equal(readOnly.tools.webSearch, undefined, "non-exec tier has no webSearch tool");
+});
+
+test("qwenSettingsCurrent treats a mismatched webSearch switch as stale", () => {
+	const route = { provider: "aixforge", model: "deepseek-v4-flash" };
+	const pc = { baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" };
+	const dangerPerm = { read: true, write: true, exec: true, approval: "ask" };
+	const onDiskDanger = JSON.stringify({
+		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "yolo" }, // missing webSearch
+		$version: 4
+	}, null, 2);
+	assert.equal(qwenSettingsCurrent(onDiskDanger, route, pc, dangerPerm), false, "exec tier on disk without webSearch is stale");
+	const onDiskDangerOk = JSON.stringify({
+		selectedAuthType: "openai",
+		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "yolo", webSearch: { enabled: true, model: route.model } },
+		$version: 4
+	}, null, 2);
+	assert.equal(qwenSettingsCurrent(onDiskDangerOk, route, pc, dangerPerm), true, "exec tier on disk with webSearch is current");
+});
+
+test("codex argv enables web_search via -c override only on the exec tier", async () => {
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const entry = CLI_REGISTRY.find((e) => e.id === "codex");
+	const dangerArgs = entry.argv("do X", "m", { read: true, write: true, exec: true, approval: "ask" });
+	// `--search` is TUI-only and codex exec rejects it; the -c override is the
+	// exec-compatible form (per openai/codex#2760).
+	assert.ok(dangerArgs.includes("-c") && dangerArgs.includes("tools.web_search=true"), "exec tier passes -c tools.web_search=true for Codex web search");
+	assert.ok(!dangerArgs.includes("--search"), "must NOT pass the TUI-only --search flag to codex exec");
+	const readOnlyArgs = entry.argv("do X", "m", { read: true, write: false, exec: false, approval: "ask" });
+	assert.ok(!readOnlyArgs.includes("tools.web_search=true"), "non-exec tier does not enable web search");
 });
 
 test("codexToml points Codex at the supplier with responses wire", () => {
@@ -401,16 +454,18 @@ test("probeProtocolContinuation routes by protocol", async () => {
 test("permissionOf returns a normalized capability profile for a CLI", () => {
 	// Legacy string tier is expanded to its preset profile.
 	const ctx = sampleCtx({ value: { permissions: { codex: "read-only" } } });
-	assert.deepEqual(permissionOf(ctx, "codex"), { read: true, write: false, exec: false, approval: "ask" });
+	assert.deepEqual(permissionOf(ctx, "codex"), { read: true, write: false, exec: false, approval: "never" });
 	// Profile objects pass through normalized; a stored network:true promotes
-	// exec (the three-capability carrier of egress intent).
+	// exec (the three-capability carrier of egress intent). An explicit "ask"
+	// is still a legal value and is preserved as-is (the UI no longer emits it,
+	// but stored profiles keep it).
 	const objCtx = sampleCtx({ value: { permissions: { codex: { read: true, write: true, exec: false, network: true, approval: "ask" } } } });
 	assert.deepEqual(permissionOf(objCtx, "codex"), { read: true, write: true, exec: true, approval: "ask" });
 	// Missing permission falls back to the default tier (read-only).
 	const emptyCtx = sampleCtx({ value: { permissions: {} } });
-	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, approval: "ask" });
+	assert.deepEqual(permissionOf(emptyCtx, "codex"), { read: true, write: false, exec: false, approval: "never" });
 	// Other CLIs are independent.
-	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, approval: "ask" });
+	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false, approval: "never" });
 });
 
 test("ensureCliProviderConfig skips the qwen write when content matches", async () => {
@@ -449,9 +504,11 @@ test("ensureCliProviderConfig skips the qwen write after qwen migrated its own s
 	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
 	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
 	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	// 迁移后的位形必须是「与插件当前档位一致」才能跳过写：默认档位（未配置权限
+	// → read-only）对应 plan，所以这里盘上的 yolo 属于过时值，必须重写。
 	const migrated = JSON.stringify({
 		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "yolo" },
+		tools: { approvalMode: "plan" },
 		security: { auth: { selectedType: "openai" } },
 		$version: 4
 	}, null, 2);
@@ -474,6 +531,61 @@ test("ensureCliProviderConfig skips the qwen write after qwen migrated its own s
 	assert.equal(r.ok, true);
 	assert.equal(r.uptodate, true);
 	assert.equal(wrote, null, "no fs write against qwen's own migrated settings shape");
+});
+
+test("ensureCliProviderConfig renders the turn-granted tier for qwen (grant must not be rolled back)", async () => {
+	// 2026-09-03 修复：A/B 门授权的「本轮档位」经 prepare 穿透进来。修复前
+	// 授权档先落盘、随后配置门按持久化档（read-only → plan）比对，把授权
+	// 静默改写回去——用户批准的写入物理上不可能发生。修复后语义门按本轮档
+	// 比对，盘上的 auto-edit 与本轮档一致，不再触发重写。
+	const { CLI_REGISTRY } = await import("../lib/registry.js");
+	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
+	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
+	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
+	const granted = { read: true, write: true, exec: false, approval: "ask" }; // workspace-write
+	const onDiskGranted = JSON.stringify({
+		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "auto-edit" },
+		security: { auth: { selectedType: "openai" } },
+		$version: 4
+	}, null, 2);
+	let wrote = null;
+	const ctx = sampleCtx({
+		value: { models: { qwen: route }, permissions: {} },
+		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
+	});
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => onDiskGranted,
+				writeText: async (target, content) => { wrote = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r = await ensureCliProviderConfig(ctx, qwen, route, granted);
+	assert.equal(r.ok, true);
+	assert.equal(r.uptodate, true, "本轮授权档与盘上一致，不重写");
+	assert.equal(wrote, null, "授权档绝不能被持久化档回滚");
+	// 反向：不传 override（普通轮）时按持久化档比对，盘上的 auto-edit 属过时
+	// 值，必须重写回 plan。（写路径需要 ctx.subprocess 供 runEnsureDir 用。）
+	let wrote2 = null;
+	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
+	ctx.get = (key) => {
+		if (key === "fs") {
+			return {
+				resolve: async (p) => ({ displayPath: p, targetKey: p }),
+				readText: async () => onDiskGranted,
+				writeText: async (target, content) => { wrote2 = { target, content }; }
+			};
+		}
+		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
+	};
+	const r2 = await ensureCliProviderConfig(ctx, qwen, route);
+	assert.equal(r2.ok, true);
+	assert.equal(r2.uptodate, false, "未授权轮按持久化档重写");
+	assert.ok(wrote2 && JSON.parse(wrote2.content).tools.approvalMode === "plan", "重写回 plan（授权不跨轮泄漏）");
 });
 
 test("qwenSettingsCurrent rejects a stale route in the migrated shape", () => {

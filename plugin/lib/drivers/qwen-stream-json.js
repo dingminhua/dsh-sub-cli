@@ -285,7 +285,10 @@ export class QwenStreamJsonDriver {
 		if (!resolved) throw new Error(`找不到 qwen，请先安装到统一目录 ${dir}/bin。`);
 		let env;
 		if (this.prepare) {
-			const ready = await this.prepare("qwen", dir);
+			// 本轮档位（含 A/B 门授权的临时提升）随请求穿透到 prepare——
+			// qwen 的执法点就是这份配置（approvalMode），授权档位必须在
+			// spawn 前写进去，否则语义门会按持久化档位把它改写回去。
+			const ready = await this.prepare("qwen", dir, { permissionProfile: request.permissionProfile ?? null });
 			if (!ready?.ok) throw new Error(ready?.reason || "Qwen 配置未就绪，拒绝启动。");
 			env = ready.env;
 		}

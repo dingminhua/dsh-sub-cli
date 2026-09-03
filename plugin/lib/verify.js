@@ -249,8 +249,13 @@ async function readGateFingerprint(ctx, cfgPath, fs) {
  * existing file already embeds the live fingerprint it is left untouched (so
  * user's other settings are preserved); otherwise it is rewritten. This is the
  * gate that makes "stale wrong supplier" impossible by construction.
+ *
+ * `permissionOverride`（可选）是**本轮生效**的权限档（A/B 门授权后的加宽档
+ * 位）。qwen 的执法就在这份配置里（tools.approvalMode）——不传则按持久化设置
+ * 渲染；传了则按本轮档渲染，且语义门也按本轮档比对，**不会把授权档改写回
+ * 持久化档**（2026-09-03 修复：授权被配置门静默回滚）。
  */
-export async function ensureCliProviderConfig(ctx, entry, route) {
+export async function ensureCliProviderConfig(ctx, entry, route, permissionOverride = undefined) {
 	if (!route || !route.provider || !route.model) return { supported: true, ok: false, error: "未为该 CLI 配置 Provider 和 Model。" };
 	const pc = await providerConfig(ctx, route.provider);
 	if (!pc) return { supported: true, ok: false, error: `找不到 Provider「${route.provider}」的完整配置（需要 baseURL 和 apiKeyEnv）。请在 DSH Provider 设置中补齐，或为该 CLI 选择另一个已配置的 Provider。` };
@@ -259,22 +264,24 @@ export async function ensureCliProviderConfig(ctx, entry, route) {
 	const fp = fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 	const fs = ctx.get("fs");
 	if (entry.id === "claude") return { supported: true, ok: true, uptodate: true, cfgPath: cfgDir };
+	const permission = permissionOverride !== undefined ? permissionOverride : permissionOf(ctx, entry.id);
 	const cfgPath = path.join(cfgDir, entry.id === "qwen" ? "settings.json" : "config.toml");
-	const content = entry.id === "qwen" ? qwenSettings(route, pc, permissionOf(ctx, entry.id)) : gateToml(codexToml(route, pc), route, pc, fp);
+	const content = entry.id === "qwen" ? qwenSettings(route, pc, permission) : gateToml(codexToml(route, pc), route, pc, fp);
 	if (entry.id === "codex") {
 		const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
 		if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
-	// Qwen 的门是「语义一致」：只比对插件拥有的字段（openai 路由条目、yolo
-	// approvalMode、auth 类型——兼容 selectedAuthType 旧位与 security.auth 迁移位），
-	// qwen 自己的字段（$version、security 结构等）不碰。字节级比对不可用：qwen
-	// 0.22.3 启动即迁移自身 settings.json（selectedAuthType → security.auth.selectedType
-	// + $version），首跑后字节门必破。这也不只是省一次写——宿主 fs 沙箱默认
-	// workspace-write 时统一目录的写会被拒（FS_SANDBOX_DENIED），无条件重写会让
-	// qwen 的 test/direct/subagent 全通道在默认部署下必挂。
+	// Qwen 的门是「语义一致」：只比对插件拥有的字段（openai 路由条目、按档位
+	// 的 approvalMode、auth 类型——兼容 selectedAuthType 旧位与 security.auth 迁
+	// 移位），qwen 自己的字段（$version、security 结构等）不碰。字节级比对不可
+	// 用：qwen 0.22.3 启动即迁移自身 settings.json（selectedAuthType →
+	// security.auth.selectedType + $version），首跑后字节门必破。这也不只是省一
+	// 次写——宿主 fs 沙箱默认 workspace-write 时统一目录的写会被拒
+	// （FS_SANDBOX_DENIED），无条件重写会让 qwen 的 test/direct/subagent 全通道
+	// 在默认部署下必挂。
 	if (entry.id === "qwen") {
 		const existing = await readTextIfAny(ctx, cfgPath, fs);
-		if (existing !== null && qwenSettingsCurrent(existing, route, pc)) return { supported: true, ok: true, uptodate: true, cfgPath };
+		if (existing !== null && qwenSettingsCurrent(existing, route, pc, permission)) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
@@ -294,13 +301,16 @@ export async function ensureCliProviderConfig(ctx, entry, route) {
  * (config converges to live, key read fresh from credentials). This is the only
  * thing a managed spawn may use to build its environment — it does not depend on
  * any agent remembering to verify a fingerprint.
+ *
+ * `opts.permissionProfile`（可选）：本轮生效的权限档（A/B 门授权），穿透到
+ * ensureCliProviderConfig，使 qwen 的 approvalMode 按本轮档渲染。
  */
-export async function prepareManagedRun(ctx, cliId, dir) {
+export async function prepareManagedRun(ctx, cliId, dir, opts = {}) {
 	const entry = cliById(cliId);
 	if (!entry) return { ok: false, reason: `未知 CLI：${cliId}` };
 	const route = routeOf(ctx, cliId);
 	if (!route || !route.provider || !route.model) return { ok: false, reason: `尚未为 ${entry.name} 配置 Provider 和 Model。` };
-	const cfg = await ensureCliProviderConfig(ctx, entry, route);
+	const cfg = await ensureCliProviderConfig(ctx, entry, route, opts.permissionProfile);
 	if (cfg.error) return { ok: false, reason: cfg.error };
 	const env = await cliEnv(ctx, cliId, dir);
 	const pc = await providerConfig(ctx, route.provider);
@@ -340,8 +350,25 @@ export function currentDir(ctx) {
  * driver intercepts each tool_use before it executes and gates it against the
  * user's stored permission profile. This unifies the UX across all three CLIs.
  */
+/**
+ * Qwen's own enforcement. Qwen's stream-json wire emits no tool_use events, so
+ * the driver has no interception point — the ONLY real gate for Qwen is the
+ * `tools.approvalMode` we write into its isolated settings.json before launch:
+ *   - plan        : Qwen does not register write_file / edit / run_shell_command
+ *                   at all — a write task is physically impossible, not merely
+ *                   denied mid-flight.
+ *   - auto-edit   : write tools are registered and auto-accepted.
+ *   - yolo        : everything registered and auto-accepted, no prompts.
+ * The pre-launch tier is therefore the hard guarantee for Qwen; mid-flight
+ * interception is not available on its protocol and must not be relied on.
+ */
 export function qwenApprovalMode(tier) {
-	return "yolo";
+	switch (tier) {
+		case "read-only": return "plan";
+		case "workspace-write": return "auto-edit";
+		case "danger-full-access": return "yolo";
+		default: return "yolo";
+	}
 }
 
 /** Render Qwen Code settings for one OpenAI-compatible provider. The third
@@ -349,13 +376,22 @@ export function qwenApprovalMode(tier) {
  * it decides tools.approvalMode, without which a headless Qwen session has no
  * write-capable tools regardless of the plugin's own permission model. */
 export function qwenSettings(route, pc, permission) {
-	const approvalMode = qwenApprovalMode(deriveSandboxMode(normalizePermission(permission)));
+	const normalized = normalizePermission(permission);
+	const approvalMode = qwenApprovalMode(deriveSandboxMode(normalized));
+	// Qwen's built-in web_search is opt-in: it only registers when
+	// tools.webSearch.enabled is true (or ENABLE_WEB_SEARCH env). The exec tier
+	// (danger-full-access) carries egress intent, so enable it there — otherwise
+	// a "research" task silently has no web tool and returns nothing useful.
+	const tools = { approvalMode };
+	if (deriveSandboxMode(normalized) === "danger-full-access") {
+		tools.webSearch = { enabled: true, model: route.model };
+	}
 	return JSON.stringify({
 		selectedAuthType: "openai",
 		modelProviders: {
 			openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }]
 		},
-		tools: { approvalMode }
+		tools
 	}, null, 2);
 }
 
@@ -369,7 +405,7 @@ export function qwenSettings(route, pc, permission) {
  * yolo approval posture, and the auth type in either its legacy or migrated
  * spelling — and leave qwen's own fields untouched.
  */
-export function qwenSettingsCurrent(text, route, pc) {
+export function qwenSettingsCurrent(text, route, pc, permission) {
 	if (typeof text !== "string") return false;
 	let parsed;
 	try { parsed = JSON.parse(text); } catch { return false; }
@@ -377,7 +413,13 @@ export function qwenSettingsCurrent(text, route, pc) {
 	const entry = providers.find((p) => p && p.id === route.model) || null;
 	if (!entry) return false;
 	if (entry.envKey !== pc.apiKeyEnv || entry.baseUrl !== pc.baseURL) return false;
-	if (!parsed.tools || parsed.tools.approvalMode !== qwenApprovalMode()) return false;
+	const normalized = normalizePermission(permission ?? DEFAULT_PERMISSION);
+	const wantTier = deriveSandboxMode(normalized);
+	if (!parsed.tools || parsed.tools.approvalMode !== qwenApprovalMode(wantTier)) return false;
+	// The webSearch switch must match the tier: present iff the exec tier is on.
+	const wantWebSearch = wantTier === "danger-full-access";
+	const hasWebSearch = !!(parsed.tools.webSearch && parsed.tools.webSearch.enabled);
+	if (wantWebSearch !== hasWebSearch) return false;
 	const auth = parsed.selectedAuthType ?? (parsed.security && parsed.security.auth && parsed.security.auth.selectedType);
 	return auth === "openai";
 }

@@ -125,6 +125,48 @@ function scalarAfter(text, key) {
 	return m ? m[1].replace(/^["']|["']$/g, "") : undefined;
 }
 
+/**
+ * Parse a `key:` mapping whose value is either an inline flow object
+ * (`models: { ... }`, written by older settings emitters) or an indented
+ * block mapping (`models:\n  codex:\n    provider: x`), which is what the
+ * live dsh-settings service persists today. Handles the two nesting levels
+ * the plugin schema needs (models.<cli>.<field>, permissions.<cli>.<field>
+ * or permissions.<cli>: <string tier>).
+ */
+function parseMapping(text, key) {
+	const re = new RegExp(`^(\\s*)${key}:[ \\t]*(.*)$`, "m");
+	const m = re.exec(text);
+	if (!m) return null;
+	const keyIndent = m[1].length;
+	const inline = m[2].trim();
+	if (inline.startsWith("{")) {
+		const block = flowBlockAfter(text, key);
+		return block ? parseFlowObject(block) : null;
+	}
+	if (inline && inline !== "") return null; // scalar value, not a mapping
+	const lines = text.slice(m.index + m[0].length).split("\n");
+	const root = {};
+	let current = null;
+	for (const raw of lines) {
+		if (!raw.trim()) continue;
+		const indent = /^\s*/.exec(raw)[0].length;
+		if (indent <= keyIndent) break; // next sibling key ends this mapping
+		const line = raw.trim();
+		const c = topLevelColon(line);
+		if (c < 0) continue;
+		const k = line.slice(0, c).trim().replace(/^["']|["']$/g, "");
+		const v = line.slice(c + 1).trim();
+		if (indent === keyIndent + 2) {
+			if (v.startsWith("{")) { root[k] = parseFlowObject(v); current = null; }
+			else if (v === "") { root[k] = {}; current = root[k]; }
+			else { root[k] = parseScalar(v); current = null; }
+		} else if (current) {
+			current[k] = v.startsWith("{") ? parseFlowObject(v) : parseScalar(v);
+		}
+	}
+	return root;
+}
+
 /** Extract `providers.<id>: { baseURL, apiKeyEnv }` from the llm-pi-ai section. */
 function extractProviders(sectionText) {
 	const providers = {};
@@ -221,8 +263,8 @@ async function main() {
 	if (!subSection) { console.error("settings.yaml 中没有 dsh-sub-cli 段"); process.exit(2); }
 
 	const dir = scalarAfter(subSection, "cliDir") ? path.join(home, scalarAfter(subSection, "cliDir").replace(/^~\//, "")) : path.join(home, "dsh-clis");
-	const models = flowBlockAfter(subSection, "models") ? parseFlowObject(flowBlockAfter(subSection, "models")) : {};
-	const permissions = flowBlockAfter(subSection, "permissions") ? parseFlowObject(flowBlockAfter(subSection, "permissions")) : {};
+	const models = parseMapping(subSection, "models") ?? {};
+	const permissions = parseMapping(subSection, "permissions") ?? {};
 	const providers = extractProviders(providersSection || "");
 	const creds = readCredentials(credFile);
 
@@ -462,6 +504,15 @@ async function main() {
 			child.on("error", (err) => resolveDone({ exitCode: 1, error: err }));
 			return { ...child, done, terminate: () => { try { child.kill("SIGTERM"); } catch {} } };
 		};
+		// The Claude/Qwen drivers hand back a FULLY wrapped argv (winShimArgv:
+		// [cmd.exe, /d, /c, <bin>, ...flags] on Windows, [<bin>, ...flags] on
+		// POSIX) — spawn it directly. The previous double-wrap (spawnCli over
+		// argv.slice(1)) leaked `/d /c <bin>` into the CLI's positionals, which
+		// Qwen rejects ("positional prompt + --prompt flag together").
+		const spawnDriverArgv = (argv, opts) => {
+			const [exe, ...rest] = argv;
+			return spawn(exe, rest, opts);
+		};
 		// Claude driver: stream-json over --resume.
 		// Qwen driver: stream-json over --resume.
 		for (const spec of [
@@ -470,7 +521,7 @@ async function main() {
 				driver: ({ env }) => new ClaudeStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "claude"),
-						spawn: (opts) => wrapChild(spawnCli(binPath(dir, "claude"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
+						spawn: (opts) => wrapChild(spawnDriverArgv(opts.argv, { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})
@@ -480,7 +531,7 @@ async function main() {
 				driver: ({ env }) => new QwenStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "qwen"),
-						spawn: (opts) => wrapChild(spawnCli(binPath(dir, "qwen"), opts.argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
+						spawn: (opts) => wrapChild(spawnDriverArgv(opts.argv, { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
 				})

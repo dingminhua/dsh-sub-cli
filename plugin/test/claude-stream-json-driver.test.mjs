@@ -95,12 +95,14 @@ test("start composes the expected argv and surfaces the system/init session id",
 		usage: null,
 		decisions: []
 	});
-	// argv sanity: -p, stream-json pair, permission-mode (always bypassPermissions), model, session-id, --add-dir
+	// argv sanity: -p, stream-json pair, permission-mode (tier-mapped), model, session-id, --add-dir
 	const args = handles[0].argv.slice(1); // strip bin
 	assert.ok(args.includes("-p"));
 	assert.ok(args.includes("--input-format") && args[args.indexOf("--input-format") + 1] === "stream-json");
 	assert.ok(args.includes("--output-format") && args[args.indexOf("--output-format") + 1] === "stream-json");
-	assert.ok(args.includes("--permission-mode") && args[args.indexOf("--permission-mode") + 1] === "bypassPermissions", "always bypassPermissions (driver enforces per-tool)");
+	// 档位映射（2026-09-03 恢复）：workspace-write → acceptEdits。CLI 自身执法
+	// 是硬保证；驱动层拦截在单向 stream-json 上只是事后止损的加严。
+	assert.ok(args.includes("--permission-mode") && args[args.indexOf("--permission-mode") + 1] === "acceptEdits", "sandbox=workspace-write must map to acceptEdits");
 	assert.ok(args.includes("--model") && args[args.indexOf("--model") + 1] === "claude-sonnet-4-5");
 	assert.ok(args.includes("--session-id"));
 	assert.ok(args.includes("--add-dir") && args[args.indexOf("--add-dir") + 1] === "/repo");
@@ -114,24 +116,29 @@ test("start composes the expected argv and surfaces the system/init session id",
 	assert.equal(run.remoteSessionId, "init-session-123");
 });
 
-test("sandbox tier is ignored — Claude Code always runs at bypassPermissions", async () => {
-	// Permission enforcement is now entirely at the driver layer
-	// (onPermissionRequest hook → resolvePermission → ctx.approval.request).
-	// The CLI always runs at "bypassPermissions" so it registers all tools
-	// internally; the driver intercepts each tool_use and gates it against
-	// the user's stored permission profile. This unifies the UX across all
-	// three CLIs.
+test("permission-mode carries exactly the sandbox tier (read-only=plan, write=acceptEdits, danger=bypassPermissions)", async () => {
+	// 档位前置执法（2026-09-03）：第三轮的「恒 bypassPermissions + 驱动拦截」
+	// 已被第九轮实测证伪——单向 stream-json 上拒绝撤不回已执行的写（文件落盘
+	// 但回报已拒绝）。CLI 必须以用户选择的档位启动，让「未勾选=做不到」在
+	// 协议上成立；驱动层拦截保留为尽力而为的加严。
 	const handles = [];
 	const subprocess = fakeSubprocess(handles);
 	const driver = new ClaudeStreamJsonDriver({ subprocess, dirSource, turnTimeoutMs: 250 });
-	for (const sandbox of ["read-only", "workspace-write", "danger-full-access"]) {
+	const expected = { "read-only": "plan", "workspace-write": "acceptEdits", "danger-full-access": "bypassPermissions" };
+	for (const sandbox of Object.keys(expected)) {
 		const run = await driver.start({ cwd: "/r", prompt: "x", sandbox });
 		seedAnswer(handles[handles.length - 1].stdout, "s-" + sandbox);
 		await run.result;
 		const args = handles[handles.length - 1].argv.slice(1);
 		const idx = args.indexOf("--permission-mode");
-		assert.equal(args[idx + 1], "bypassPermissions", `sandbox=${sandbox} must always be bypassPermissions`);
+		assert.equal(args[idx + 1], expected[sandbox], `sandbox=${sandbox} must map to ${expected[sandbox]}`);
 	}
+	// 未知/缺省档位按最保守的 plan 处理。
+	const runDefault = await driver.start({ cwd: "/r", prompt: "x" });
+	seedAnswer(handles[handles.length - 1].stdout, "s-default");
+	await runDefault.result;
+	const argsDefault = handles[handles.length - 1].argv.slice(1);
+	assert.equal(argsDefault[argsDefault.indexOf("--permission-mode") + 1], "plan", "missing sandbox must default to plan");
 });
 
 test("followup reuses the resolved session id via --resume", async () => {

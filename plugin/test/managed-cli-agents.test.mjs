@@ -258,10 +258,10 @@ test("permissionSpec derives sandbox tier and approval policy from the profile",
 	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => "workspace-write" });
 	assert.deepEqual(service.permissionSpec("codex"), {
 		permissionMode: "workspace-write",
-		approvalPolicy: "on-request",
+		approvalPolicy: "never",
 		sandbox: "workspace-write",
 		// Three capabilities: the workspace-write preset is write-only (no exec).
-		profile: { read: true, write: true, exec: false, approval: "ask" }
+		profile: { read: true, write: true, exec: false, approval: "never" }
 	});
 	const denied = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false, approval: "never" }) });
 	assert.equal(denied.permissionSpec("codex").approvalPolicy, "never");
@@ -319,13 +319,16 @@ test("an UNCHECKED capability with approval=ask reaches the interactive seam", a
 // ── Generalized permission matrices ──────────────────────────────────────────
 
 test("permissionSpec matrix derives sandbox and approval policy for every input", () => {
+	// Approval is fixed to "never" for every tier (no ask/deny toggle in the UI);
+	// an explicit ask profile still routes through on-request to exercise the
+	// seam branch, even though the UI no longer produces one.
 	const cases = [
-		{ label: "legacy read-only", input: "read-only", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "legacy workspace-write", input: "workspace-write", sandbox: "workspace-write", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "unknown string defaults to read-only", input: "bogus", sandbox: "read-only", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "legacy allow migrates to ask", input: { read: true, write: true, exec: true, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
-		{ label: "legacy network escalates via exec migration", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
+		{ label: "legacy read-only", input: "read-only", sandbox: "read-only", approvalPolicy: "never", approval: "never" },
+		{ label: "legacy workspace-write", input: "workspace-write", sandbox: "workspace-write", approvalPolicy: "never", approval: "never" },
+		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access", approvalPolicy: "never", approval: "never" },
+		{ label: "unknown string defaults to read-only", input: "bogus", sandbox: "read-only", approvalPolicy: "never", approval: "never" },
+		{ label: "legacy allow migrates to never", input: { read: true, write: true, exec: true, network: true, approval: "allow" }, sandbox: "danger-full-access", approvalPolicy: "never", approval: "never" },
+		{ label: "explicit ask object still routes on-request", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "exec+network escalates", input: { read: true, write: false, exec: true, network: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "exec alone escalates (egress intent)", input: { read: true, write: false, exec: true, approval: "ask" }, sandbox: "danger-full-access", approvalPolicy: "on-request", approval: "ask" },
 		{ label: "never forces approvalPolicy never", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "danger-full-access", approvalPolicy: "never", approval: "never" }

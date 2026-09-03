@@ -23,7 +23,7 @@ export { QwenStreamJsonDriver } from "./qwen-stream-json.js";
  * @param {{
  *   subprocess: object,
  *   dirSource: () => string,
- *   prepare?: (cli: string, dir: string) => Promise<{ok:boolean, env?:object, reason?:string}>,
+ *   prepare?: (cli: string, dir: string, opts?: { permissionProfile?: object | null }) => Promise<{ok:boolean, env?:object, reason?:string}>,
  *   drivers?: Record<string, object>
  * }} options
  *   `drivers` lets the caller inject non-default drivers (e.g. test fakes

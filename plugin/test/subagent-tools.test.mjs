@@ -65,7 +65,7 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 	const tool = fixture.tools.get("cli_codex_direct");
 	await assert.rejects(
 		tool.execute({ description: "检查", prompt: "检查项目" }, { agent: AGENT, signal: SIGNAL }),
-		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /“完全”/.test(error.message)
+		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /审批策略为“从不”/.test(error.message) && /严禁修改 ~\/\.dsh\/settings\.yaml/.test(error.message)
 	);
 });
 
@@ -78,28 +78,24 @@ test("a network task is refused before any CLI starts", async () => {
 		const managedCliAgents = { async dispatch() { dispatched = true; return { session: { sessionId: "x" }, output: "" }; } };
 		registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 		const tool = fixture.tools.get(toolName);
-		await assert.rejects(
-			tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
-			/主控直接执行/
-		);
-		assert.equal(dispatched, false, `${toolName} must not start a CLI for a network task`);
+		// Web research is no longer refused at the capability gate (2026-09-03);
+		// it reaches dispatch, where the permission A-gate decides. With exec
+		// granted the task proceeds.
+		await tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL });
+		assert.equal(dispatched, true, `${toolName} now starts for a network task (permission tier decides)`);
 	}
 });
 
-test("Claude Code refuses research tasks like the others: research is the controller's", async () => {
-	// Symmetric gate: even Claude Code (whose WebSearch only works with
-	// server-side-tool relays) is refused for web research — the controller
-	// researches itself and hands the material to a CLI as task content.
+test("Claude Code now passes research tasks to dispatch (permission tier decides)", async () => {
+	// Symmetric: research is no longer refused at the capability gate for any
+	// CLI. The permission tier (exec granted → proceeds) is the real gate.
 	const fixture = context();
 	let dispatched = false;
 	const managedCliAgents = { async dispatch() { dispatched = true; return { session: { sessionId: "s-claude" }, output: "searched" }; } };
 	registerCliSubagentTools(fixture.ctx, { managedCliAgents });
 	const tool = fixture.tools.get("cli_claude_direct");
-	await assert.rejects(
-		tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL }),
-		/主控直接执行/
-	);
-	assert.equal(dispatched, false, "no CLI may start for a research task");
+	await tool.execute({ description: "联网调查", prompt: "联网搜索最近 24 小时的 AI 新闻" }, { agent: AGENT, signal: SIGNAL });
+	assert.equal(dispatched, true, "Claude now starts for a research task (permission tier decides)");
 });
 
 test("rejects empty titles and prompts before dispatching", async () => {

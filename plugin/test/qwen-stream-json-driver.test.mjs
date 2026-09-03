@@ -122,6 +122,36 @@ test("start composes the expected argv (stdin-prompt mode, no --input-format, no
 	assert.equal(handles[0].stdin._ended, true, "stdin must be closed (EOF) after writing the prompt so Qwen proceeds");
 });
 
+test("start forwards the turn permissionProfile to prepare (qwen enforcement is config-side)", async () => {
+	// Qwen 的执法点是 prepare 写出的 settings.json（tools.approvalMode），它
+	// 的 stream-json 不发 tool_use、驱动层无从拦截。因此 A/B 门授权的「本轮
+	// 档位」必须随 start options 穿透到 prepare——否则配置门会按持久化档把
+	// 授权改写回去（2026-09-03 修复的静默回滚）。
+	const handles = [];
+	const prepareCalls = [];
+	const driver = new QwenStreamJsonDriver({
+		subprocess: fakeSubprocess(handles),
+		dirSource,
+		turnTimeoutMs: TEST_TURN_TIMEOUT_MS,
+		prepare: async (cli, dir, opts) => {
+			prepareCalls.push({ cli, dir, opts });
+			return { ok: true, env: { QWEN_HOME: dir } };
+		}
+	});
+	const grantedProfile = { read: true, write: true, exec: false, approval: "ask" };
+	const run = await driver.start({ cwd: "/repo", prompt: "写入文件", permissionProfile: grantedProfile });
+	seedSuccessResult(handles[0].stdout, "qwen-gate-1");
+	await run.result;
+	assert.equal(prepareCalls.length, 1);
+	assert.equal(prepareCalls[0].cli, "qwen");
+	assert.deepEqual(prepareCalls[0].opts, { permissionProfile: grantedProfile }, "本轮档位必须原样传给 prepare");
+	// 未携带 permissionProfile 时传 null（prepare 据此回落到持久化档）。
+	const run2 = await driver.start({ cwd: "/repo", prompt: "读取" });
+	seedSuccessResult(handles[1].stdout, "qwen-gate-2");
+	await run2.result;
+	assert.deepEqual(prepareCalls[1].opts, { permissionProfile: null });
+});
+
 test("reasoningEffort is silently dropped (Qwen has no --effort flag)", async () => {
 	const handles = [];
 	const driver = new QwenStreamJsonDriver({ subprocess: fakeSubprocess(handles), dirSource, turnTimeoutMs: TEST_TURN_TIMEOUT_MS });

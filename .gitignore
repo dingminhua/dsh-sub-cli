@@ -3,3 +3,5 @@ node_modules/
 *.log
 .tmp/
 .agent-teams/
+verification/
+DESIGN-approval-copy.md

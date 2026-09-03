@@ -15,7 +15,8 @@ test("normalizes Codex structured permission requests with routing identity", ()
 	assert.equal(request.turnId, "turn-1");
 	assert.equal(request.capability, "permissions");
 	assert.deepEqual(request.requestedScope, { network: { enabled: true } });
-	assert.match(permissionReason(request), /仅放行当前请求/);
+	assert.match(permissionReason(request), /仅本次放行/);
+	assert.match(permissionReason(request), /扩大本次会话的权限范围/);
 });
 
 test("normalizes command and file-change targets without exposing secrets", () => {
@@ -44,30 +45,30 @@ test("maps DSH one-shot outcomes to Codex permission responses", () => {
 
 test("presets cover the three legacy tiers with distinct capability profiles", () => {
 	assert.deepEqual(PERMISSION_PRESETS.map((p) => p.id), ["read-only", "workspace-write", "danger-full-access"]);
-	// The checkbox is the only grant; the select only decides the fate of
-	// UNCHECKED capabilities (ask / never).
+	// The checkbox is the only grant; ungranted capabilities simply stop the
+	// task (approval is always "never" — no ask/deny toggle in the UI).
 	assert.deepEqual(APPROVAL_MODES, ["ask", "never"]);
 	const [readOnly, workspaceWrite, full] = PERMISSION_PRESETS;
-	assert.deepEqual(readOnly.profile, { read: true, write: false, exec: false, approval: "ask" });
+	assert.deepEqual(readOnly.profile, { read: true, write: false, exec: false, approval: "never" });
 	// "workspace-write" no longer implies exec: write-only grants a
 	// workspace-writable sandbox without command execution.
-	assert.deepEqual(workspaceWrite.profile, { read: true, write: true, exec: false, approval: "ask" });
-	assert.deepEqual(full.profile, { read: true, write: true, exec: true, approval: "ask" });
+	assert.deepEqual(workspaceWrite.profile, { read: true, write: true, exec: false, approval: "never" });
+	assert.deepEqual(full.profile, { read: true, write: true, exec: true, approval: "never" });
 });
 
 test("normalizePermission maps legacy strings, unknowns, objects and missing values", () => {
-	assert.deepEqual(normalizePermission("read-only"), { read: true, write: false, exec: false, approval: "ask" });
-	assert.deepEqual(normalizePermission("workspace-write"), { read: true, write: true, exec: false, approval: "ask" });
-	assert.deepEqual(normalizePermission("danger-full-access"), { read: true, write: true, exec: true, approval: "ask" });
+	assert.deepEqual(normalizePermission("read-only"), { read: true, write: false, exec: false, approval: "never" });
+	assert.deepEqual(normalizePermission("workspace-write"), { read: true, write: true, exec: false, approval: "never" });
+	assert.deepEqual(normalizePermission("danger-full-access"), { read: true, write: true, exec: true, approval: "never" });
 	// Unknown strings and missing values fall back to the default tier.
 	assert.deepEqual(normalizePermission("bogus"), { ...DEFAULT_PROFILE });
 	assert.deepEqual(normalizePermission(undefined), { ...DEFAULT_PROFILE });
 	assert.deepEqual(normalizePermission(null), { ...DEFAULT_PROFILE });
 	// A stored network key is dropped; its egress intent migrates onto exec.
-	assert.deepEqual(normalizePermission({ network: true }), { read: true, write: false, exec: true, approval: "ask" });
-	assert.deepEqual(normalizePermission({ read: true, write: true, exec: true, network: true }), { read: true, write: true, exec: true, approval: "ask" });
+	assert.deepEqual(normalizePermission({ network: true }), { read: true, write: false, exec: true, approval: "never" });
+	assert.deepEqual(normalizePermission({ read: true, write: true, exec: true, network: true }), { read: true, write: true, exec: true, approval: "never" });
 	// Invalid approval falls back to the default.
-	assert.deepEqual(normalizePermission({ read: true, approval: "always" }).approval, "ask");
+	assert.deepEqual(normalizePermission({ read: true, approval: "always" }).approval, "never");
 });
 
 test("legacy approval:'allow' migrates its intent into the checkboxes", () => {
@@ -76,13 +77,13 @@ test("legacy approval:'allow' migrates its intent into the checkboxes", () => {
 	// not silently tighten when the setting is next saved.
 	assert.deepEqual(
 		normalizePermission({ read: true, write: true, exec: true, network: true, approval: "allow" }),
-		{ read: true, write: true, exec: true, approval: "ask" }
+		{ read: true, write: true, exec: true, approval: "never" }
 	);
 	// A legacy allow with only some booleans stored: missing ones default to the
 	// old allow-tier's reach (all true).
 	assert.deepEqual(
 		normalizePermission({ approval: "allow" }),
-		{ read: true, write: true, exec: true, approval: "ask" }
+		{ read: true, write: true, exec: true, approval: "never" }
 	);
 });
 
@@ -92,10 +93,10 @@ test("deriveSandboxMode picks the closest coarse tier for headless argv", () => 
 	assert.equal(deriveSandboxMode("danger-full-access"), "danger-full-access");
 	// exec escalates to full access: allowing command execution implies the
 	// ordinary commands that reach the network (npm install, git pull).
-	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, approval: "ask" }), "danger-full-access");
+	assert.equal(deriveSandboxMode({ read: true, write: true, exec: true, approval: "never" }), "danger-full-access");
 	// write alone stays at workspace-write (file edits, no commands).
-	assert.equal(deriveSandboxMode({ read: true, write: true, exec: false, approval: "ask" }), "workspace-write");
-	assert.equal(deriveSandboxMode({ read: true, write: false, exec: false, approval: "ask" }), "read-only");
+	assert.equal(deriveSandboxMode({ read: true, write: true, exec: false, approval: "never" }), "workspace-write");
+	assert.equal(deriveSandboxMode({ read: true, write: false, exec: false, approval: "never" }), "read-only");
 	// Legacy network:true without a stored exec also escalates (egress intent).
 	assert.equal(deriveSandboxMode({ read: true, network: true }), "danger-full-access");
 });
@@ -279,8 +280,20 @@ test("normalizePermissionRequest routes Codex calls through the existing normali
 test("permissionReason names the correct CLI for non-Codex requests", () => {
 	const claude = normalizePermissionRequest("claude", "Write", { toolInput: { file_path: "/x" } }, { pluginSessionId: "s" });
 	assert.match(permissionReason(claude), /Claude Code/);
-	assert.match(permissionReason(claude), /file-change/);
+	assert.match(permissionReason(claude), /写入文件/);
 	const qwen = normalizePermissionRequest("qwen", "Bash", { toolInput: { command: "ls" } }, { pluginSessionId: "s" });
 	assert.match(permissionReason(qwen), /Qwen Code/);
-	assert.match(permissionReason(qwen), /command/);
+	assert.match(permissionReason(qwen), /执行命令/);
+});
+
+test("permissionReason speaks behavior language with all four decision elements", () => {
+	// DESIGN-approval-copy.md §5 验收：谁 · 做什么 · 多久 · 拒绝会怎样，
+	// 且正文不出现 capability 机器词（file-change/command 等）。
+	const req = normalizePermissionRequest("claude", "Edit", { toolInput: { file_path: "/repo/a.js" } }, { pluginSessionId: "s", childId: "child-9" });
+	const text = permissionReason(req);
+	assert.match(text, /Claude Code 子代理 child-9/); // 谁
+	assert.match(text, /想修改文件：\/repo\/a\.js/); // 做什么（行为语言 + 目标）
+	assert.match(text, /仅本次放行/); // 多久
+	assert.match(text, /拒绝则该操作被跳过/); // 拒绝会怎样
+	assert.doesNotMatch(text, /file-change|requestApproval/);
 });

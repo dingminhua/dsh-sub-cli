@@ -28,6 +28,7 @@ import { permissionReason } from "./permissions.js";
 import { attachRelayLifecycle, registerManagedCliSubagentTools } from "./relay-subagent.js";
 import { registerManagedCliRelayProvider } from "./relay-provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
+import { AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
 import { installCommandOf, installManagedCli } from "./install.js";
 import { markRemoteMethods } from "./remote.js";
 import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf, prepareManagedRun } from "./verify.js";
@@ -294,8 +295,11 @@ export async function apply(ctx) {
 	// Register managed CLI subagent providers and the model-facing tools. These
 	// run once `subagents` (a hard dependency, always present in a DSH host) is
 	// available, so they are not skipped by boot ordering.
-	const envForEntry = async (cliId, dir) => {
-		const prep = await prepareManagedRun(ctx, cliId, dir);
+	// 本轮档位（A/B 门授权的加宽档）经 driver.start options → prepare 穿透到
+	// 配置渲染：qwen 的执法点（approvalMode）必须按本轮档写盘，否则语义门会
+	// 按持久化档把它改回去（2026-09-03 修复：授权被静默回滚）。
+	const envForEntry = async (cliId, dir, opts) => {
+		const prep = await prepareManagedRun(ctx, cliId, dir, opts);
 		if (!prep.ok) return { ok: false, reason: prep.reason };
 		return { ok: true, env: prep.env };
 	};
@@ -356,7 +360,7 @@ export async function apply(ctx) {
 	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
-		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_<cli>_direct（持续会话，直连）或 cli_<cli>_subagent（DSH Relay 子代理；同时调度多个 CLI 时用这个，子代理并行执行且无需后台任务插件）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。",
+		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_<cli>_direct（持续会话，直连）或 cli_<cli>_subagent（DSH Relay 子代理；同时调度多个 CLI 时用这个，子代理并行执行且无需后台任务插件）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。" + "\n\n" + AUTHORIZATION_DISCIPLINE,
 		parameters: {
 			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude / qwen" },
 			task: { type: "string", required: true, description: "自包含的任务描述" },

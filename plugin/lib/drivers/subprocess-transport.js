@@ -116,7 +116,9 @@ export function createCodexSubprocessTransportFactory({ subprocess, dirSource, p
 		if (!resolved) throw new Error(`找不到 codex，请先安装到统一目录 ${dir}/bin。`);
 		let env;
 		if (prepare) {
-			const ready = await prepare("codex", dir);
+			// 本轮档位（含 A/B 门授权的临时提升）随请求穿透到 prepare；
+			// codex 的档位走 wire 请求，这里仅保持三 CLI 透传一致。
+			const ready = await prepare("codex", dir, { permissionProfile: request.permissionProfile ?? null });
 			if (!ready?.ok) throw new Error(ready?.reason || "Codex 配置未就绪，拒绝启动 app-server。");
 			env = ready.env;
 		}

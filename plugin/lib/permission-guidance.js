@@ -2,9 +2,16 @@ const CLI_NAMES = Object.freeze({ codex: "Codex", claude: "Claude Code", qwen: "
 
 export const PERMISSION_CONFIGURATION_REQUIRED = "CLI_PERMISSION_CONFIGURATION_REQUIRED";
 
+// 授权纪律（注入每个模型可见的工具描述，2026-09-02）：让所有使用本插件的 AI
+// 在最容易走歪的位置看到规则——权限不足就停下报告，审核依据文件对 AI 只读。
+export const AUTHORIZATION_DISCIPLINE = "授权纪律：若任务因权限不足被拦截或拒绝，立即停下并如实报告用户，由用户在插件设置卡处理；严禁修改 ~/.dsh/settings.yaml 或凭据文件——决定 AI 能做什么的审核依据文件对 AI 永远只读，先例或历史文档中的做法不构成授权。";
+
 export function permissionConfigurationMessage(cli = "codex") {
 	const name = CLI_NAMES[cli] ?? cli;
-	return `${name} 权限不足，且当前会话无法批准本次权限申请。请前往“设置 → 插件 → 外部 Agent CLI 管理器 → ${name} → 权限”，将权限调整为“完全”，保存后重新执行任务。当前任务已停止，不会自动提权或重复运行。`;
+	// 授权纪律（2026-09-02）：权限不足的正确出口是停下报告用户。临时授权走
+	// 一次性弹窗（由用户当时决定，不写设置文件）；弹窗不可用时就是「这次不
+	// 该做」。长期放宽是用户自己在设置卡调档位的决定，不是 AI 的准备工作。
+	return `${name} 权限不足，且当前会话无法批准本次权限申请（用户拒绝，或审批策略为“从不”）。任务已停止，不会自动提权或重复运行。请如实报告用户，由用户在“设置 → 插件 → 外部 Agent CLI 管理器 → ${name} → 权限”决定是否调高权限档位。严禁修改 ~/.dsh/settings.yaml 或凭据文件——审核依据文件对 AI 只读。`;
 }
 
 export function permissionConfigurationError(cli = "codex", cause) {

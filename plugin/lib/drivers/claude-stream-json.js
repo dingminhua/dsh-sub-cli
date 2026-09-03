@@ -10,16 +10,16 @@
 //   ~/.claude/projects/<cwd>/; we carry `remoteSessionId` across calls so
 //   the next followup reuses it.
 //
-// Permission model (unified across all three managed CLIs):
-//   The CLI runs at `--permission-mode bypassPermissions` (highest tier) so
-//   it registers every tool and never blocks internally. The driver then
-//   intercepts each `tool_use` event in the stream-json output and routes
-//   it through the same `onPermissionRequest` hook that Codex's app-server
-//   uses. resolvePermission() in managed-cli-agents.js gates the request
-//   against the user's stored permission profile, and the ask strategy
-//   surfaces a DSH approval dialog when the capability is not pre-granted.
-//   This gives the three CLIs identical permission UX: checked checkbox =
-//   silent allow, unchecked = interactive ask, "never" = auto-reject.
+// Permission model (tier set before launch, 2026-09-03):
+//   The CLI launches at the tier the user selected — read-only → `plan` (no
+//   edit tools at all), workspace-write → `acceptEdits`, danger →
+//   `bypassPermissions` — so the CLI itself enforces the boundary no matter
+//   what the model tries. The driver's tool_use interception is KEPT but is
+//   only a best-effort add-on on this one-way wire: a "reject" can abort the
+//   turn but cannot un-execute a tool call that already ran (proven in round
+//   9: file landed despite rejection). The reliable one-off authorization
+//   path for Claude is the pre-flight A gate / blocked-retry B gate in
+//   managed-cli-agents.js, which restart the turn at a widened tier.
 
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
@@ -51,11 +51,17 @@ function claudeToolCapability(toolName) {
 	return null; // Read, Glob, Grep, etc. — not approval-worthy
 }
 
-// Claude Code is always launched at the highest tier; permission enforcement
-// lives in the driver. This intentionally removes the previous sandbox-tier
-// mapping so the three CLIs behave identically.
-function claudePermissionMode(_tier) {
-	return "bypassPermissions";
+// 档位 → Claude 自身执法（2026-09-03 恢复映射；第三轮的「恒 bypassPermissions」
+// 已被第九轮实测证伪：单向 stream-json 上拒绝撤不回已执行的写）。read-only →
+// plan（无编辑工具，物理写不了）；workspace-write → acceptEdits；danger →
+// bypassPermissions。未知值按最保守的 plan 处理。
+function claudePermissionMode(tier) {
+	switch (tier) {
+		case "read-only": return "plan";
+		case "workspace-write": return "acceptEdits";
+		case "danger-full-access": return "bypassPermissions";
+		default: return "plan";
+	}
 }
 
 // Extract the final user-visible text from the assistant message events.
@@ -318,7 +324,9 @@ export class ClaudeStreamJsonDriver {
 		if (!resolved) throw new Error(`找不到 claude，请先安装到统一目录 ${dir}/bin。`);
 		let env;
 		if (this.prepare) {
-			const ready = await this.prepare("claude", dir);
+			// 本轮档位（含 A/B 门授权的临时提升）随请求穿透到 prepare，
+			// 供配置渲染使用（qwen 靠它写 approvalMode；claude 仅透传）。
+			const ready = await this.prepare("claude", dir, { permissionProfile: request.permissionProfile ?? null });
 			if (!ready?.ok) throw new Error(ready?.reason || "Claude 配置未就绪，拒绝启动。");
 			env = ready.env;
 		}
@@ -331,8 +339,8 @@ export class ClaudeStreamJsonDriver {
 	}
 
 	#spawnTurn(ctx, request, { mode, prompt, resumeId, options, signal = null }) {
-		// Always run at the highest tier so all tools register internally;
-		// the driver enforces permissions per tool_use.
+		// 档位在启动参数里钉死（见文件头注释）：CLI 自身执法是硬保证；
+		// 驱动层拦截在单向协议上只是尽力而为的加严。
 		const args = [
 			"-p",
 			"--verbose",

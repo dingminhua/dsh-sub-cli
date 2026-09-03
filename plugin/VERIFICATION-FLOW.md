@@ -6,13 +6,23 @@
 
 ---
 
+## 授权纪律（先于一切流程，2026-09-02 起；2026-09-03 终版）
+
+1. **约束 AI 自身的配置一律只读。** `~/.dsh/settings.yaml`、凭据、沙箱/审批策略等决定 AI 能做什么的文件，主控永远不得修改——能改写审核依据的 AI 等于没有审核。
+2. **权限在启动时一次性定死，不弹窗、不中途升档。** 每个 CLI 的档位（只读 / 可写 / 可调用工具）由用户在设置卡勾选，插件在启动进程前就按该档位把边界划好（codex 传 `-s`、claude 用 `plan`、qwen 不注册写/联网工具）。运行中**没有「询问用户」这一层**——审批策略固定为 `never`。
+3. **没给的能力 = 干不了 = 停 + 如实报。** 任务需要未勾选的 write/exec 时，A 门（启动前按任务意图判断）直接抛 `CLI_PERMISSION_BLOCKED`，进程不启动，回报「无法完成」。**不弹窗、不改设置、不绕行**。授权、改设置、放弃都属于用户，没有一个属于主控。
+4. **先例不是授权。** 本文历史实测记录中的做法不构成当次会话的许可。其中「临时升 danger 再还原」「临时把 exec 置 true 再还原」「一次性弹窗申请」等做法自即日起**废止**。
+5. **通道不可用 = 停下请示。** 若 CLI 进程本身起不来（供应商/协议/沙箱问题），停下来向用户说明并等待指示，不得改设置、升沙箱或自行创造条件。
+
+---
+
 ## 前置条件（缺一即失败）
 
 | # | 条件 | 为什么 | 检查方式 |
 |---|---|---|---|
 | 1 | 插件已挂载到 profile（`dsh.profile.bundles` 含 `dsh-sub-cli`） | 未挂载则工具不存在 | `cli_check` |
 | 2 | 三个 CLI 已安装且在统一目录 | — | `cli_check` |
-| 3 | 三个 CLI 的 `exec` 已勾选（`settings.yaml` → `dsh-sub-cli.permissions.*.exec`） | **删除是命令执行**；未勾选时 danger 档下不去，codex 的 rm 走审批缝被自动拒绝、claude 在 cwd 外写入/删除会挂起等审批 | 设置卡 / `settings.yaml` |
+| 3 | 三 CLI 权限档位按验证目标设定（默认 `只读`） | 写入/删除/联网涉及未勾选能力时，A 门直接停并报告「无法完成」，**不弹窗**、进程不启动。本流程验证的是「干不了就老实停」，不再依赖一次性弹窗 | 设置卡权限下拉 |
 | 4 | 三个 CLI 的供应商有额度、且支持该 CLI 所需协议 | Codex 需 responses、Claude 需 anthropic、Qwen 需 openai-chat | `cli_test <cli>` |
 | 5 | 宿主代码改动后已重启 DSH Desktop | host 侧 ESM 模块由宿主进程缓存，改磁盘不会热加载（只有 client bundle 刷新即可） | 改动的 `mtime` 早于进程启动时间 |
 
@@ -48,6 +58,8 @@
 ## 阶段三：删除（relay 子代理 × 3，并行）
 
 三个子代理各自删除阶段一写入的文件（允许使用 shell 命令），并要求确认文件已不存在。
+
+删除同时需要 write 与 exec（删文件 + shell 命令）。**在两者未勾选的状态下进行本阶段**：提示里的「删除 / shell 命令」意图应触发 **A 门事前弹窗**（「需要 写入文件 / 执行命令」），用户「允许一次」后本轮以提升档位（含 exec → danger）执行删除——这才是有效数据点；exec 已勾选下的静默删除只验证通道、不验证审核链路。Codex 运行中若再发权限请求（双向协议真拦截），同样走弹窗。若 A 门漏判（措辞不含可识别意图）而 CLI 在自身档位下拒绝执行导致本轮失败，**B 门**应从失败现场提取能力、弹窗、同意后重开一轮（仅一次）。审批策略为 never 时不弹窗、直接回报「无法完成」——停下请示（见授权纪律），不得自行创造条件。
 
 **通过标准**：三个文件全部消失，且未留下 `.bak` / `.orig` 等残留；主控独立复核。
 
@@ -121,7 +133,7 @@
 
 - 用户明确：CLI 需要授权时由主控**转发授权请求**，授权**一次性**，**不写入设置**。
 - 技术现状：qwen/claude 的 stream-json 驱动**没有中途权限请求通道**（权限档启动前定死）；只有 codex 的 app-server 有。因此 qwen 在 exec 未勾选（workspace-write → auto-edit 档）时工具表**没有 `run_shell_command`**，删除物理上不可行，也不会发出可转发的请求。
-- 本次执行方式（用户一次性授权后）：临时把 qwen `exec` 置 true（→ danger → yolo 工具表）→ 跑删除 → **随即还原 false**。settings.json 确认按权限档写入 `approvalMode: yolo`（qwen 修复的又一实证）。
+- 本次执行方式（用户一次性授权后）：临时把 qwen `exec` 置 true（→ danger → yolo 工具表）→ 跑删除 → **随即还原 false**。settings.json 确认按权限档写入 `approvalMode: yolo`（qwen 修复的又一实证）。【注：由主控代改 `settings.yaml` 属自我授权，此做法已废止，见顶部授权纪律；此后同场景应走一次性弹窗或由用户亲自操作。】
 - 待办（设计缺口）：为 qwen/claude 补「中途一次性授权」通道，或明确 qwen 命令类操作必须在 exec 勾选下进行。
 
 ## 本轮流程暴露并修复的问题
@@ -143,7 +155,7 @@
 |---|---|---|
 | Codex | relay subagent | ✅ 30B 逐字节匹配（write=true 静默放行） |
 | Claude | relay subagent | ✅ 30B 逐字节匹配（write=true 静默放行） |
-| Qwen | relay subagent | ✅ 30B 逐字节匹配（write=false 下仍写成功 —— driver 弹窗门控起效，未静默失败） |
+| Qwen | relay subagent | ✅ 30B 逐字节匹配（write=false 下仍写成功 —— 当时记为「driver 弹窗门控起效」【勘误 2026-09-03：实为 yolo 直通 + 驱动拦截死代码，qwen 不发 tool_use，并无弹窗；第九轮 never 下同样写成功即为证据】） |
 
 ### 阶段二 读取核对（3×3 互读，全部一字不差）
 
@@ -172,13 +184,16 @@
 
 ## 回归提示
 
-- 单元测试：`npm test`（截至第五轮 234/234 通过）。
+- 单元测试：`node --test test/*.test.mjs`（plugin 目录；2026-09-03 257/257 通过）。
 - 每次改动 host 侧（`lib/**` 除 client 外）后**必须重启 DSH Desktop** 再跑本流程。
 - 换供应商/模型后先跑 `cli_test <cli>` 三个都绿，再跑本流程。
+- **任何情况下不得以修改 `settings.yaml`、凭据或沙箱/审批策略的方式准备前置条件**；权限不足就停下报告（见顶部授权纪律）。
 
 ---
 
 ## 设计变更：三个 CLI 权限管理统一（2026-09-02 第三轮修复）
+
+> **【已废止 2026-09-03】** 本节方案（三 CLI 一律 yolo 启动 + 驱动层拦截 tool_use）经第九轮实测证伪：Qwen 的 stream-json 不发 tool_use 事件，拦截**从未触发过（死代码）**；Claude 单向协议下「拒绝」只能事后止损、撤不回已执行的写。取代方案见文末「设计变更（2026-09-03）：档位前置执法 + A/B 权限门」。以下保留为历史记录。
 
 ### 变更动机
 
@@ -256,7 +271,7 @@ Qwen（aixforge deepseek-v4-flash）首写生成的 Write 参数里插了空格�
 
 ## 实测记录（第七轮，2026-09-02 晚，Windows 全新环境冷装）
 
-环境：Windows（DSH Desktop profile desktop，本机首次冷装）；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3（均由 `dsh plugin add` 后首次安装）；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash；权限临时升 danger（write/exec 全勾，验证后已还原 `permissions: {}`）。
+环境：Windows（DSH Desktop profile desktop，本机首次冷装）；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3（均由 `dsh plugin add` 后首次安装）；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash；权限临时升 danger（write/exec 全勾，验证后已还原 `permissions: {}`）。【注：「临时升 danger 再还原」属自我授权，此做法已废止，见顶部授权纪律第 4 条。】
 
 本轮背景是**全新机器冷装**（非既有环境回归），暴露并修复了一个默认部署必现缺陷：
 
@@ -313,6 +328,24 @@ host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**
 
 ---
 
+## 实测记录（第八轮，2026-09-02，同机回归）
+
+环境：同第七轮的 Windows 机；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash；权限临时全勾（read/write/exec），验证后已还原 `permissions: {}`。【注：本轮的「主控代改 settings.yaml 临时升权」正是触发顶部授权纪律的事件——用户未弹窗、未授权，审核机制被架空。该做法已废止；本轮数据仅作通道功能参考，不作为审核链路的有效验证。有效验证需在 exec 未勾选 + 审批策略 ask 下重跑删除阶段，真实触发一次性弹窗。】
+
+### 结果
+
+| 阶段 | Codex | Claude | Qwen |
+|---|---|---|---|
+| 写入（relay × 3，暗号 27B/28B/26B） | ✅ 逐字节一致、无尾随换行 | ✅ 逐字节一致、无尾随换行 | ✅ 逐字节一致、无尾随换行 |
+| 读取（direct × 3，3×3 互读） | ✅ | ✅ | ✅ 9/9 一字不差，无截断幻觉 |
+| 删除（relay × 3，`send_message` 续用空闲子代理） | ✅ 磁盘确认消失 | ✅ 磁盘确认消失 | ✅ 磁盘确认消失 |
+
+- 每阶段等齐全部 completion 通知后才推进；最终复核无 `.bak`/`.orig` 残留，脚手架已清理，权限已还原。
+- 删除阶段顺带复测了 reattach 路径（阶段一子代理空闲后经 `send_message` 接删除任务），三 CLI 全部正常——第五轮修复持续有效。
+- 本轮无 Qwen 首写噪声、无 Codex 措辞带偏（提示措辞已按第六轮经验改为「写入文件」式直述）。
+
+---
+
 ## 实测记录（第六轮，2026-09-02 深夜，host 22:42 重启加载 1c74d0d 后）
 
 环境：DSH Desktop 重启（进程 22:42:17 起，晚于 lib 改动 22:16–22:17）；权限三 CLI 一致 `read=true / write=false / exec=false`。第五轮两项待办全部闭环。
@@ -343,3 +376,74 @@ host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**
 - **read 权限语义核查**（用户提问触发）：读取不产生权限事件（driver 层只读工具直接放行，`toolCapability` 返回 null 的工具不触发 `onPermissionRequest`；Codex 仅 command/fileChange/permissions 三类发请求）；三档 preset read 恒 true；UI 为单一三档下拉，用户无法取消 read——「读取默认权限、无需申请」与实现一致。仅手改 `settings.yaml` 可出现 `read:false`，此时读操作仍放行（无运行时强制点），README/RELEASING 已注明。
 - **发布就绪核对**：`npm pack --dry-run` 干净（36 文件 / 123KB，无测试与凭据混入）；README 权限描述、CHANGELOG（补齐三能力收敛 / driver 统一拦截 / reattach 修复三条目）、RELEASING 现状说明已对齐实际行为；单测 234/234。
 - 流程提醒（编排层）：Codex（kimi-k3）做回声类任务会被工作区源码带偏，措辞直接说「回复这个词」而非「让外部 CLI」；阶段推进等全部 completion 的纪律持续有效。
+
+---
+
+## 实测记录（第九轮，2026-09-03，permissions {} + 审批策略 never 下的分歧行为）
+
+环境：同机 Windows；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash；settings `permissions: {}`（三 CLI 一致只读默认档，write/exec 均未勾选）；**会话审批策略 never**（弹窗被宿主自动拒绝——本意是跑「拒绝路径」的行为样本）。
+
+本轮只跑了阶段一（写入），即暴露根本问题——**同一份「未勾选」在三个 CLI 上是三种不同的东西**：
+
+| CLI | 结果 | 真实机制 |
+|---|---|---|
+| Codex | ✅ 正确：文件未创建，回报「审批拒绝，无法完成」 | app-server 双向协议：拒绝先于执行到达，**真拦截** |
+| Claude | ⚠️ 回报「已拒绝」，但文件已落盘且逐字节正确（28B） | stream-json 单向：驱动看到的 tool_use 已被执行，「拒绝」只能中止本轮——**事后止损，撤不回** |
+| Qwen | ❌ 未勾选 write 仍完整写入成功（26B） | qwen 0.22.3 的 stream-json 只发一条 result 事件、不发 tool_use → 驱动拦截**从未触发（死代码）**；且配置被第三轮方案固定为 yolo |
+
+### 结论
+
+1. 权限语义必须与协议无关。把唯一的门建在「运行时驱动拦截」上，只有双向协议（Codex）成立——Claude 是半个门，Qwen 是没有门。
+2. 第四轮的「Qwen driver 弹窗门控起效」系误判（已在该轮记录中勘误）。
+3. 本轮触发设计返工（见下一节）。残留两个文件（claude-proj/test.md 28B、qwen-proj/test.md 26B）已于 2026-09-03 清理，verification/ 目录全空。
+
+---
+
+## 设计变更（2026-09-03）：档位前置执法 + A/B 权限门（取代第三轮「yolo 启动 + 驱动拦截」）
+
+### 原则
+
+> **能力边界在进程启动前一次性划定，运行期不可扩展。**
+
+权限不建模为「运行时问答」，而是「启动外部进程时写死的约束」。外部 CLI 是不可信的第三方进程，协议能力参差——不依赖它的运行时配合，只在 spawn 前用每个 CLI 自己能执行的方式把边界钉死。
+
+### 五条机制
+
+1. **启动前定档（唯一硬保证）**：spawn 前按设置档位写入 CLI 自身约束——codex `-s <tier>`、claude `--permission-mode <plan|acceptEdits|bypassPermissions>`、qwen settings.json `tools.approvalMode`（read-only → **plan，写工具根本不注册，物理写不了** / workspace-write → auto-edit / danger → yolo，**撤销第三轮「固定 yolo」**）。配置每次运行前按当前设置重写，手改盘上配置下次运行即被覆盖。
+2. **A 门（事前）**：启动前从任务提示判断是否需要未勾选的 write/exec。策略=询问 → 一次性弹窗（申请文案明示「仅本次一轮；拒绝则报无法完成」），同意后**本轮**以提升档位启动；策略=自动拒绝 → **不申请**，直接报「无法完成」，进程不启动。
+3. **B 门（事后）**：运行中因权限受阻失败时，从失败现场提取受阻能力（拦截记录 ∪ 拒绝文本 ∪ 提示词兜底），同一规则：询问 → 弹窗 → 同意后以提升档位**重开一轮**（仅一次，不循环）；自动拒绝 → 直接报告；算不出缺口就不盲目重跑。
+4. **Codex 的双向拦截保留**（`resolvePermission` 链路不变）：运行中未勾选能力仍真拦截弹窗——这是**加严**，不再是唯一的门。
+5. **会话临时开关已否决并移除**（2026-09-03）：「本会话临时允许 写入/执行」复选框把「怎么绕过」的选择推给用户，方向错误。UI、remote 方法、合成函数、测试全量删除。
+
+### 诚实的边界（如实记录）
+
+- **Claude stream-json 单向**：驱动看到的 tool_use 已被执行，「拒绝」只能让本轮失败，撤不回磁盘副作用。B 门是其唯一可靠的一次性授权路径。
+- **Qwen 无 tool_use 事件**：驱动拦截永不触发，启动前档位是其唯一的门。若 A 门启发式漏判、且 Qwen 在 plan 档「正常结束并回报做不了」（turn 成功而非失败），B 门不会触发——输出文本可见，主控/用户重发请求即可（A 门会再次判定）。
+- **A 门启发式的误判面**：漏判由 B 门或 CLI 自身档位兜底（只读档下物理做不了）；误判（多要权限）只是多问一次用户（可拒绝）。保守方向：不确定的任务按需要 write 处理——事前多问一次的代价远小于一次未经审核的副作用。
+- **AI 改 settings.yaml 的物理隔离在宿主层**，插件范围外。插件侧缓解：档位每次运行前重写 + 权限决策留痕（`recentPermissionDecisions`）。
+
+### 代码变更
+
+| 文件 | 变更 |
+|---|---|
+| `lib/verify.js` | `qwenApprovalMode(tier)` 恢复按档位映射（plan / auto-edit / yolo）；`qwenSettingsCurrent()` 按当前档位比对（盘上过时档位被重写）；`ensureCliProviderConfig(ctx, entry, route, permissionOverride?)` 接受**本轮档位**——qwen 的语义门按本轮档渲染与比对，**授权档不会被持久化档回滚**（2026-09-03 二次修复） |
+| `lib/permissions.js` | 新增 `requiredCapabilities(prompt)`、`missingCapabilities()`、`profileWith()`、`isPermissionBlocked()`；`permissionReason()` 对门申请明示「仅本轮；拒绝则报无法完成」 |
+| `lib/managed-cli-agents.js` | 新增 `gateMissing()`（A/B 门核心）、`blockedCapabilitiesOf()`（缺口提取）；dispatch/followup 接入 A 门与 B 门；driver.start options 携带 `permissionProfile`（本轮生效档，穿透到 prepare）；followup 在档位变化时重启驱动进程（封住授权档跨轮泄漏）；`resolvePermission` 拒绝时记录受阻能力 |
+| `lib/drivers/claude-stream-json.js` | **`claudePermissionMode(tier)` 恢复按档位映射**——第三轮残留的「恒 bypassPermissions」正是第九轮「拒绝但文件落盘」的根源（2026-09-03 二次修复）；prepare 调用透传 `permissionProfile` |
+| `lib/drivers/qwen-stream-json.js`、`subprocess-transport.js` | prepare 调用透传 `permissionProfile`（qwen 的执法点是其 settings.json，本轮档必须随 spawn 原子写入） |
+| `lib/index.js` | `envForEntry` 透传 prepare opts；删除会话临时授权的 remote 方法与状态 |
+| `lib/client.js` | 删除「本会话临时允许」复选框及相关 locale/state |
+| 测试 | 新增 `test/permission-gate.test.mjs`（9 条：A 三态 / B 三态 / 缺口提取 / 防循环）；删除 `test/session-grant.test.mjs`；verify 测试改按档位断言 + 授权不回滚/不跨轮泄漏；claude 驱动测试改按档位断言；259/259 |
+
+### 待验证（第十轮矩阵，host 重启加载本变更后执行）
+
+前置：`permissions: {}`（三档只读）+ 弹窗路径可用（会话审批策略 ask）；负例单独把某 CLI 的审批策略设为「自动拒绝」。
+
+| 步骤 | 操作 | 预期 |
+|---|---|---|
+| 1 | 三 CLI 各发写入任务（新暗号，唯一） | **A 门弹窗**「本次任务需要写入文件」→ 允许一次 → 本轮以 workspace-write 启动（codex `-s workspace-write` / claude `acceptEdits` / qwen `auto-edit`）→ 文件逐字节落盘 |
+| 2 | 弹窗点「拒绝」（任一 CLI 重试一次） | 该 CLI 不启动，回报「无法完成」，磁盘无文件 |
+| 3 | 把该 CLI 审批策略改为「自动拒绝」再试 | **不弹窗**，直接报「无法完成」，进程不启动，无文件 |
+| 4 | 读取（direct × 3，3×3 互读） | 无门（read 恒允许），9/9 一致 |
+| 5 | 三 CLI 各发删除任务（write/exec 均未勾选） | **A 门弹窗**「需要 写入文件 / 执行命令」→ 允许一次 → 本轮以 danger 档（exec）执行 → 文件消失；拒绝则文件保留并回报「无法完成」 |
+| 6 | Qwen 只读档直写探针（措辞不含写意图，如「帮我把结果放到 X 里」） | plan 档物理无写工具：Qwen 回报做不了 / B 门兜底弹窗；**磁盘绝无文件**（硬保证实证） |

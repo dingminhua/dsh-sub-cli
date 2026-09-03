@@ -6,7 +6,7 @@
 // (~/.codex/config.toml, ~/.claude/settings.json, ...). On dispatch it points
 // each CLI's config dir to <unifiedDir>/config-<cli>/ via that CLI's own env var.
 
-import { deriveSandboxMode } from "./permissions.js";
+import { deriveSandboxMode, normalizePermission } from "./permissions.js";
 
 /** The three permission tiers offered per CLI. Default: workspace-write. */
 export const PERMISSION_TIERS = [
@@ -41,6 +41,14 @@ export const CLI_REGISTRY = [
 		argv: (task, model, permission) => {
 			const mode = tierOf(permission);
 			const args = ["exec", "--json", "--skip-git-repo-check", "-s", mode];
+			// Codex's native web_search tool. IMPORTANT: the `--search` CLI flag
+			// is TUI-only (codex exec rejects it); the config-override form
+			// `-c tools.web_search=true` works for exec (same as the TOML key
+			// [tools].web_search, per openai/codex#2760). The exec tier
+			// (danger-full-access) carries egress intent, so enable it there.
+			if (deriveSandboxMode(normalizePermission(permission)) === "danger-full-access") {
+				args.push("-c", "tools.web_search=true");
+			}
 			if (model) args.push("-m", model);
 			args.push(task);
 			return args;

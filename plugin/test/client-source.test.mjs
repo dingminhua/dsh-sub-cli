@@ -112,7 +112,6 @@ test("old probe-era labels and second connectivity line are gone", () => {
 test("permission UI renders one mutually-exclusive tier dropdown plus the unchecked-strategy select", () => {
 	// Fine-grained profile model mirrored in the client.
 	assert.match(source, /var PERMISSION_PRESETS = /);
-	assert.match(source, /var APPROVAL_OPTIONS = /);
 	assert.match(source, /function normalizePermissionClient\(raw\)/);
 	// The three old capability checkboxes are gone; one tier SELECT replaces
 	// them (只读 ⊆ 可写 ⊆ 可调用工具). presetIdOf maps any stored profile
@@ -131,26 +130,22 @@ test("permission UI renders one mutually-exclusive tier dropdown plus the unchec
 	assert.match(source, /\{ id: "read-only", label: "只读", profile: \{ read: true, write: false, exec: false/);
 	assert.match(source, /\{ id: "workspace-write", label: "可写", profile: \{ read: true, write: true, exec: false/);
 	assert.match(source, /\{ id: "danger-full-access", label: "可调用工具", profile: \{ read: true, write: true, exec: true/);
-	// The tier select writes the chosen preset's full profile, keeping the
-	// approval strategy: read: chosen.read, write: chosen.write, exec: chosen.exec.
-	assert.match(source, /props\.onPermissionChange\(\{ read: chosen\.read, write: chosen\.write, exec: chosen\.exec, approval: permission\.approval \}\)/);
+	// The tier select writes the chosen preset's full profile with approval
+	// fixed to "never" — no ask/deny toggle in the UI.
+	assert.match(source, /props\.onPermissionChange\(\{ read: chosen\.read, write: chosen\.write, exec: chosen\.exec, approval: "never" \}\)/);
 	// No network toggle: exec already carries egress intent, and the host-side
 	// normalizer maps legacy network:true onto exec.
 	assert.doesNotMatch(source, /"row\\.network"/, "the network toggle label is gone");
 	// Approval select stays (right-aligned): it decides what happens when a
 	// capability NOT granted by the current tier is triggered.
 	assert.match(source, /"row\.approval"/);
-	assert.match(source, /"row\.approvalAsk"/);
-	assert.match(source, /"row\.approvalNever"/);
+	assert.doesNotMatch(source, /"row\.approvalAsk"/, "no ask label — the approval toggle is gone");
+	assert.doesNotMatch(source, /"row\.approvalNever"/, "no never label — the approval toggle is gone");
 	assert.doesNotMatch(source, /"row\.approvalAllow"/, "auto-allow is gone; the tier is the allow");
 	assert.doesNotMatch(source, /\{ id: "allow"/, "no allow option in APPROVAL_OPTIONS");
-	assert.match(source, /var APPROVAL_OPTIONS = \[\s*\{ id: "ask"[\s\S]*?\{ id: "never"/, "exactly ask + never, in that order");
-	assert.doesNotMatch(source, /"row\.approvalHint"/, "the inline hint is gone; the permission row is one line");
-	assert.match(source, /"row\.approval"\s*:\s*"未勾选时触发"/, "the Chinese label says it fires on an unchecked trigger");
-	assert.match(source, /"row\.approval"\s*:\s*"On unchecked trigger"/, "the English label says it fires on an unchecked trigger");
-	assert.match(source, /dsc-perm-approval\{[^}]*margin-left:auto/, "the approval control is pushed to the row's right side");
+	assert.doesNotMatch(source, /var APPROVAL_OPTIONS = /, "the approval dropdown is removed — no ask/never toggle");
+	assert.doesNotMatch(source, /dsc-perm-approval/, "no approval control element in the permission row");
 	assert.match(source, /dsc-perm-tier select\{/, "the tier dropdown shares the select styling");
-	assert.doesNotMatch(source, /dsc-perm-note-inline/, "no hint element or style remains");
 	// Tier semantics: each tier includes the one above (read ⊆ write ⊆ tools).
 	assert.match(source, /"row\.permHint"\s*:\s*"[^"]*只读包含读取[^"]*可写包含只读[^"]*可调用工具包含前两者/);
 	// Permissions persist as profile objects (normalizePermissions), not tiers.

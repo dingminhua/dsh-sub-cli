@@ -18,7 +18,7 @@ export function registerRelaySubmitTool(ctx, service) {
 	if (existing) existing.add(RELAY_SUBMIT_TOOL);
 	ctx.tools.register(defineTool({
 		name: RELAY_SUBMIT_TOOL,
-		description: "Relay-only: forward the complete current task to the external CLI bound to this child. You must call this once per turn before report and must not answer the task yourself.",
+		description: "仅 CLI Relay 子代理可调用（由 cli_<cli>_subagent 创建、绑定 managed-<cli>-relay 的子代理）：把当前完整任务转发给本子代理绑定的外部 CLI。其他任何代理——主控、普通 subagent、AgentTeams 成员——一律不可调用：本工具按调用者自身会话 id 查找 CLI 绑定，未绑定的调用必然报错。绑定的 CLI Relay 子代理每回合必须先调用本工具转发任务、再报告结果，不得自行作答。",
 		parameters: { prompt: { type: "string", required: true, description: "Complete task text to send to the bound external CLI." } },
 		output: { schema: { type: "json" }, render: (_a, v) => [{ type: "text", text: v.output || "" }] },
 		isConcurrencySafe: () => false,
