@@ -65,7 +65,7 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 	const tool = fixture.tools.get("cli_codex_direct");
 	await assert.rejects(
 		tool.execute({ description: "检查", prompt: "检查项目" }, { agent: AGENT, signal: SIGNAL }),
-		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /审批策略为“从不”/.test(error.message) && /严禁修改 ~\/\.dsh\/settings\.yaml/.test(error.message)
+		(error) => error.code === "CLI_PERMISSION_CONFIGURATION_REQUIRED" && /外部 Agent CLI 管理器 → Codex → 权限/.test(error.message) && /未在权限档位中授予/.test(error.message) && /严禁修改 ~\/\.dsh\/settings\.yaml/.test(error.message)
 	);
 });
 

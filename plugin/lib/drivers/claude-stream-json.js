@@ -98,8 +98,8 @@ function countToolUses(events) {
 /**
  * Build a synthetic permission request for a tool_use block. The hook returned
  * to managed-cli-agents.js calls resolvePermission() on the result; that
- * function either allows silently (capability granted) or forwards the
- * request to ctx.approval.request() for an interactive ask.
+ * function answers deterministically by capability checkbox — allowed
+ * silently when granted, rejected otherwise (recorded for the audit trail).
  */
 function buildClaudePermissionRequest({ toolName, toolInput, callId, pluginSessionId, childId, remoteSessionId, turnId }) {
 	return normalizePermissionRequest("claude", toolName, {

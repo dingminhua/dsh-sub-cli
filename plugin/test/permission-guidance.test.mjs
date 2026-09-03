@@ -11,12 +11,12 @@ import {
 test("permission guidance stops at reporting and forbids self-authorization", () => {
 	const text = permissionConfigurationMessage("codex");
 	assert.match(text, /设置 → 插件 → 外部 Agent CLI 管理器 → Codex → 权限/);
-	// 授权纪律（2026-09-02）：临时授权的唯一形态是一次性弹窗；弹窗不可用就
-	// 是「这次不该做」。不提供任何 AI 或用户可用的绕行开关。
-	assert.match(text, /审批策略为“从不”/);
-	assert.match(text, /不会自动提权或重复运行/);
+	// 授权模型（审批模式已移除，2026-09）：勾选框是唯一授权，档位启动时定死。
+	// 未勾选的能力被触发 → 确定拒绝 → 任务停止报告，没有弹窗或绕行开关。
+	assert.match(text, /未在权限档位中授予/);
+	assert.match(text, /不会自动提权或重跑/);
 	assert.match(text, /严禁修改 ~\/\.dsh\/settings\.yaml/);
-	assert.doesNotMatch(text, /本会话临时允许/);
+	assert.doesNotMatch(text, /弹窗/);
 	assert.doesNotMatch(text, /“完全”/);
 	assert.match(permissionConfigurationMessage("claude"), /Claude Code → 权限/);
 	assert.match(permissionConfigurationMessage("qwen"), /Qwen Code → 权限/);

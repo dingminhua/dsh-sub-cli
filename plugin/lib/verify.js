@@ -345,10 +345,11 @@ export function currentDir(ctx) {
  * prompts (matches the danger tier where exec already implies full trust).
  *
  * Permission enforcement is now entirely at the driver layer
- * (onPermissionRequest hook → resolvePermission → ctx.approval.request).
- * The CLI always runs at "yolo" so it registers all tools internally; the
- * driver intercepts each tool_use before it executes and gates it against the
- * user's stored permission profile. This unifies the UX across all three CLIs.
+ * (onPermissionRequest hook → resolvePermission's deterministic answer by
+ * capability checkbox; the approval mode was removed 2026-09). The CLI always
+ * runs at "yolo" so it registers all tools internally; the driver intercepts
+ * each tool_use before it executes and gates it against the user's stored
+ * permission profile. This unifies the UX across all three CLIs.
  */
 /**
  * Qwen's own enforcement. Qwen's stream-json wire emits no tool_use events, so

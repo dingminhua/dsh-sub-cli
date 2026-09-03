@@ -3,7 +3,7 @@
 // integrations. Initial implementation is in-memory; records contain no keys.
 
 import { randomUUID } from "node:crypto";
-import { normalizePermission, deriveSandboxMode, allowsCapability, capabilityKey, missingCapabilities, profileWith, isPermissionBlocked } from "./permissions.js";
+import { normalizePermission, deriveSandboxMode, allowsCapability } from "./permissions.js";
 import { DEFAULT_PERMISSION } from "./registry.js";
 import { assertManagedCliDriver } from "./drivers/types.js";
 
@@ -53,15 +53,6 @@ export function looksPrematureOutput(text, toolRounds) {
 function now() { return new Date().toISOString(); }
 function errorOf(code, message) { const error = new Error(message); error.code = code; return error; }
 
-// 受阻能力落账：resolvePermission 拒绝（never 或弹窗未放行）时记下精确的
-// 能力键，B 路径据此申请/重跑，而不是靠提示词猜测。
-function recordBlockedCapability(record, capability) {
-	const key = capabilityKey(capability);
-	if (key === null) return;
-	if (!Array.isArray(record.blockedCapabilities)) record.blockedCapabilities = [];
-	if (!record.blockedCapabilities.includes(key)) record.blockedCapabilities.push(key);
-}
-
 /** Durable view of a session record: never serializes live run/pending state. */
 export function persistable(record) {
 	return Object.freeze({
@@ -95,20 +86,19 @@ function snapshot(record) {
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
 		lastError: record.lastError ?? null,
-		lastPermissionDecision: record.lastPermissionDecision ? Object.freeze({ ...record.lastPermissionDecision }) : null,
-		pendingPermission: record.pendingPermission ? Object.freeze({ ...record.pendingPermission }) : null
+		lastPermissionDecision: record.lastPermissionDecision ? Object.freeze({ ...record.lastPermissionDecision }) : null
 	});
 }
 
 export class ManagedCliAgentsService {
 	/**
-	 * @param {{ drivers: Record<string, object>, routeSource, permissionSource, approvalRequest, persist?, autoContinueSource?, _skipAssert? }} options
+	 * @param {{ drivers: Record<string, object>, routeSource, permissionSource, persist?, autoContinueSource?, _skipAssert? }} options
 	 *   drivers maps CLI id → driver instance (codex, claude, qwen …). At least one
 	 *   driver must be present; the constructor validates the map shape.
 	 *   Set `_skipAssert = true` in unit tests that use minimal driver fakes;
 	 *   production always asserts the full contract.
 	 */
-	constructor({ drivers, routeSource, permissionSource, approvalRequest, persist = null, autoContinueSource = null, _skipAssert = false }) {
+	constructor({ drivers, routeSource, permissionSource, persist = null, autoContinueSource = null, _skipAssert = false }) {
 		if (!drivers || typeof drivers !== "object") throw new TypeError("managedCliAgents requires a drivers map");
 		const ids = Object.keys(drivers);
 		if (!ids.length) throw new TypeError("managedCliAgents requires at least one driver");
@@ -125,7 +115,6 @@ export class ManagedCliAgentsService {
 		this.driverIds = Object.freeze([...ids]);
 		this.routeSource = typeof routeSource === "function" ? routeSource : () => ({});
 		this.permissionSource = typeof permissionSource === "function" ? permissionSource : () => "read-only";
-		this.approvalRequest = typeof approvalRequest === "function" ? approvalRequest : async () => "unavailable";
 		// Optional durable persistence seam: { load(): Promise<SavedSession[]>, save(sessions): Promise<void> }.
 		// When absent the service stays in-memory. Records never contain keys.
 		this.persist = persist && typeof persist.load === "function" && typeof persist.save === "function" ? persist : null;
@@ -193,7 +182,6 @@ export class ManagedCliAgentsService {
 				lastError: rec.lastError ?? null,
 				run: null,
 				remoteSessionId: rec.remoteSessionId,
-				pendingPermission: null,
 				lastPermissionDecision: null
 			};
 			this.records.set(record.sessionId, record);
@@ -216,65 +204,18 @@ export class ManagedCliAgentsService {
 	permissionSpec(cli, override = null) {
 		const profile = normalizePermission(override ?? this.permissionSource(cli) ?? DEFAULT_PERMISSION);
 		const mode = deriveSandboxMode(profile);
-		// `never` asks Codex to deny out-of-scope operations without emitting a
-		// request; every other mode keeps on-request so the capability gate and
-		// approval seam below can decide each request.
-		const approvalPolicy = profile.approval === "never" ? "never" : "on-request";
-		return { permissionMode: mode, approvalPolicy, sandbox: mode, profile };
+		// The approval mode was removed (2026-09): the capability checkboxes are
+		// the only grant and are fixed at launch. "on-request" keeps every
+		// out-of-scope request flowing to resolvePermission below, which answers
+		// deterministically by checkbox — allow checked, decline unchecked — and
+		// records the decision for the audit trail.
+		return { permissionMode: mode, approvalPolicy: "on-request", sandbox: mode, profile };
 	}
 
-	// ── A / B 权限门 ─────────────────────────────────────────────────────────
-	// 纪律：权限不足只有两种合法动作——「询问」时向 human 发一次性申请；
-	// 「自动拒绝」时不申请，直接报告做不了。没有开关，没有绕行。
-	//
-	// A（事前）：启动前判断任务是否需要未勾选的能力，需要就先 gate；
-	// B（事后）：运行中因权限受阻而失败时，按同一规则 gate，同意则重开一轮。
-	// 返回 null 表示没有缺口（无需 gate）；返回放行后的加宽档位。
-	async gateMissing({ record, cli, prompt, agent, signal, phase, needed = null }) {
-		const profile = normalizePermission(this.permissionSource(cli) ?? DEFAULT_PERMISSION);
-		const missing = (needed ?? missingCapabilities(profile, prompt)).filter((c) => !profile[c]);
-		if (!missing.length) return null;
-		const capability = missing.includes("exec") ? "command" : "file-change";
-		const detail = missing.map((c) => (c === "exec" ? "执行命令" : "写入文件")).join(" / ");
-		if (profile.approval === "never") {
-			// 不申请：直接报告做不了。
-			throw errorOf("CLI_PERMISSION_BLOCKED",
-				`${cli} 本次任务需要「${detail}」能力，但当前权限档位未授予，且审批策略为“自动拒绝”。任务已停止，无法完成——请如实报告用户，由用户在设置卡调整权限档位。`);
-		}
-		const request = {
-			requestId: `cli-gate-${randomUUID()}`,
-			remoteRequestId: "",
-			cli,
-			turnId: record?.turnId ?? null,
-			capability,
-			operation: `${phase === "retry" ? "重开一轮" : "本次任务"}需要${detail}`,
-			target: null,
-			reason: `任务提示：${String(prompt ?? "").slice(0, 200)}`,
-			createdAt: now()
-		};
-		const outcome = await this.approvalRequest(Object.freeze({ ...request, gated: true, pluginSessionId: record?.sessionId ?? null, childId: null }), { agent, signal });
-		if (outcome !== "allowed-once") {
-			throw errorOf("CLI_PERMISSION_BLOCKED",
-				`${cli} 本次任务需要「${detail}」能力，未获放行（${outcome}）。任务已停止，无法完成——请如实报告用户。`);
-		}
-		return profileWith(profile, missing);
-	}
-
-	// 从失败现场提取受阻能力：拦截记录（精确）∪ 拒绝文本（CLI 自身执法，如
-	// plan 档的“写入操作均被拒绝”）∪ 提示词启发（兜底）。算不出缺口就不重跑。
-	blockedCapabilitiesOf(record, error, prompt, profile) {
-		const p = normalizePermission(profile ?? this.permissionSource(record.cli) ?? DEFAULT_PERMISSION);
-		const caps = new Set(record.blockedCapabilities ?? []);
-		const text = error instanceof Error ? `${error.message}\n${error.cause ?? ""}` : String(error ?? "");
-		if (/写入|写文件|写操作|file-change|edit|write|read-only|plan mode/i.test(text)) caps.add("write");
-		if (/命令|command|shell|执行|运行|exec|bash/i.test(text)) caps.add("exec");
-		for (const c of missingCapabilities(p, prompt)) caps.add(c);
-		return [...caps].filter((c) => !p[c]);
-	}
-
-	// Single permission path shared by dispatch, followup and reattach: enforce
-	// the capability gate first, then either auto-decide (allow/never) or ask
-	// the bound approval seam, and record the decision.
+	// Single deterministic permission resolver shared by dispatch, followup and
+	// reattach: a checked capability is allowed silently; an unchecked one is
+	// rejected and recorded. No interactive ask, no escalation — the CLI
+	// receives the rejection and adapts or reports the task as not completable.
 	//
 	// Auto-continue nudge loop: when a finished turn looks like a premature stop
 	// (tool work happened but the text ends with a continuation commitment), push
@@ -300,7 +241,7 @@ export class ManagedCliAgentsService {
 			if (!looksPrematureOutput(text, toolRounds)) break;
 			record.updatedAt = now();
 			last = await record.run.followup(AUTO_CONTINUE_PROMPT, {
-				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+				onPermissionRequest: (request) => this.resolvePermission(record, request)
 			});
 			added = (last.text || "").trim();
 			if (!added) break; // nothing new — stop to avoid a useless loop
@@ -319,57 +260,28 @@ export class ManagedCliAgentsService {
 		};
 	}
 
-	async resolvePermission(record, request, { agent = null, childId = null, signal = null } = {}) {
-		const sessionId = record.sessionId;
+	async resolvePermission(record, request) {
 		const profile = normalizePermission(this.permissionSource(record.cli) || DEFAULT_PERMISSION);
 		const decidedAt = now();
-		// Decision model: the checkboxes are the only grant. A checked capability
-		// is allowed silently; an UNCHECKED one that comes up at runtime is handled
-		// by the per-CLI strategy — ask interactively, or auto-reject. There is no
-		// separate "auto-allow": checking the box already is that.
+		// Decision model (approval mode removed 2026-09): the checkboxes are the
+		// only grant. A checked capability is allowed silently; an unchecked one
+		// is rejected and recorded — the CLI receives the rejection and adapts
+		// or reports the task as not completable.
 		if (allowsCapability(profile, request.capability)) {
 			this.#recordDecision(record, request, "allowed-once", decidedAt);
 			return "allowed-once";
 		}
-		// Unchecked: the strategy decides. "never" auto-rejects without prompting;
-		// "ask" (the default) surfaces the interactive prompt below.
-		if (profile.approval === "never") {
-			this.#recordDecision(record, request, "rejected", decidedAt);
-			recordBlockedCapability(record, request.capability);
-			return "rejected";
-		}
-		if (record.pendingPermission) throw errorOf("PERMISSION_REQUEST_BUSY", `managed CLI session ${sessionId} already has a pending permission request`);
-		const contextual = Object.freeze({ ...request, pluginSessionId: sessionId, childId });
-		record.pendingPermission = {
-			requestId: contextual.requestId, remoteRequestId: contextual.remoteRequestId,
-			turnId: contextual.turnId, itemId: contextual.itemId, capability: contextual.capability,
-			operation: contextual.operation, target: contextual.target, reason: contextual.reason,
-			createdAt: contextual.createdAt
-		};
-		record.status = "awaiting_permission";
-		record.updatedAt = now();
-		try {
-			const outcome = await this.approvalRequest(contextual, { agent, signal });
-			this.#recordDecision(record, contextual, outcome, now());
-			if (outcome !== "allowed-once") recordBlockedCapability(record, request.capability);
-			return outcome;
-		} finally {
-			if (record.pendingPermission?.requestId === contextual.requestId) record.pendingPermission = null;
-			if (record.status === "awaiting_permission") record.status = "running";
-			record.updatedAt = now();
-		}
+		this.#recordDecision(record, request, "rejected", decidedAt);
+		return "rejected";
 	}
 
-	async dispatch({ cli = "codex", cwd, prompt, signal, agent = null, childId = null, granted = null }) {
+	async dispatch({ cli = "codex", cwd, prompt, signal, agent = null, childId = null }) {
 		const driver = this.drivers[cli];
 		if (!driver) throw errorOf("CLI_UNSUPPORTED", `managed CLI "${cli}" is not registered. Available: ${this.driverIds.join(", ")}`);
 		if (typeof cwd !== "string" || !cwd) throw errorOf("SESSION_CWD_REQUIRED", "managed CLI session requires cwd");
 		if (typeof prompt !== "string" || !prompt.trim()) throw errorOf("SESSION_PROMPT_REQUIRED", "managed CLI session prompt must not be empty");
-		// A｜事前门：需要未勾选的能力就先向 human 申请（或按策略直接报告做不了）。
-		// `granted` 非空表示本轮已经过 B 路径授权，不再重复申请。
 		const route = await this.routeSource(cli) ?? {};
-		const grantedProfile = granted ?? await this.gateMissing({ record: null, cli, prompt, agent, signal, phase: granted ? "retry" : "pre" });
-		const permission = this.permissionSpec(cli, grantedProfile);
+		const permission = this.permissionSpec(cli);
 		const timestamp = now();
 		const sessionId = `cli-${cli}-${randomUUID()}`;
 		const record = {
@@ -377,20 +289,20 @@ export class ManagedCliAgentsService {
 			provider: route.provider || "", model: route.model || "", reasoningEffort: route.reasoningEffort || "",
 			permissionMode: permission.permissionMode,
 			status: "starting", activeTurn: true, createdAt: timestamp, updatedAt: timestamp,
-			lastError: null, run: null, remoteSessionId: null, pendingPermission: null, lastPermissionDecision: null
+			lastError: null, run: null, remoteSessionId: null, lastPermissionDecision: null
 		};
 		this.records.set(sessionId, record);
 		try {
 			record.run = await driver.start({
 				cwd, prompt, model: record.model || undefined, reasoningEffort: record.reasoningEffort || undefined,
 				approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox,
-				// 本轮生效档位（含 A/B 门授权）：穿透到 prepare，供 qwen 渲染
-				// approvalMode——否则配置门会按持久化档把授权改写回去。
+				// 本轮生效档位：穿透到 prepare，供 qwen 渲染 approvalMode——否则
+				// 配置门会按持久化档把授权改写回去。
 				permissionProfile: permission.profile,
 				signal,
-				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+				onPermissionRequest: (request) => this.resolvePermission(record, request)
 			});
-			if (!record.pendingPermission) record.status = "running";
+			record.status = "running";
 			record.updatedAt = now();
 			const result = await record.run.result;
 			// Nudge an early-stopped turn (bounded) so one dispatch returns a
@@ -403,19 +315,6 @@ export class ManagedCliAgentsService {
 			await this.persistNow();
 			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
-			// B｜事后门：运行中因权限受阻而失败。按同一规则：询问则申请，同意后
-			// 以更高档位重开一轮（只允许一次）；自动拒绝则直接报告做不了；
-			// 从失败现场算不出缺口时同样只报告（不盲目重跑）。
-			if (!granted && isPermissionBlocked(error) && !signal?.aborted) {
-				const needed = this.blockedCapabilitiesOf(record, error, prompt);
-				const widened = await this.gateMissing({ record, cli, prompt, agent, signal, phase: "retry", needed });
-				if (widened) {
-					await record.run?.dispose?.().catch(() => {});
-					this.records.delete(sessionId);
-					return this.dispatch({ cli, cwd, prompt, signal, agent, childId, granted: widened });
-				}
-			}
-			record.pendingPermission = null;
 			record.remoteSessionId = record.run?.remoteSessionId ?? record.remoteSessionId;
 			record.status = signal?.aborted ? "interrupted" : "failed";
 			record.activeTurn = false;
@@ -426,17 +325,15 @@ export class ManagedCliAgentsService {
 		}
 	}
 
-	async followup(sessionId, prompt, signal, { agent = null, childId = null, granted = null } = {}) {
+	async followup(sessionId, prompt, signal, { agent = null, childId = null } = {}) {
 		const record = this.require(sessionId);
 		if (TERMINAL.has(record.status)) throw errorOf("SESSION_CLOSED", `managed CLI session ${sessionId} is closed`);
 		if (record.activeTurn) throw errorOf("SESSION_BUSY", `managed CLI session ${sessionId} already has an active turn`);
 		if (typeof prompt !== "string" || !prompt.trim()) throw errorOf("SESSION_PROMPT_REQUIRED", "follow-up prompt must not be empty");
-		// A｜事前门（每一轮都判：新一轮任务可能需要不同能力）。
-		const grantedProfile = granted ?? await this.gateMissing({ record, cli: record.cli, prompt, agent, signal, phase: granted ? "retry" : "pre" });
-		const turnPermission = this.permissionSpec(record.cli, grantedProfile);
+		const turnPermission = this.permissionSpec(record.cli);
 		// 档位变化 → 驱动进程必须按新档重启（codex/claude 的档位在启动参数、
-		// qwen 在其 settings.json，都不能热改）。这同时封住授权档跨轮泄漏：
-		// 上一轮被授权提升的进程不会把加宽档带进未授权的下一轮。
+		// qwen 在其 settings.json，都不能热改）。设置卡调整权限后，下一轮
+		// followup 自动按新档重启进程。
 		if (record.run && record.permissionMode !== turnPermission.permissionMode) {
 			record.remoteSessionId = record.run.remoteSessionId ?? record.remoteSessionId;
 			await record.run.dispose?.().catch(() => {});
@@ -455,7 +352,7 @@ export class ManagedCliAgentsService {
 		signal?.addEventListener("abort", onAbort, { once: true });
 		try {
 			const result = await record.run.followup(prompt, {
-				onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+				onPermissionRequest: (request) => this.resolvePermission(record, request)
 			});
 			const settled = await this.settleWithAutoContinue(record, result, { agent, childId, signal });
 			record.remoteSessionId = settled.threadId ?? record.run.remoteSessionId ?? record.remoteSessionId;
@@ -465,20 +362,6 @@ export class ManagedCliAgentsService {
 			await this.persistNow();
 			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
-			// B｜事后门（同 dispatch）：受阻则按规则申请，同意后以新档位重启进程
-			// 并重跑同一轮（只允许一次）；算不出缺口就不重跑、直接报告。
-			if (!granted && isPermissionBlocked(error) && !signal?.aborted) {
-				const needed = this.blockedCapabilitiesOf(record, error, prompt);
-				const widened = await this.gateMissing({ record, cli: record.cli, prompt, agent, signal, phase: "retry", needed });
-				if (widened) {
-					record.activeTurn = false;
-					record.status = "ready";
-					record.pendingPermission = null;
-					record.updatedAt = now();
-					return this.followup(sessionId, prompt, signal, { agent, childId, granted: widened });
-				}
-			}
-			record.pendingPermission = null;
 			record.status = signal?.aborted ? "interrupted" : "failed";
 			record.activeTurn = false;
 			record.lastError = error instanceof Error ? error.message : String(error);
@@ -510,10 +393,10 @@ export class ManagedCliAgentsService {
 			reasoningEffort: record.reasoningEffort || undefined,
 			approvalPolicy: spec.approvalPolicy,
 			sandbox: spec.sandbox,
-			// 本轮生效档位（含 A/B 门授权）：穿透到 prepare 供 qwen 渲染。
+			// 本轮生效档位：穿透到 prepare 供 qwen 渲染。
 			permissionProfile: spec.profile,
 			signal,
-			onPermissionRequest: (request) => this.resolvePermission(record, request, { agent, childId, signal })
+			onPermissionRequest: (request) => this.resolvePermission(record, request)
 		});
 		record.status = "ready";
 		record.updatedAt = now();
@@ -527,7 +410,6 @@ export class ManagedCliAgentsService {
 		if (record.activeTurn || !record.run) return { released: false, session: snapshot(record) };
 		await record.run.dispose?.().catch(() => {});
 		record.run = null;
-		record.pendingPermission = null;
 		record.updatedAt = now();
 		await this.persistNow();
 		return { released: true, session: snapshot(record) };
@@ -538,7 +420,6 @@ export class ManagedCliAgentsService {
 		if (!record.activeTurn || !record.run) return { interrupted: false, session: snapshot(record) };
 		const interrupted = await record.run.interrupt?.() === true;
 		if (interrupted) {
-			record.pendingPermission = null;
 			record.status = "interrupted";
 			record.updatedAt = now();
 		}
@@ -607,7 +488,6 @@ export class ManagedCliAgentsService {
 		await record.run?.dispose?.();
 		record.run = null;
 		record.activeTurn = false;
-		record.pendingPermission = null;
 		record.status = "closed";
 		record.updatedAt = now();
 		await this.persistNow();

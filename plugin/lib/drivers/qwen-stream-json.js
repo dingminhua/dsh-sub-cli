@@ -15,8 +15,9 @@
 //   so it registers every tool, and the driver intercepts each `tool_use`
 //   in the stream-json output and routes it through the same
 //   `onPermissionRequest` hook that Codex's app-server uses. resolvePermission
-//   in managed-cli-agents.js gates each request against the user's stored
-//   permission profile and surfaces a DSH approval dialog when needed.
+//   in managed-cli-agents.js answers each request deterministically against
+//   the user's stored capability checkboxes (the approval mode was removed
+//   2026-09: no dialog — unchecked capabilities are rejected and recorded).
 
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";

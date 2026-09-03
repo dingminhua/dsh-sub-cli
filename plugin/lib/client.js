@@ -53,7 +53,6 @@ window.__ModuleLoader__.load({
       "row.effort": "推理强度",
       "row.permission": "权限",
       "row.permHint": "只读包含读取；可写包含只读；可调用工具包含前两者并允许执行命令。",
-      "row.approval": "未勾选的能力不执行",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
       "row.turnTimeout": "轮次超时",
@@ -116,7 +115,6 @@ window.__ModuleLoader__.load({
       "row.effort": "Reasoning effort",
       "row.permission": "Permission",
       "row.permHint": "Read-only includes reading; Writable includes read-only; Tool access includes both and allows running commands.",
-      "row.approval": "Unchecked capabilities are not executed",
       "row.autoContinueMax": "Max nudges (0 = off)",
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
       "row.turnTimeout": "Turn timeout",
@@ -173,11 +171,11 @@ window.__ModuleLoader__.load({
     // Permission tiers shown as ONE mutually-exclusive dropdown. Each tier
     // includes the content of every tier above it (read ⊆ write ⊆ tools), so
     // the three old checkboxes are replaced by a single tier select. Stored
-    // values stay profile-shaped ({read,write,exec,approval}) for the host.
+    // values stay profile-shaped ({read,write,exec}) for the host.
     var PERMISSION_PRESETS = [
-      { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false, approval: "never" } },
-      { id: "workspace-write", label: "可写", profile: { read: true, write: true, exec: false, approval: "never" } },
-      { id: "danger-full-access", label: "可调用工具", profile: { read: true, write: true, exec: true, approval: "never" } }
+      { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false } },
+      { id: "workspace-write", label: "可写", profile: { read: true, write: true, exec: false } },
+      { id: "danger-full-access", label: "可调用工具", profile: { read: true, write: true, exec: true } }
     ];
     // Profile → tier id, mirroring the host's deriveSandboxMode: exec wins,
     // then write, otherwise read-only. Used to select the dropdown value for
@@ -187,11 +185,11 @@ window.__ModuleLoader__.load({
       if (permission && permission.write) return "workspace-write";
       return "read-only";
     }
-    // Approval is fixed to "never": ungranted capabilities simply stop the task
-    // and report not-completable. There is no ask/deny toggle in the UI — the
-    // tier is decided at launch and cannot widen mid-turn.
+    // Ungranted capabilities simply stop the task and report not-completable.
+    // The approval mode was removed (2026-09): there is no ask/deny toggle —
+    // the tier is decided at launch and cannot widen mid-turn.
     var DEFAULT_PERMISSION = "read-only";
-    var DEFAULT_PROFILE = { read: true, write: false, exec: false, approval: "never" };
+    var DEFAULT_PROFILE = { read: true, write: false, exec: false };
 
     // Normalize a stored permission (legacy string tier or profile object) into
     // a complete profile for the UI. Mirrors the host's normalizePermission.
@@ -210,15 +208,14 @@ window.__ModuleLoader__.load({
       if (typeof raw === "string") {
         var preset = null;
         for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === raw) { preset = PERMISSION_PRESETS[pi].profile; break; }
-        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec, approval: preset.approval };
-        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec, approval: DEFAULT_PROFILE.approval };
+        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec };
+        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec };
       }
       var p = raw || {};
       return {
         read: p.read !== undefined ? !!p.read : DEFAULT_PROFILE.read,
         write: p.write !== undefined ? !!p.write : DEFAULT_PROFILE.write,
-        exec: p.exec !== undefined ? !!p.exec : DEFAULT_PROFILE.exec,
-        approval: p.approval === "ask" || p.approval === "never" ? p.approval : DEFAULT_PROFILE.approval
+        exec: p.exec !== undefined ? !!p.exec : DEFAULT_PROFILE.exec
       };
     }
 
@@ -336,16 +333,13 @@ window.__ModuleLoader__.load({
         React.createElement("div", { className: "dsc-perm-block", style: { gridColumn: "1 / -1" } },
           React.createElement("div", { className: "dsc-perm-toggles" },
             // One mutually-exclusive tier dropdown: 只读 ⊆ 可写 ⊆ 可调用工具.
-            // The selected preset's full profile is written on change, keeping
-            // the approval strategy (ask/never) for capabilities a lower tier
-            // does not grant.
+            // The selected preset's full profile is written on change. The
+            // tier is fixed at launch: an ungranted capability stops the task.
             React.createElement("label", { className: "dsc-perm-tier" }, t("row.permission"),
               React.createElement("select", { value: presetIdOf(permission), onChange: function (e) {
                 var chosen = null;
                 for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === e.target.value) { chosen = PERMISSION_PRESETS[pi].profile; break; }
-                // Approval is always "never": the tier is fixed at launch. No
-                // ask/deny toggle — an ungranted capability stops the task.
-                if (chosen) props.onPermissionChange({ read: chosen.read, write: chosen.write, exec: chosen.exec, approval: "never" });
+                if (chosen) props.onPermissionChange({ read: chosen.read, write: chosen.write, exec: chosen.exec });
               } },
                 PERMISSION_PRESETS.map(function (p) { return React.createElement("option", { key: p.id, value: p.id }, p.label); })
               )

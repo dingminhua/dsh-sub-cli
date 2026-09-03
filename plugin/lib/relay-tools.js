@@ -8,7 +8,6 @@
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { withPermissionGuidance } from "./permission-guidance.js";
-import { checkCapability } from "./capability-gate.js";
 
 export const RELAY_SUBMIT_TOOL = "managed_cli_submit";
 
@@ -25,14 +24,7 @@ export function registerRelaySubmitTool(ctx, service) {
 		async execute(args, exec) {
 			const childId = exec.agent?.session?.id;
 			if (!childId) throw new Error("managed_cli_submit requires a calling relay child");
-			// Capability gate on EVERY submission, not just child creation: a
-			// continuable relay child lives across turns, so a later send_message
-			// must not bypass the gate that cli_<cli>_subagent enforced at spawn.
-			// (When dispatch/followup also call the gate this stays as the
-			// authoritative refusal point for the relay channel.)
 			const cli = (exec.agent?.provider || "").replace(/^managed-/, "").replace(/-relay$/, "") || "codex";
-			const capability = checkCapability(cli, args.prompt);
-			if (!capability.ok) throw new Error(capability.reason);
 			try {
 				const value = await service.submitFromChild(String(childId), args.prompt, exec.signal, exec.agent);
 				return { sessionId: value.session.sessionId, status: value.session.status, output: value.output };

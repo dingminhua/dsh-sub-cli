@@ -4,7 +4,6 @@
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { withPermissionGuidance, AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
-import { checkCapability } from "./capability-gate.js";
 
 // Each CLI exposes two explicit modes: `cli_<cli>_direct` (the captain drives
 // the managed session) and `cli_<cli>_subagent` (a DSH Relay child forwards the
@@ -46,10 +45,6 @@ function definition(spec, ctx, opts) {
 			const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
 			if (!description) throw new Error("description 不能为空");
 			if (!prompt) throw new Error("prompt 不能为空");
-			// Capability gate: refuse a task this CLI structurally cannot perform
-			// (e.g. a network task for Codex/Qwen) before starting any process.
-			const capability = checkCapability(spec.cli, prompt);
-			if (!capability.ok) throw new Error(capability.reason);
 			const preflight = async () => {
 				const pre = opts && opts.preflight ? await opts.preflight(spec.cli) : null;
 				if (pre && !pre.ok) throw new Error(`${spec.displayName} 未通过连通测试，已拦截本次执行：${pre.error}`);

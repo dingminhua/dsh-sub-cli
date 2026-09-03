@@ -24,7 +24,7 @@ test("relay submit replaces permission rejection with full-settings guidance",as
 	registerRelaySubmitTool({tools:{registeredNames, register(v){tool=v;}}}, {async submitFromChild(){throw new Error('Rejected("rejected by user")');}});
 	await assert.rejects(
 		tool.execute({prompt:"task"},{agent:{session:{id:"child-1"},provider:"managed-codex-relay"},signal:new AbortController().signal}),
-		(error)=>error.code==="CLI_PERMISSION_CONFIGURATION_REQUIRED" && /Codex → 权限/.test(error.message) && /审批策略为“从不”/.test(error.message) && /严禁修改 ~\/\.dsh\/settings\.yaml/.test(error.message)
+		(error)=>error.code==="CLI_PERMISSION_CONFIGURATION_REQUIRED" && /Codex → 权限/.test(error.message) && /未在权限档位中授予/.test(error.message) && /严禁修改 ~\/\.dsh\/settings\.yaml/.test(error.message)
 	);
 });
 

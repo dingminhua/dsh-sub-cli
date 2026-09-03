@@ -109,7 +109,7 @@ test("old probe-era labels and second connectivity line are gone", () => {
 	assert.doesNotMatch(source, /installText/);
 });
 
-test("permission UI renders one mutually-exclusive tier dropdown plus the unchecked-strategy select", () => {
+test("permission UI renders one mutually-exclusive tier dropdown (approval mode removed)", () => {
 	// Fine-grained profile model mirrored in the client.
 	assert.match(source, /var PERMISSION_PRESETS = /);
 	assert.match(source, /function normalizePermissionClient\(raw\)/);
@@ -130,15 +130,15 @@ test("permission UI renders one mutually-exclusive tier dropdown plus the unchec
 	assert.match(source, /\{ id: "read-only", label: "只读", profile: \{ read: true, write: false, exec: false/);
 	assert.match(source, /\{ id: "workspace-write", label: "可写", profile: \{ read: true, write: true, exec: false/);
 	assert.match(source, /\{ id: "danger-full-access", label: "可调用工具", profile: \{ read: true, write: true, exec: true/);
-	// The tier select writes the chosen preset's full profile with approval
-	// fixed to "never" — no ask/deny toggle in the UI.
-	assert.match(source, /props\.onPermissionChange\(\{ read: chosen\.read, write: chosen\.write, exec: chosen\.exec, approval: "never" \}\)/);
+	// The tier select writes the chosen preset's three-capability profile — the
+	// approval mode was removed (2026-09): no ask/never key, no toggle anywhere.
+	assert.match(source, /props\.onPermissionChange\(\{ read: chosen\.read, write: chosen\.write, exec: chosen\.exec \}\)/);
 	// No network toggle: exec already carries egress intent, and the host-side
 	// normalizer maps legacy network:true onto exec.
 	assert.doesNotMatch(source, /"row\\.network"/, "the network toggle label is gone");
-	// Approval select stays (right-aligned): it decides what happens when a
-	// capability NOT granted by the current tier is triggered.
-	assert.match(source, /"row\.approval"/);
+	// The approval mode is fully gone from the client: no label, no dropdown,
+	// no options array, no control element, no approval key in any profile.
+	assert.doesNotMatch(source, /"row\.approval"/, "the approval row label is gone");
 	assert.doesNotMatch(source, /"row\.approvalAsk"/, "no ask label — the approval toggle is gone");
 	assert.doesNotMatch(source, /"row\.approvalNever"/, "no never label — the approval toggle is gone");
 	assert.doesNotMatch(source, /"row\.approvalAllow"/, "auto-allow is gone; the tier is the allow");

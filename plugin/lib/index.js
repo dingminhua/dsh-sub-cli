@@ -14,7 +14,6 @@ import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-sett
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { CLI_REGISTRY, cliById } from "./registry.js";
-import { checkCapability } from "./capability-gate.js";
 import { DEFAULT_TURN_TIMEOUT_MINUTES, turnTimeoutMs } from "./turn-timeout-policy.js";
 import { resolveDir, managedNames, PLATFORM } from "./paths.js";
 import { dispatch } from "./dispatch.js";
@@ -24,7 +23,6 @@ import { createManagedCliDrivers, registerExperimentalCodexProvider } from "./dr
 import { ManagedCliAgentsService } from "./managed-cli-agents.js";
 import { registerManagedSessionTools } from "./session-tools.js";
 import { registerRelaySubmitTool } from "./relay-tools.js";
-import { permissionReason } from "./permissions.js";
 import { attachRelayLifecycle, registerManagedCliSubagentTools } from "./relay-subagent.js";
 import { registerManagedCliRelayProvider } from "./relay-provider.js";
 import { removeManagedCli, testManagedCli } from "./manage.js";
@@ -34,7 +32,7 @@ import { markRemoteMethods } from "./remote.js";
 import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, permissionOf, prepareManagedRun } from "./verify.js";
 
 export const name = "dsh-sub-cli";
-export const inject = ["tools", "subprocess", "subagents", "approval"];
+export const inject = ["tools", "subprocess", "subagents"];
 
 const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
 
@@ -53,15 +51,15 @@ const VERIFIED_ENTRY = z.object({
 }).default({});
 
 // Permission value: legacy string tier or fine-grained capability profile.
+// The approval mode (ask/never) was removed 2026-09: the checkboxes are the
+// only grant and are fixed at launch. Stored `approval` and `network` keys
+// validate for backward compatibility and are dropped by normalizePermission.
 const PERMISSION_ENTRY = z.object({
 	read: z.boolean().default(true),
 	write: z.boolean().default(false),
 	exec: z.boolean().default(false),
-	// `network` accepted on read for backward compatibility (old stored profiles
-	// keep the key); the live model is three capabilities and normalizePermission
-	// drops it toward exec (egress intent). Any boolean value validates.
 	network: z.boolean().default(false),
-	approval: z.string().default("ask")
+	approval: z.string().default("never")
 });
 
 // Per-CLI auto-continue knobs: when a finished turn looks like a premature
@@ -295,9 +293,9 @@ export async function apply(ctx) {
 	// Register managed CLI subagent providers and the model-facing tools. These
 	// run once `subagents` (a hard dependency, always present in a DSH host) is
 	// available, so they are not skipped by boot ordering.
-	// 本轮档位（A/B 门授权的加宽档）经 driver.start options → prepare 穿透到
-	// 配置渲染：qwen 的执法点（approvalMode）必须按本轮档写盘，否则语义门会
-	// 按持久化档把它改回去（2026-09-03 修复：授权被静默回滚）。
+	// 本轮生效档位经 driver.start options → prepare 穿透到配置渲染：qwen 的
+	// 执法点（approvalMode）必须按本轮档写盘，否则语义门会按持久化档把它
+	// 改回去（2026-09-03 修复：授权被静默回滚）。
 	const envForEntry = async (cliId, dir, opts) => {
 		const prep = await prepareManagedRun(ctx, cliId, dir, opts);
 		if (!prep.ok) return { ok: false, reason: prep.reason };
@@ -327,11 +325,7 @@ export async function apply(ctx) {
 		routeSource: (cliId) => currentSection()?.models?.[cliId] ?? {},
 		permissionSource: (cliId) => permissionOf(ctx, cliId),
 		autoContinueSource: (cliId) => currentSection()?.autoContinue?.[cliId] ?? {},
-		persist: createSessionPersist(ctx, currentDir),
-		approvalRequest: (request, { agent, signal }) => {
-			if (!agent || !ctx.approval || typeof ctx.approval.request !== "function") return "unavailable";
-			return ctx.approval.request({ agent, signal, toolName: "managed_cli_submit", reason: permissionReason(request) });
-		}
+		persist: createSessionPersist(ctx, currentDir())
 	});
 	// 重启后恢复持久化的 Codex 会话（remoteSessionId 保活），这样 followup 可
 	// 直接 reattach 同一 thread，不必重新创建。
@@ -376,10 +370,6 @@ export async function apply(ctx) {
 			const model = args && typeof args.model === "string" ? args.model : "";
 			const entry = cliById(cliId);
 			if (!entry) return { ok: false, error: "未知或不存在的 CLI。" };
-			// Same capability gate as the subagent/relay channels, so the headless
-			// path cannot be used to bypass it.
-			const capability = checkCapability(cliId, task);
-			if (!capability.ok) return { ok: false, error: capability.reason };
 			const dir = currentDir();
 			const prep = await prepareManagedRun(ctx, cliId, dir);
 			if (!prep.ok) return { ok: false, error: prep.reason };

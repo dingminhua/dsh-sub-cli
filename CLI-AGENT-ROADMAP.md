@@ -1,6 +1,6 @@
 # dsh-sub-cli：CLI Agent 目标与实施路线图
 
-> **产品目标：在 DSH 中统一管理并调用外部 Agent CLI，与用户原生安装完全隔离，可为每个 CLI 预设 Provider、模型、推理强度和权限，并让它们像原生子代理一样被主控调用。**
+> **产品目标：在 DSH 中统一管理并调用外部 Agent CLI，与用户原生安装完全隔离，可为每个 CLI 预设 Provider、模型、推理强度和权限，并让它们可直接或像原生子代理一样被主控调用。**
 >
 > **当前工作目标：采用 `cli_<产品>_<作用>` 命名体系，先交付 `cli_codex_direct` 与 `cli_codex_subagent`。Direct 模式由主控直接调用 Codex；Subagent 模式创建 DSH 原生 continuable Relay 子代理，由 Relay 调用受限的内部 CLI 工具并向主控报告。全程只使用 DSH 公开机制，不修改 DSH 本体、不打补丁、不改 shipped preset。**
 >
@@ -35,7 +35,7 @@ Claude Code · 分析当前项目
 - 正确工作目录；
 - interrupt、follow-up 和同一 CLI 会话续接；
 - 重启后的持久恢复；
-- 权限不足时进入 `awaiting_permission`，批准后继续同一任务；
+- 权限不足时确定拒绝并清晰报告，引导用户到设置卡调整（审批模式已移除，2026-09：无弹窗、无运行中提权；远期若引入交互审批，走 Agent SDK 的 canUseTool 路线，见第 9 节说明）；
 - 完成后自动通知主代理；
 - 可被 DAG、AgentTeams 和其他插件程序化调度。
 
@@ -271,7 +271,7 @@ status / activeTurn / createdAt / updatedAt / lastError
 
 产品目标固定为：
 
-> **在 DSH 中统一管理并调用外部 Agent CLI，与用户原生安装完全隔离，可为每个 CLI 预设 Provider、模型、推理强度和权限，并让它们像原生子代理一样被主控调用。**
+> **在 DSH 中统一管理并调用外部 Agent CLI，与用户原生安装完全隔离，可为每个 CLI 预设 Provider、模型、推理强度和权限，并让它们可直接或像原生子代理一样被主控调用。**
 
 其中“像子代理一样”不是仅返回 CLI `sessionId` 或支持外部 thread，而是要求 Subagent 模式具备可观察的 DSH 原生体验：
 
@@ -437,7 +437,17 @@ DSH childId
 
 > **Codex Subagent 主路径、原生 child、首轮报告、`list_agents`、`send_message` 同-thread 续接以及中断后恢复已经真实通过；剩余阻塞集中在 report guard 负向验收、Transcript 核对和 app-server 生命周期/资源清理。**
 
-## 9. 当前开发目标：统一 CLI 权限审批桥
+## 9. （已降级为历史设计）统一 CLI 权限审批桥
+
+> **状态更新（2026-09）**：本节描述的交互式审批桥（awaiting_permission → 弹窗批准 → 同 turn 恢复）**已按产品决策移除**。动机与依据：
+>
+> 1. **复杂度集中在模糊推断上**——A/B 门靠正则猜自然语言 prompt 的能力需求、从错误文本里再猜缺口，误判必然存在；B 门"同意后重开一轮"还意味着工作重做。
+> 2. **单向 wire 的根本限制**——round 9 实证 Claude stream-json 的事后拦截无法撤销已执行的操作；Qwen 靠启动档位执法更可靠。
+> 3. **生态印证**——dsh-plugin-cc 明确 "No mid-run approvals. Permissions are decided before launch"；dsh-codex-workflow 用 `approval_policy=never` 回避；dsh-plugin-codex 对 server-request 一律安全拒绝；唯一走通交互审批的 dsh-claude-code 走的是 **Agent SDK 的 canUseTool 双向回调**，不是 CLI 直连。
+>
+> **现行模型**：勾选框是唯一授权，档位启动时定死；未勾选能力被触发 → 确定拒绝并记录（`lastPermissionDecision` 留痕）→ 任务停止并清晰报告，引导用户到设置卡调整后重跑。Codex app-server 的 requestApproval 由 `resolvePermission` 确定性应答（勾选 → accept，未勾选 → decline），不再接 DSH `approval.request()`。
+>
+> **远期保留的复活路径**：若要重新引入交互审批，正确路线是 Claude 侧迁移 Agent SDK（canUseTool，参考 dsh-claude-code 的 `lib/approval.mjs`）而非 CLI stream-json 事后拦截；Codex 侧的协议基础（本节的流程设计）仍然有效。以下内容作为该方向的完整设计记录保留。
 
 > 本目标覆盖所有外部 CLI 的运行时权限申请，不限于网络权限。必须将 CLI 的结构化权限请求中转给 DSH 主控和用户，用户作出批准或拒绝后，把决定传回原来的 CLI session/thread/turn 并继续执行；不得重启任务、静默提权或由 Relay 代替用户批准。
 

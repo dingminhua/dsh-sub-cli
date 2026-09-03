@@ -6,7 +6,6 @@
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { RELAY_SUBMIT_TOOL } from "./relay-tools.js";
-import { checkCapability } from "./capability-gate.js";
 import { AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
 
 export function relayPersonaFor(cli) {
@@ -70,10 +69,6 @@ function registerCliSubagentTool(ctx, { cli, displayName, preflight }) {
 		isConcurrencySafe: () => true,
 		async execute(args, exec) {
 			if (!exec.agent) throw new Error(`cli_${cli}_subagent requires a calling agent`);
-			// Same capability gate as the other channels: a Relay child must not be
-			// created for a task its CLI cannot perform.
-			const capability = checkCapability(cli, args.prompt);
-			if (!capability.ok) throw new Error(capability.reason);
 			if (preflight) {
 				const checked = await preflight(cli);
 				if (checked && !checked.ok) throw new Error(`${displayName} 未通过连通测试：${checked.error}`);
