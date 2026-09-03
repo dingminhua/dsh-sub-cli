@@ -17,19 +17,18 @@ function context() {
 const AGENT = { id: "parent", session: { header: { cwd: "/repo" } } };
 const SIGNAL = new AbortController().signal;
 
-test("registers exactly three suffixed session-mode tools", () => {
+test("registers exactly two suffixed session-mode tools", () => {
 	const fixture = context();
 	registerCliSubagentTools(fixture.ctx);
 	assert.deepEqual([...fixture.tools.keys()], [
 		"cli_codex_direct",
-		"cli_claude_direct",
-		"cli_qwen_direct"
+		"cli_claude_direct"
 	]);
 	// The unsuffixed one-shot tools are gone, and no CLI ever had a bare `cli_<cli>` alias.
 	assert.equal(fixture.tools.has("cli_claude_code"), false);
 	assert.equal(fixture.tools.has("cli_qwen"), false);
 	assert.equal(fixture.tools.has("cli_codex"), false);
-	assert.equal(CLI_SUBAGENT_TOOLS.length, 3);
+	assert.equal(CLI_SUBAGENT_TOOLS.length, 2);
 });
 
 test("each tool declares no background-job parameter", () => {
@@ -42,7 +41,7 @@ test("each tool declares no background-job parameter", () => {
 });
 
 test("delegates through the managed session service and returns sessionId", async () => {
-	for (const [toolName, cli] of [["cli_codex_direct", "codex"], ["cli_claude_direct", "claude"], ["cli_qwen_direct", "qwen"]]) {
+	for (const [toolName, cli] of [["cli_codex_direct", "codex"], ["cli_claude_direct", "claude"]]) {
 		const fixture = context();
 		let seen;
 		const managedCliAgents = {
@@ -72,7 +71,7 @@ test("Codex direct shows full-settings guidance after permission rejection", asy
 test("a network task is refused before any CLI starts", async () => {
 	// Web research is the controller's job: the gate must reject it up front
 	// for every CLI, Claude included.
-	for (const toolName of ["cli_codex_direct", "cli_qwen_direct"]) {
+	for (const toolName of ["cli_codex_direct"]) {
 		const fixture = context();
 		let dispatched = false;
 		const managedCliAgents = { async dispatch() { dispatched = true; return { session: { sessionId: "x" }, output: "" }; } };

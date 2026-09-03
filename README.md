@@ -2,10 +2,10 @@
 
 在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的开源插件。
 
-- 把 Codex、Claude Code、Qwen Code 放到**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
+- 把 Codex、Claude Code 放到**统一目录**（默认 `~/dsh-clis`），不混入系统 PATH；
 - 每个 CLI 用**相互隔离的配置目录**，通过该 CLI 自身环境变量指向，完全不碰系统里已装的 CLI 配置；
 - Web 插件配置卡片配置统一目录 + 每个 CLI 的**三层模型路由**（Provider → 模型 → 推理强度）；
-- 注册 **`cli_codex_direct` / `cli_codex_subagent` / `cli_claude_code` / `cli_qwen`** 工具让 DSH 模型把任务交给对应 CLI 并作为子会话返回（Codex 只有明确的直连 / 代理两种模式，`cli_codex` 别名已移除）；
+- 注册 **`cli_codex_direct` / `cli_codex_subagent` / `cli_claude_direct` / `cli_claude_subagent`** 工具让 DSH 模型把任务交给对应 CLI 并作为子会话返回（Qwen Code 支持已于 2026-09 移除）；
 - 注册 **`cli_dispatch`** 模型工具让 DSH 模型无头调用外部 CLI 并回传输出。
 
 ## 产品目标
@@ -85,7 +85,7 @@ cd plugin && npm pack --dry-run
 `npm run test:live` 不是 mock：它读取真实的 `~/.dsh/settings.yaml` 与
 `~/.dsh/.credentials.yaml`，用插件的真实代码路径（registry argv 模板、
 权限能力开关 → 沙箱档位推导、verify 配置渲染）构造命令，然后真实启动
-codex/claude/qwen 二进制各跑一个最小任务，并逐项断言：安装存在性、路由、
+codex/claude 二进制各跑一个最小任务，并逐项断言：安装存在性、路由、
 权限档位 → argv 标志映射、隔离配置落盘、真实运行退出码与输出。它还会：
 纯逻辑断言 `CLI_SUBAGENT_TOOLS` 不含 `cli_codex` 别名、`isOkReply` 容忍
 `OK\nOK` 回声；以及 Codex 双模式会话（真实 app-server + 当前路由）——

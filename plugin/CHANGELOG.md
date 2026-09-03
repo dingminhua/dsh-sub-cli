@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Qwen Code 支持整体移除（2026-09 产品决策，breaking）**：托管 CLI 收敛为 Codex 与 Claude Code 两家。依据：① 实测可靠性不足——stream-json 无头模式不发 tool_use 事件（驱动层拦截是死代码），权限模型整体依赖 settings.json 单一 `tools.approvalMode` 键且被 CLI 启动时自行迁移重写（语义门反复判 stale），真机运行多次瞬态失败（`subprocess exited 1` 无诊断、`Error: tool call aborted` 等，复跑时好时坏）；② 其联网搜索需独立付费 DashScope 搜索模型（已在联网调研中确认放弃）；③ 维护面与其价值不成比例。移除范围：`registry.js` qwen 条目、`drivers/qwen-stream-json.js` 及其测试、`QWEN_APPROVAL_METHODS`、`qwenSettings/qwenSettingsCurrent/qwenApprovalMode`、`probeOpenaiChatContinuation` 与 `findChatToolCallId`（openai-chat 协议探测）、`cli_qwen_direct`/`cli_qwen_subagent`/`cli_qwen_followup` 等全部工具、relay provider `managed-qwen-relay`、设置卡 Qwen 项、e2e-live 的 Qwen 段；测试从 254 收敛至 **228/228 全绿**。存量用户影响：settings 里的 `models.qwen`/`permissions.qwen` 键静默闲置（无副作用），统一目录的 `config-qwen/` 残留可手动删除。
+
 ### Added
 
 - **cli_test 失败分类六态化（2026-09）**：探测失败不再是"二选一"，而是 `completed / http-rejected / transient / incomplete / timeout / network-error` 六态（`classifyProbeFailure`）——**transient（429/5xx/超时/网络不通）绝不引导"更换供应商"**，改为"稍后重试、路由本身没问题"；只有确定性拒绝（认证/协议不支持）才建议更换（`probeOutcomeAdvice`）。`testCli` 的两个失败出口（CLI 运行失败、协议探测失败）按分类分流文案并携带 `outcome` 字段；`probeProtocolContinuation` 统一归一化 `toolContinuation` 为严格布尔并附 `outcome`。+5 测试（HTTP 状态映射/文本分类/文案分流铁律：瞬态不得建议换供应商），**254/254 全绿**。

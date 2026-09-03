@@ -19,7 +19,6 @@ test("permission guidance stops at reporting and forbids self-authorization", ()
 	assert.doesNotMatch(text, /弹窗/);
 	assert.doesNotMatch(text, /“完全”/);
 	assert.match(permissionConfigurationMessage("claude"), /Claude Code → 权限/);
-	assert.match(permissionConfigurationMessage("qwen"), /Qwen Code → 权限/);
 });
 
 test("recognizes approval rejection diagnostics but not ordinary failures", () => {

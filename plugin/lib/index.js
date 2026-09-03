@@ -293,7 +293,7 @@ export async function apply(ctx) {
 	// Register managed CLI subagent providers and the model-facing tools. These
 	// run once `subagents` (a hard dependency, always present in a DSH host) is
 	// available, so they are not skipped by boot ordering.
-	// 本轮生效档位经 driver.start options → prepare 穿透到配置渲染：qwen 的
+	// 本轮生效档位经 driver.start options → prepare 穿透到配置渲染：
 	// 执法点（approvalMode）必须按本轮档写盘，否则语义门会按持久化档把它
 	// 改回去（2026-09-03 修复：授权被静默回滚）。
 	const envForEntry = async (cliId, dir, opts) => {
@@ -338,25 +338,22 @@ export async function apply(ctx) {
 	});
 	registerManagedSessionTools({ tools: ctx.tools }, managedCliAgents);
 	// Per-CLI Relay subagent provider: each child binds itself to the right
-	// managed thread (codex → Codex app-server, claude → Claude stream-json,
-	// qwen → Qwen stream-json). One Relay submit tool is shared across all CLIs.
-	for (const cli of ["codex", "claude", "qwen"]) {
+	// managed thread (codex → Codex app-server, claude → Claude stream-json).
+	// One Relay submit tool is shared across all CLIs.
+	for (const cli of ["codex", "claude"]) {
 		registerManagedCliRelayProvider({ subagents: ctx.subagents }, { cli, service: managedCliAgents });
 	}
 	registerRelaySubmitTool({ tools: ctx.tools }, managedCliAgents);
 	attachRelayLifecycle(ctx, managedCliAgents);
-	// H1 fix: registerManagedCliSubagentTools already covers all 3 CLIs
-	// (codex/claude/qwen); the legacy registerCodexSubagentTool call below
-	// was duplicating the codex entry. Drop it.
 	registerManagedCliSubagentTools({ subagents: ctx.subagents, tools: ctx.tools }, (cliId) => preflightCli(ctx, cliId));
 
 	// `cli_dispatch`: legacy headless-run fallback for CLIs without a native
 	// DSH subagent provider. It returns one result and is not a child conversation.
 	ctx.tools.register(defineTool({
 		name: "cli_dispatch",
-		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude / qwen；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_<cli>_direct（持续会话，直连）或 cli_<cli>_subagent（DSH Relay 子代理；同时调度多个 CLI 时用这个，子代理并行执行且无需后台任务插件）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。" + "\n\n" + AUTHORIZATION_DISCIPLINE,
+		description: "无头执行一个指定的外部 Agent CLI 的自包含任务并返回其输出（一次性，不创建持续子会话）。任务必须是完整的、自包含的说明，因为外部 CLI 看不到当前对话上下文。当用户说「让 <cli> 无头执行 / 跑一下这个任务」时调用。参数 cli 取值：codex / claude；task 为自包含任务描述；model 可选（覆盖该 CLI 的模型）。注意：仅当用户明确要「无头运行某个 CLI 的一次性任务」时才用本工具；日常更推荐专有工具 cli_<cli>_direct（持续会话，直连）或 cli_<cli>_subagent（DSH Relay 子代理；同时调度多个 CLI 时用这个，子代理并行执行且无需后台任务插件）。若返回「认证 / 401 / 未配置模型」类错误，说明该 CLI 未配置好，如实告诉用户并建议其配置，不要改用 shell 直接运行绕过。" + "\n\n" + AUTHORIZATION_DISCIPLINE,
 		parameters: {
-			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude / qwen" },
+			cli: { type: "string", required: true, description: "要用的 CLI 标识：codex / claude" },
 			task: { type: "string", required: true, description: "自包含的任务描述" },
 			model: { type: "string", description: "可选：覆盖模型 id" }
 		},
@@ -381,9 +378,9 @@ export async function apply(ctx) {
 	// `cli_check`: report whether each / one installed external CLI is ready.
 	ctx.tools.register(defineTool({
 		name: "cli_check",
-		description: "检测外部 Agent CLI 是否已安装到插件管理的统一目录，并报告版本号。判断依据：<统一目录>/bin/<cli> 是否存在且可执行。只读、不修改任何东西、不运行 CLI 的模型。当用户说「看看/检查一下某 CLI 装了没、状态怎么样」时调用。参数 cli 可选：省略时检查全部；传 codex / claude / qwen 时只检查一个。",
+		description: "检测外部 Agent CLI 是否已安装到插件管理的统一目录，并报告版本号。判断依据：<统一目录>/bin/<cli> 是否存在且可执行。只读、不修改任何东西、不运行 CLI 的模型。当用户说「看看/检查一下某 CLI 装了没、状态怎么样」时调用。参数 cli 可选：省略时检查全部；传 codex / claude 时只检查一个。",
 		parameters: {
-			cli: { type: "string", description: "可选：要检查的 CLI 标识 codex / claude / qwen；省略则检查全部" }
+			cli: { type: "string", description: "可选：要检查的 CLI 标识 codex / claude；省略则检查全部" }
 		},
 		output: {
 			schema: { type: "json" },
@@ -418,9 +415,9 @@ export async function apply(ctx) {
 	// `cli_install`: install (or update) one managed CLI into the unified dir.
 	ctx.tools.register(defineTool({
 		name: "cli_install",
-		description: "把某个外部 Agent CLI 安装（或更新）到统一目录：安装其官方 npm 包到 <统一目录>/vendor/<cli>，再把它暴露的命令链接到 <统一目录>/bin/<cli>。只装到插件管理的统一目录，绝不安装到系统全局、绝不改动系统里已装的该 CLI。安装成功会在插件里留下「已通过验证」记录（含版本）。当用户说「帮我装/安装/装一下 Codex（或 Claude Code / Qwen Code）」「把某 CLI 更新一下」时调用。参数 cli 取值：codex / claude / qwen。如安装失败会返回具体原因（含 npm 错误）。",
+		description: "把某个外部 Agent CLI 安装（或更新）到统一目录：安装其官方 npm 包到 <统一目录>/vendor/<cli>，再把它暴露的命令链接到 <统一目录>/bin/<cli>。只装到插件管理的统一目录，绝不安装到系统全局、绝不改动系统里已装的该 CLI。安装成功会在插件里留下「已通过验证」记录（含版本）。当用户说「帮我装/安装/装一下 Codex（或 Claude Code）」「把某 CLI 更新一下」时调用。参数 cli 取值：codex / claude。如安装失败会返回具体原因（含 npm 错误）。",
 		parameters: {
-			cli: { type: "string", required: true, description: "要安装的 CLI 标识：codex / claude / qwen" }
+			cli: { type: "string", required: true, description: "要安装的 CLI 标识：codex / claude" }
 		},
 		output: {
 			schema: { type: "json" },
@@ -438,9 +435,9 @@ export async function apply(ctx) {
 	// `cli_test`: verify the CLI itself can run with the configured model/supplier.
 	ctx.tools.register(defineTool({
 		name: "cli_test",
-		description: "真正验证某个外部 Agent CLI 能否用当前配置的模型/供应商跑通。实现：把所选供应商（baseURL + 最新 API key + wire_api）写进该 CLI 自己的配置（如 Codex 的 config-codex/config.toml），用该配置无头运行一次「Reply with exactly: OK」确认可连通，然后按该 CLI 所需协议做一次真实工具续接探测，判定该供应商是否支持。各 CLI 所测协议：Codex=OpenAI Responses（含工具续接）；Claude Code=Anthropic Messages（含 tool_use 续接）；Qwen Code=Chat Completions（含 tool_calls）。若该供应商不支持所需协议，测试判失败并说明原因（如 Codex 可试 modelflare）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model。当用户说「测一下 / 验证一下某 CLI 能不能正常用、通不通」时调用。参数 cli 取值：codex / claude / qwen。成功则写入「已通过验证」记录（含配置指纹），失败则写入失败原因（配置变更后消失）。",
+		description: "真正验证某个外部 Agent CLI 能否用当前配置的模型/供应商跑通。实现：把所选供应商（baseURL + 最新 API key + wire_api）写进该 CLI 自己的配置（如 Codex 的 config-codex/config.toml），用该配置无头运行一次「Reply with exactly: OK」确认可连通，然后按该 CLI 所需协议做一次真实工具续接探测，判定该供应商是否支持。各 CLI 所测协议：Codex=OpenAI Responses（含工具续接）；Claude Code=Anthropic Messages（含 tool_use 续接）。若该供应商不支持所需协议，测试判失败并说明原因（如 Codex 可试 modelflare）。前提：需先在该 CLI 的模型配置里选定 Provider 和 Model。当用户说「测一下 / 验证一下某 CLI 能不能正常用、通不通」时调用。参数 cli 取值：codex / claude。成功则写入「已通过验证」记录（含配置指纹），失败则写入失败原因（配置变更后消失）。",
 		parameters: {
-			cli: { type: "string", required: true, description: "要测试的 CLI 标识：codex / claude / qwen" }
+			cli: { type: "string", required: true, description: "要测试的 CLI 标识：codex / claude" }
 		},
 		output: {
 			schema: { type: "json" },
@@ -458,9 +455,9 @@ export async function apply(ctx) {
 	// `cli_remove`: delete one managed CLI from the unified dir only.
 	ctx.tools.register(defineTool({
 		name: "cli_remove",
-		description: "从插件管理的统一目录删除一个托管 CLI：只删 <统一目录>/bin/<cli> 下的文件，绝不改动系统里安装的该 CLI、不改动该 CLI 的配置目录或用户模型设置。当用户说「卸载/删除/移除某 CLI」时调用。参数 cli 取值：codex / claude / qwen。若该 CLI 未安装，会返回已删除（幂等）。",
+		description: "从插件管理的统一目录删除一个托管 CLI：只删 <统一目录>/bin/<cli> 下的文件，绝不改动系统里安装的该 CLI、不改动该 CLI 的配置目录或用户模型设置。当用户说「卸载/删除/移除某 CLI」时调用。参数 cli 取值：codex / claude。若该 CLI 未安装，会返回已删除（幂等）。",
 		parameters: {
-			cli: { type: "string", required: true, description: "要删除的 CLI 标识：codex / claude / qwen" }
+			cli: { type: "string", required: true, description: "要删除的 CLI 标识：codex / claude" }
 		},
 		output: {
 			schema: { type: "json" },

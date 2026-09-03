@@ -1,4 +1,4 @@
-const CLI_NAMES = Object.freeze({ codex: "Codex", claude: "Claude Code", qwen: "Qwen Code" });
+const CLI_NAMES = Object.freeze({ codex: "Codex", claude: "Claude Code" });
 
 export const PERMISSION_CONFIGURATION_REQUIRED = "CLI_PERMISSION_CONFIGURATION_REQUIRED";
 

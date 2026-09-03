@@ -16,7 +16,7 @@ function fixture() {
 	return { tools, calls };
 }
 
-test("registers followup/status/sessions/interrupt for codex and claude; no interrupt for qwen", () => {
+test("registers followup/status/sessions/interrupt for codex and claude", () => {
 	const f = fixture();
 	// codex: followup, status, sessions, interrupt
 	assert.ok(f.tools.has("cli_codex_followup"), "codex followup");
@@ -28,17 +28,15 @@ test("registers followup/status/sessions/interrupt for codex and claude; no inte
 	assert.ok(f.tools.has("cli_claude_status"), "claude status");
 	assert.ok(f.tools.has("cli_claude_sessions"), "claude sessions");
 	assert.ok(f.tools.has("cli_claude_interrupt"), "claude interrupt");
-	// qwen: followup, status, sessions (NO interrupt — stream-json has no SIGINT)
-	assert.ok(f.tools.has("cli_qwen_followup"), "qwen followup");
-	assert.ok(f.tools.has("cli_qwen_status"), "qwen status");
-	assert.ok(f.tools.has("cli_qwen_sessions"), "qwen sessions");
-	assert.ok(!f.tools.has("cli_qwen_interrupt"), "qwen has no interrupt");
+	// Qwen tools are gone with the CLI (2026-09 removal).
+	assert.ok(!f.tools.has("cli_qwen_followup"), "qwen followup gone");
+	assert.ok(!f.tools.has("cli_qwen_status"), "qwen status gone");
 });
 
 test("followup routes through managed service with sessionId and prompt", async () => {
 	const f = fixture();
 	const signal = new AbortController().signal;
-	for (const toolName of ["cli_codex_followup", "cli_claude_followup", "cli_qwen_followup"]) {
+	for (const toolName of ["cli_codex_followup", "cli_claude_followup"]) {
 		f.calls.length = 0;
 		const v = await f.tools.get(toolName).execute({ sessionId: "s1", prompt: "go" }, { signal });
 		assert.deepEqual(v, { sessionId: "s1", status: "ready", output: "next" });

@@ -97,11 +97,11 @@ window.__ModuleLoader__.load({
       "guide.test": "验证模型连通",
       "guide.testEx": "测一下 Claude Code 的模型能回话吗？",
       "guide.remove": "卸载托管 CLI",
-      "guide.removeEx": "把 Qwen Code 卸载掉。",
-      "guide.direct": "直连会话（Codex / Claude / Qwen 均有）",
+      "guide.removeEx": "把 Claude Code 卸载掉。",
+      "guide.direct": "直连会话（Codex / Claude 均有）",
       "guide.directEx": "用 Codex 直连看看这个项目。",
       "guide.subagent": "代理子代理；并行调度多个 CLI 用这个",
-      "guide.subagentEx": "用 Claude Code 代理重构这段；用 Qwen 代理跑这组测试。",
+      "guide.subagentEx": "用 Claude Code 代理重构这段；用 Codex 代理跑这组测试。",
       "guide.dispatch": "通用无头执行",
       "guide.dispatchEx": "让 Codex 无头跑这个任务。"
     };
@@ -159,11 +159,11 @@ window.__ModuleLoader__.load({
       "guide.test": "Verify model connectivity",
       "guide.testEx": "Can the model configured for Claude Code reply?",
       "guide.remove": "Uninstall managed CLI",
-      "guide.removeEx": "Uninstall Qwen Code.",
-      "guide.direct": "Direct session (Codex / Claude / Qwen alike)",
+      "guide.removeEx": "Uninstall Claude Code.",
+      "guide.direct": "Direct session (Codex / Claude alike)",
       "guide.directEx": "Use Codex direct to inspect this project.",
       "guide.subagent": "Proxy subagent; use it to run several CLIs in parallel",
-      "guide.subagentEx": "Have the Claude Code proxy search the news; have Qwen refactor this.",
+      "guide.subagentEx": "Have the Claude Code proxy refactor this; have Codex run the tests.",
       "guide.dispatch": "Generic headless run",
       "guide.dispatchEx": "Have Codex run this task headlessly."
     };
@@ -226,7 +226,6 @@ window.__ModuleLoader__.load({
     var CLIS = [
       { id: "codex", name: "Codex", npm: "@openai/codex", bin: "codex", testHint: "测试将验证该供应商是否支持 responses 协议（Codex 所需，含工具续接）" },
       { id: "claude", name: "Claude Code", npm: "@anthropic-ai/claude-code", bin: "claude", testHint: "测试将验证该供应商是否支持 Anthropic Messages 协议（含 tool_use 续接）" },
-      { id: "qwen", name: "Qwen Code", npm: "@qwen-code/qwen-code", bin: "qwen", testHint: "测试将验证该供应商是否支持 Chat Completions 协议（含 tool_calls）" }
     ];
     var SETTINGS_NS = "dsh-sub-cli";
 

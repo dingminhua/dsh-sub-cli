@@ -204,7 +204,7 @@ test("capability gate agrees with the derived tier for every combination", () =>
 
 // ── Unified permission request normalizer for all three CLIs ─────────────────
 
-import { normalizePermissionRequest, CLAUDE_APPROVAL_METHODS, QWEN_APPROVAL_METHODS } from "../lib/permissions.js";
+import { normalizePermissionRequest, CLAUDE_APPROVAL_METHODS } from "../lib/permissions.js";
 
 test("normalizePermissionRequest maps Claude Code tool names to the canonical capability keys", () => {
 	// Each tool name maps to one of: command, file-change, exec, or null (read-only).
@@ -215,13 +215,6 @@ test("normalizePermissionRequest maps Claude Code tool names to the canonical ca
 	assert.equal(CLAUDE_APPROVAL_METHODS.Delete, "file-change");
 	assert.equal(CLAUDE_APPROVAL_METHODS.WebSearch, "exec");
 	// Read tools are not enumerated — they pass through silently.
-});
-
-test("normalizePermissionRequest maps Qwen Code tool names to the canonical capability keys", () => {
-	assert.equal(QWEN_APPROVAL_METHODS.Bash, "command");
-	assert.equal(QWEN_APPROVAL_METHODS.Write, "file-change");
-	assert.equal(QWEN_APPROVAL_METHODS.Edit, "file-change");
-	assert.equal(QWEN_APPROVAL_METHODS.WebSearch, "exec");
 });
 
 test("normalizePermissionRequest returns a canonical request for a Claude Write tool_use", () => {
@@ -261,16 +254,6 @@ test("normalizePermissionRequest returns null for read-only tools (Read, Glob, G
 	assert.equal(normalizePermissionRequest("claude", "Grep", { toolInput: { pattern: "x" } }), null);
 	assert.equal(normalizePermissionRequest("claude", undefined, {}), null);
 	assert.equal(normalizePermissionRequest("claude", null, {}), null);
-});
-
-test("normalizePermissionRequest returns a canonical request for a Qwen Write tool_use", () => {
-	const request = normalizePermissionRequest("qwen", "Write", {
-		toolInput: { file_path: "/tmp/test.md", content: "hello" }
-	}, { pluginSessionId: "session-1" });
-	assert.equal(request.cli, "qwen");
-	assert.equal(request.capability, "file-change");
-	assert.equal(request.target, "/tmp/test.md");
-	assert.match(request.operation, /Qwen Code:Write/);
 });
 
 test("normalizePermissionRequest routes Codex calls through the existing normalizer", () => {

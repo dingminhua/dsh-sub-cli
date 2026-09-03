@@ -10,7 +10,7 @@ A DeepSeek Harness (DSH) plugin for managing external Agent CLIs.
   - Relay subagents (per CLI): `cli_codex_subagent` / `cli_claude_subagent` / `cli_qwen_subagent` (creates a DSH continuable child that forwards the task to the real thread via `managed_cli_submit`);
   - Interrupt (codex/claude): `cli_codex_interrupt` / `cli_claude_interrupt` (Qwen does not support it);
   - **15 = 3 direct + 3 subagent + 8 session tools (followup/status/sessions × 3 → 8 because qwen has no sessions) + 1 dispatch + 1 internal `managed_cli_submit`**;
-  - The `cli_codex` alias is gone; the unsuffixed one-shot tools `cli_claude_code` / `cli_qwen` and their `managed-<cli>` provider **were removed** — they covered only two of the three CLIs, had no session capability, and duplicated `cli_dispatch`;
+  - The `cli_codex` alias is gone; the unsuffixed one-shot tools `cli_claude_code` / `cli_qwen` and their `managed-<cli>` provider **were removed** — they covered only two of the two CLIs, had no session capability, and duplicated `cli_dispatch`;
     > **To run several CLIs at once use `cli_<cli>_subagent`**: it returns a subagent id immediately and the children run in parallel — **no background-job (jobs) plugin required**.
 - Every CLI has a continued-session driver (Codex: app-server; Claude/Qwen: stream-json), exposing **`cli_<cli>_followup` / `cli_<cli>_status` / `cli_<cli>_sessions` / `cli_<cli>_interrupt`** (qwen has no interrupt);
 - Registers the **`cli_dispatch`** model tool for one-shot headless CLI invocation with output returned to the conversation.
@@ -21,14 +21,14 @@ A DeepSeek Harness (DSH) plugin for managing external Agent CLIs.
 - **Config isolation**: launches set `CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `QWEN_HOME` to the managed dirs; system defaults are never touched;
 - **Three-layer model route**: provider → model → reasoning effort, configured per CLI;
 - **Headless dispatch**: `cli_dispatch` executes the CLI with an argv array (no shell string concatenation) and handles timeouts, output caps, exit codes, and stderr;
-- **Continued sessions for all three CLIs**: the first `cli_<cli>_direct` returns a stable `sessionId`; later tools enter the same thread — Codex over a long-lived app-server connection, Claude/Qwen via stream-json one-process-per-turn plus `--session-id`/`--resume` file-level persistence — no relay model in between;
+- **Continued sessions for two CLIs**: the first `cli_<cli>_direct` returns a stable `sessionId`; later tools enter the same thread — Codex over a long-lived app-server connection, Claude/Qwen via stream-json one-process-per-turn plus `--session-id`/`--resume` file-level persistence — no relay model in between;
 - **Settings persistence**: the managed directory and model routes are written to `~/.dsh/settings.yaml` via `installSettingsSection` and survive restarts;
 - **Session persistence**: the session registry (including remote thread ids) is written to `sessions.json` in the managed directory; after a Host restart `cli_<cli>_followup` reattaches the same thread from `sessionId` directly, no re-creation needed;
 - **Auto-continue**: when an answer looks like a premature stop (plans only, no deliverable), the service nudges the same conversation until the result is complete, so a single `cli_<cli>_direct` call returns the full report. Each CLI has a `max` setting in the card (default 3; **0 disables it** — there is no separate switch). **Generalization note**: the nudge depends on same-thread follow-up, so it applies to every continued-session call (Codex/Claude/Qwen); the `INTENT_TAIL` regex recognizes both Chinese and English intent sentences.
 
 ## Built-in tool capabilities per CLI
 
-This plugin does not touch the CLIs' tools — whatever a CLI has, it uses. What the three CLIs can actually invoke on the `cli_<cli>_direct` / `cli_<cli>_subagent` continued-session paths:
+This plugin does not touch the CLIs' tools — whatever a CLI has, it uses. What the two CLIs can actually invoke on the `cli_<cli>_direct` / `cli_<cli>_subagent` continued-session paths:
 
 | Capability | Codex (app-server) | Claude Code (stream-json) | Qwen Code (stream-json) |
 |------|:------------------:|:--------------------------:|:-----------------------:|
@@ -39,7 +39,7 @@ This plugin does not touch the CLIs' tools — whatever a CLI has, it uses. What
 **Division of labour: the controller researches online, the CLIs work offline.**
 
 - **Web search / research / URL fetching**: done by the controller with DSH's own `advanced_search` / `web_fetch` / `platform_search` — **the three managed CLIs deliberately ship WITHOUT web search** (2026-09 product decision). Rationale: Codex web_search and Claude WebSearch are provider-side server tools that relays generally never execute; Qwen webSearch requires a separately billed DashScope search model. The controller's own search stack has none of these limits;
-- **Code work (read / write / edit / run commands)**: all three CLIs are fully symmetric — pick by preference;
+- **Code work (read / write / edit / run commands)**: two CLIs are fully symmetric — pick by preference;
 - **Multi-step complex tasks**: use a Relay subagent (`cli_<cli>_subagent`) and let the child keep pushing;
 - **If a CLI must handle research material**: the controller researches first, then hands the material over as task content.
 

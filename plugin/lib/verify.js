@@ -249,11 +249,6 @@ async function readGateFingerprint(ctx, cfgPath, fs) {
  * existing file already embeds the live fingerprint it is left untouched (so
  * user's other settings are preserved); otherwise it is rewritten. This is the
  * gate that makes "stale wrong supplier" impossible by construction.
- *
- * `permissionOverride`（可选）是**本轮生效**的权限档（A/B 门授权后的加宽档
- * 位）。qwen 的执法就在这份配置里（tools.approvalMode）——不传则按持久化设置
- * 渲染；传了则按本轮档渲染，且语义门也按本轮档比对，**不会把授权档改写回
- * 持久化档**（2026-09-03 修复：授权被配置门静默回滚）。
  */
 export async function ensureCliProviderConfig(ctx, entry, route, permissionOverride = undefined) {
 	if (!route || !route.provider || !route.model) return { supported: true, ok: false, error: "未为该 CLI 配置 Provider 和 Model。" };
@@ -264,24 +259,11 @@ export async function ensureCliProviderConfig(ctx, entry, route, permissionOverr
 	const fp = fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 	const fs = ctx.get("fs");
 	if (entry.id === "claude") return { supported: true, ok: true, uptodate: true, cfgPath: cfgDir };
-	const permission = permissionOverride !== undefined ? permissionOverride : permissionOf(ctx, entry.id);
-	const cfgPath = path.join(cfgDir, entry.id === "qwen" ? "settings.json" : "config.toml");
-	const content = entry.id === "qwen" ? qwenSettings(route, pc, permission) : gateToml(codexToml(route, pc), route, pc, fp);
+	const cfgPath = path.join(cfgDir, "config.toml");
+	const content = gateToml(codexToml(route, pc), route, pc, fp);
 	if (entry.id === "codex") {
 		const existingFp = await readGateFingerprint(ctx, cfgPath, fs);
 		if (existingFp === fp) return { supported: true, ok: true, uptodate: true, cfgPath };
-	}
-	// Qwen 的门是「语义一致」：只比对插件拥有的字段（openai 路由条目、按档位
-	// 的 approvalMode、auth 类型——兼容 selectedAuthType 旧位与 security.auth 迁
-	// 移位），qwen 自己的字段（$version、security 结构等）不碰。字节级比对不可
-	// 用：qwen 0.22.3 启动即迁移自身 settings.json（selectedAuthType →
-	// security.auth.selectedType + $version），首跑后字节门必破。这也不只是省一
-	// 次写——宿主 fs 沙箱默认 workspace-write 时统一目录的写会被拒
-	// （FS_SANDBOX_DENIED），无条件重写会让 qwen 的 test/direct/subagent 全通道
-	// 在默认部署下必挂。
-	if (entry.id === "qwen") {
-		const existing = await readTextIfAny(ctx, cfgPath, fs);
-		if (existing !== null && qwenSettingsCurrent(existing, route, pc, permission)) return { supported: true, ok: true, uptodate: true, cfgPath };
 	}
 	if (!fs || typeof fs.resolve !== "function" || typeof fs.writeText !== "function") {
 		return { supported: true, ok: false, error: "当前 DSH 文件服务不支持写 CLI 配置。" };
@@ -313,9 +295,6 @@ export async function ensureCliProviderConfig(ctx, entry, route, permissionOverr
  * (config converges to live, key read fresh from credentials). This is the only
  * thing a managed spawn may use to build its environment — it does not depend on
  * any agent remembering to verify a fingerprint.
- *
- * `opts.permissionProfile`（可选）：本轮生效的权限档（A/B 门授权），穿透到
- * ensureCliProviderConfig，使 qwen 的 approvalMode 按本轮档渲染。
  */
 export async function prepareManagedRun(ctx, cliId, dir, opts = {}) {
 	const entry = cliById(cliId);
@@ -348,92 +327,10 @@ export function currentDir(ctx) {
 }
 
 /** Map a coarse sandbox tier to Qwen Code's tools.approvalMode value.
- * Qwen's headless -p mode composes its toolset from the approval mode: under
- * the default "auto" the session has NO write tools at all (no write_file /
- * edit / shell), so a write-capability grant must be expressed here or the
- * CLI simply cannot mutate anything. Verified against qwen 0.22.2:
- * plan = read-only toolset; auto-edit = write/edit tools, edits auto-approved
- * (works for absolute paths outside the cwd too); yolo = everything, no
- * prompts (matches the danger tier where exec already implies full trust).
- *
- * Permission enforcement is now entirely at the driver layer
- * (onPermissionRequest hook → resolvePermission's deterministic answer by
- * capability checkbox; the approval mode was removed 2026-09). The CLI always
- * runs at "yolo" so it registers all tools internally; the driver intercepts
- * each tool_use before it executes and gates it against the user's stored
- * permission profile. This unifies the UX across all three CLIs.
- */
-/**
- * Qwen's own enforcement. Qwen's stream-json wire emits no tool_use events, so
- * the driver has no interception point — the ONLY real gate for Qwen is the
- * `tools.approvalMode` we write into its isolated settings.json before launch:
- *   - plan        : Qwen does not register write_file / edit / run_shell_command
- *                   at all — a write task is physically impossible, not merely
- *                   denied mid-flight.
- *   - auto-edit   : write tools are registered and auto-accepted.
- *   - yolo        : everything registered and auto-accepted, no prompts.
- * The pre-launch tier is therefore the hard guarantee for Qwen; mid-flight
- * interception is not available on its protocol and must not be relied on.
- */
-export function qwenApprovalMode(tier) {
-	switch (tier) {
-		case "read-only": return "plan";
-		case "workspace-write": return "auto-edit";
-		case "danger-full-access": return "yolo";
-		default: return "yolo";
-	}
-}
-
-/** Render Qwen Code settings for one OpenAI-compatible provider. The third
- * argument is the stored permission (profile object or legacy tier string);
- * it decides tools.approvalMode, without which a headless Qwen session has no
- * write-capable tools regardless of the plugin's own permission model. */
-export function qwenSettings(route, pc, permission) {
-	const normalized = normalizePermission(permission);
-	const approvalMode = qwenApprovalMode(deriveSandboxMode(normalized));
-	// No webSearch block: the three managed CLIs deliberately ship without web
-	// search (2026-09 decision). Qwen's webSearch needs a dedicated DashScope
-	// search model + API key (the chat model cannot stand in), so enabling it
-	// with the routed chat model registered a tool that could never work.
-	// Web research stays with the controller's own search tools.
-	const tools = { approvalMode };
-	return JSON.stringify({
-		selectedAuthType: "openai",
-		modelProviders: {
-			openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }]
-		},
-		tools
-	}, null, 2);
-}
-
-/**
- * Whether an on-disk qwen settings.json already carries the live route.
- * Qwen rewrites its own settings on startup (verified 0.22.3: it migrates
- * top-level `selectedAuthType` into `security.auth.selectedType` and stamps
- * `$version`), so a byte-exact gate breaks after the FIRST CLI run and every
- * later dispatch then hits a sandbox-denied rewrite. Compare only the fields
- * the plugin owns — the openai provider entry (model / envKey / baseUrl), the
- * yolo approval posture, and the auth type in either its legacy or migrated
- * spelling — and leave qwen's own fields untouched.
- */
-export function qwenSettingsCurrent(text, route, pc, permission) {
-	if (typeof text !== "string") return false;
-	let parsed;
-	try { parsed = JSON.parse(text); } catch { return false; }
-	const providers = parsed && parsed.modelProviders && Array.isArray(parsed.modelProviders.openai) ? parsed.modelProviders.openai : [];
-	const entry = providers.find((p) => p && p.id === route.model) || null;
-	if (!entry) return false;
-	if (entry.envKey !== pc.apiKeyEnv || entry.baseUrl !== pc.baseURL) return false;
-	const normalized = normalizePermission(permission ?? DEFAULT_PERMISSION);
-	const wantTier = deriveSandboxMode(normalized);
-	if (!parsed.tools || parsed.tools.approvalMode !== qwenApprovalMode(wantTier)) return false;
-	// The webSearch block must be absent (2026-09: managed CLIs ship without
-	// web search). A stale on-disk block means the settings predate this
-	// decision and must be rewritten.
-	if (parsed.tools.webSearch && parsed.tools.webSearch.enabled) return false;
-	const auth = parsed.selectedAuthType ?? (parsed.security && parsed.security.auth && parsed.security.auth.selectedType);
-	return auth === "openai";
-}
+ * REMOVED with Qwen support (2026-09): the CLI's headless stream-json wire
+ * emits no tool_use events (driver interception was dead code) and its whole
+ * permission model rides on one settings.json key it rewrites on startup.
+ * See registry.js for the removal rationale. */
 
 /**
  * Codex appends `responses` straight onto `base_url` with no path insertion of
@@ -521,17 +418,7 @@ export function findAnthropicToolUseId(body) {
 	}
 	return null;
 }
-
-/** Find the first Chat-Completions `tool_calls[].id`. Pure/testable. */
-export function findChatToolCallId(body) {
-	if (!body || typeof body !== "object") return null;
-	const choices = Array.isArray(body.choices) ? body.choices : [];
-	for (const c of choices) {
-		const tcs = c && c.message && Array.isArray(c.message.tool_calls) ? c.message.tool_calls : [];
-		for (const tc of tcs) if (tc && typeof tc.id === "string") return tc.id;
-	}
-	return null;
-}
+// (findChatToolCallId left with the Qwen openai-chat probe, 2026-09.)
 
 /**
  * Probe an Anthropic Messages supplier for tool_use continuation (Claude Code
@@ -569,42 +456,6 @@ export async function probeAnthropicContinuation({ httpPost, baseURL, apiKey, mo
 	return { toolContinuation: (r2 && r2.status) >= 200 && (r2 && r2.status) < 400, step: 2, step1Status: r1.status, step2Status: r2 && r2.status };
 }
 
-/**
- * Probe an OpenAI Chat-Completions supplier for tool_calls continuation (Qwen
- * Code needs it). Step1 must return `tool_calls` with an id; step2 sends a
- * `tool` role message and must return a 2xx.
- */
-export async function probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model }) {
-	const tool = { type: "function", function: { name: "get_time", description: "returns current time", parameters: { type: "object", properties: {} } } };
-	let r1;
-	try {
-		r1 = await httpPost({ url: `${baseURL}/chat/completions`, body: { model, tools: [tool], messages: [{ role: "user", content: "现在几点？请调用 get_time 工具" }] } });
-	} catch (error) {
-		return { toolContinuation: false, step: 1, reason: error instanceof Error ? error.message : String(error) };
-	}
-	const toolCallId = findChatToolCallId(r1 && r1.body);
-	if (!toolCallId) {
-		return { toolContinuation: false, step: 1, status: r1 && r1.status, reason: "step1 未返回 tool_calls（供应商不支持 Chat 工具输出）" };
-	}
-	let r2;
-	try {
-		r2 = await httpPost({
-			url: `${baseURL}/chat/completions`,
-			body: {
-				model,
-				messages: [
-					{ role: "user", content: "现在几点？请调用 get_time 工具" },
-					{ role: "assistant", content: null, tool_calls: [{ id: toolCallId, type: "function", function: { name: "get_time", arguments: "{}" } }] },
-					{ role: "tool", tool_call_id: toolCallId, content: "当前时间是 2026-08-27 12:00 UTC" }
-				]
-			}
-		});
-	} catch (error) {
-		return { toolContinuation: false, step: 2, reason: error instanceof Error ? error.message : String(error) };
-	}
-	return { toolContinuation: (r2 && r2.status) >= 200 && (r2 && r2.status) < 400, step: 2, step1Status: r1.status, step2Status: r2 && r2.status };
-}
-
 /** Interpret findCallId returning null: is tool-call absent or unsupported? */
 function callIdMeaning(body) {
 	if (body && body.error && typeof body.error.message === "string") return false;
@@ -613,8 +464,9 @@ function callIdMeaning(body) {
 
 /**
  * Probe the CLI's own protocol tool-continuation. Routes by entry.protocol:
- * responses -> probeToolContinuation, anthropic -> probeAnthropicContinuation,
- * openai-chat -> probeOpenaiChatContinuation. Pure/testable via injected httpPost.
+ * responses -> probeToolContinuation, anthropic -> probeAnthropicContinuation.
+ * Pure/testable via injected httpPost. (The openai-chat probe left with Qwen,
+ * 2026-09 — no managed CLI speaks it anymore.)
  *
  * Adds `outcome` (probe failure taxonomy) so a caller can tell a transient
  * supplier hiccup from a deterministic "this relay cannot do the protocol".
@@ -624,9 +476,6 @@ export async function probeProtocolContinuation({ httpPost, baseURL, apiKey, mod
 	switch (protocol) {
 		case "anthropic":
 			result = await probeAnthropicContinuation({ httpPost, baseURL, apiKey, model });
-			break;
-		case "openai-chat":
-			result = await probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model });
 			break;
 		case "responses":
 		default:
@@ -809,20 +658,15 @@ export async function testCli(ctx, cliId, signal) {
 	const resolved = await ctx.subprocess.resolveExecutable(bin, env, signal).catch(() => null);
 	if (!resolved) return { ok: false, error: `未找到 ${entry.bin}，请先安装到统一目录 ${dir}/bin。` };
 	// Probe with the CONFIGURED route (model + permission), not the CLI's own
-	// defaults. Qwen without --model falls back to its built-in default model,
-	// which has no provider entry in the isolated settings — the run then dies
-	// with "Missing API key for OpenAI-compatible auth" even though the
-	// configured route is fine (codex/claude only masked this because their
-	// config files carry the model). Passing the real permission also makes the
-	// test exercise the exact launch argv a real dispatch/subagent run uses.
+	// defaults. Passing the real permission also makes the test exercise the
+	// exact launch argv a real dispatch/subagent run uses.
 	const argv = winShimArgv(resolved, entry.argv("Reply with exactly: OK", route.model, permissionOf(ctx, cliId)), PLATFORM);
 	let reply = "";
 	let stdout = "";
 	// Bounded retry for a KNOWN transient supplier quirk: exit code 0 with an
-	// empty reply. Measured on aixforge + deepseek-v4-flash via Qwen Code: the
-	// supplier sometimes lands the whole answer in reasoning_content and returns
-	// an empty content field (curl repro ~20%, through the CLI ~50%); the CLI
-	// prints only content, so the run exits 0 with empty stdout. A verification
+	// empty reply (measured: the supplier sometimes lands the whole answer in
+	// reasoning_content and returns an empty content field; the CLI prints
+	// only content, so the run exits 0 with empty stdout). A verification
 	// failure is cached by fingerprint and then locks the CLI's
 	// direct/subagent channels via preflight, so one transient empty must not
 	// fail the test. Deterministic failures (non-zero exit: auth/config) and a
@@ -862,9 +706,8 @@ export async function testCli(ctx, cliId, signal) {
 	}
 	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
 	// tool continuation to actually work (Codex=responses, Claude=anthropic
-	// tool_use, Qwen=openai chat tool_calls). A provider that only answers plain
-	// text can't drive the CLI's tools, so these are hard failures with a
-	// user-facing reason — not a pass.
+	// tool_use). A provider that only answers plain text can't drive the CLI's
+	// tools, so these are hard failures with a user-facing reason — not a pass.
 	let capabilities = null;
 	if (pc && pc.baseURL && key) {
 		const gate = await probeProtocolContinuation({

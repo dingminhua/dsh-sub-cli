@@ -14,8 +14,7 @@ import { withPermissionGuidance, AUTHORIZATION_DISCIPLINE } from "./permission-g
 // so no background-job plugin is needed to run several CLIs at once.
 export const CLI_SUBAGENT_TOOLS = [
 	{ cli: "codex", toolName: "cli_codex_direct", displayName: "Codex", mode: "session", provider: null },
-	{ cli: "claude", toolName: "cli_claude_direct", displayName: "Claude Code", mode: "session", provider: null },
-	{ cli: "qwen", toolName: "cli_qwen_direct", displayName: "Qwen Code", mode: "session", provider: null }
+	{ cli: "claude", toolName: "cli_claude_direct", displayName: "Claude Code", mode: "session", provider: null }
 ];
 
 

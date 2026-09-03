@@ -20,10 +20,9 @@ function toolFixture() {
 test("relayPersonaFor generates the right persona for each CLI", () => {
 	assert.match(relayPersonaFor("codex"), /Codex/);
 	assert.match(relayPersonaFor("claude"), /Claude Code/);
-	assert.match(relayPersonaFor("qwen"), /Qwen Code/);
 	// unknown cli falls back to Codex (legacy compat)
 	assert.match(relayPersonaFor("unknown"), /Codex/);
-	for (const persona of [relayPersonaFor("codex"), relayPersonaFor("claude"), relayPersonaFor("qwen")]) {
+	for (const persona of [relayPersonaFor("codex"), relayPersonaFor("claude")]) {
 		assert.match(persona, /must call managed_cli_submit/);
 		assert.match(persona, /relay bridge/);
 	}
@@ -42,7 +41,7 @@ test("cli_codex_subagent creates a continuable relay with restricted tools", asy
 	assert.match(f.request.request.persona, /must call/);
 });
 
-test("registerManagedCliSubagentTools registers 3 CLI Relay tools", () => {
+test("registerManagedCliSubagentTools registers 2 CLI Relay tools", () => {
 	const tools = [];
 	const ctx = {
 		tools: { register(v) { tools.push(v.name); } },
@@ -50,7 +49,7 @@ test("registerManagedCliSubagentTools registers 3 CLI Relay tools", () => {
 	};
 	const service = {};
 	registerManagedCliSubagentTools(ctx, async () => ({ ok: true }));
-	assert.deepEqual(tools.sort(), ["cli_claude_subagent", "cli_codex_subagent", "cli_qwen_subagent"]);
+	assert.deepEqual(tools.sort(), ["cli_claude_subagent", "cli_codex_subagent"]);
 });
 
 test("each registered CLI subagent tool binds the matching Relay provider", async () => {
@@ -68,9 +67,7 @@ test("each registered CLI subagent tool binds the matching Relay provider", asyn
 	const byProvider = Object.fromEntries(seen.map((s) => [s.provider, s]));
 	assert.ok(byProvider["managed-codex-relay"], "codex Relay tool should bind managed-codex-relay");
 	assert.ok(byProvider["managed-claude-relay"], "claude Relay tool should bind managed-claude-relay");
-	assert.ok(byProvider["managed-qwen-relay"], "qwen Relay tool should bind managed-qwen-relay");
 	assert.match(byProvider["managed-claude-relay"].persona, /Claude Code/);
-	assert.match(byProvider["managed-qwen-relay"].persona, /Qwen Code/);
 });
 
 test("ManagedCliRelayProvider binds the child to the right CLI", () => {

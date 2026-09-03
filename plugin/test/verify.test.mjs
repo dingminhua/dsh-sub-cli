@@ -4,7 +4,6 @@ import {
 	fingerprint,
 	codexToml,
 	codexBaseUrl,
-	qwenSettings,
 	stripTrailingV1,
 	joinApiPath,
 	providerConfig,
@@ -15,9 +14,7 @@ import {
 	probeToolContinuation,
 	findCallId,
 	findAnthropicToolUseId,
-	findChatToolCallId,
 	probeAnthropicContinuation,
-	probeOpenaiChatContinuation,
 	probeProtocolContinuation,
 	extractCliReply,
 	extractCodexError,
@@ -26,7 +23,6 @@ import {
 	isOkReply,
 	permissionOf,
 	ensureCliProviderConfig,
-	qwenSettingsCurrent,
 	classifyProbeFailure,
 	probeOutcomeAdvice,
 	PROBE_OUTCOMES
@@ -52,12 +48,9 @@ function sampleCtx({ value, providerCfg, credKey } = {}) {
 	return { get: (key) => services[key], ...services };
 }
 
+
 test("localizeCliError translates Claude login errors into Simplified Chinese", () => {
 	assert.equal(localizeCliError("claude", "Not logged in · Please run /login"), "Claude Code 尚未登录。请先在插件隔离配置中完成登录认证。");
-});
-
-test("localizeCliError translates Qwen auth-type errors into Simplified Chinese", () => {
-	assert.equal(localizeCliError("qwen", "No auth type is selected. Please configure an auth type (e.g. via settings or `--auth-type`) before running in non-interactive mode."), "Qwen Code 尚未配置认证方式。请先为该 CLI 选择并配置认证类型。");
 });
 
 test("localizeCliError prefixes unknown external diagnostics consistently", () => {
@@ -138,83 +131,6 @@ test("fingerprint is stable and reflects the route", () => {
 test("protocol URL helpers avoid duplicated v1 segments", () => {
 	assert.equal(stripTrailingV1("https://api.aixforge.com/v1"), "https://api.aixforge.com");
 	assert.equal(joinApiPath(stripTrailingV1("https://api.aixforge.com/v1"), "v1/messages"), "https://api.aixforge.com/v1/messages");
-});
-
-test("qwenSettings selects an OpenAI-compatible provider without persisting a key", () => {
-	const value = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" }
-	));
-	assert.equal(value.selectedAuthType, "openai");
-	assert.equal(value.modelProviders.openai[0].id, "deepseek-v4-flash");
-	assert.equal(value.modelProviders.openai[0].baseUrl, "https://api.aixforge.com/v1");
-	assert.equal(value.modelProviders.openai[0].envKey, "AIXFORGE_API_KEY");
-	assert.equal(JSON.stringify(value).includes("sk-"), false);
-});
-
-test("qwenSettings maps the tier onto qwen's own enforcement (plan / auto-edit / yolo)", () => {
-	// Qwen 的 stream-json 不发 tool_use 事件（0.22.3 实测：只有一条 result），
-	// 驱动层没有拦截点——它唯一的执法就是这份 settings.json 里的
-	// tools.approvalMode。因此档位必须写进 CLI 自身配置：
-	//   read-only → plan（写工具根本不注册，物理写不了）
-	//   workspace-write → auto-edit
-	//   danger-full-access → yolo
-	// 缺省/未知档位按最保守的 plan 处理（与 registry 的默认档位一致）。
-	for (const [tier, expected] of [
-		[{ read: true, write: false, exec: false, approval: "ask" }, "plan"],
-		[{ read: true, write: true, exec: false, approval: "ask" }, "auto-edit"],
-		[{ read: true, write: true, exec: true, approval: "ask" }, "yolo"],
-		[undefined, "plan"],
-		["danger-full-access", "yolo"]
-	]) {
-		const value = JSON.parse(qwenSettings(
-			{ provider: "aixforge", model: "deepseek-v4-flash" },
-			{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-			tier
-		));
-		assert.equal(value.tools.approvalMode, expected, `tier=${JSON.stringify(tier)} must map to ${expected}`);
-	}
-});
-
-test("qwenSettings never writes a webSearch block on any tier", () => {
-	// 2026-09 decision: the managed CLIs ship WITHOUT web search. Qwen's
-	// webSearch needs a dedicated DashScope search model + API key (the chat
-	// model cannot stand in), so a webSearch block keyed to the routed chat
-	// model registered a tool that could never work. No tier writes it.
-	for (const perm of [
-		{ read: true, write: true, exec: true },
-		{ read: true, write: true, exec: false },
-		{ read: true, write: false, exec: false }
-	]) {
-		const rendered = JSON.parse(qwenSettings(
-			{ provider: "aixforge", model: "deepseek-v4-flash" },
-			{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-			perm
-		));
-		assert.equal(rendered.tools.webSearch, undefined, `tier ${JSON.stringify(perm)} has no webSearch block`);
-	}
-});
-
-test("qwenSettingsCurrent treats a residual webSearch block as stale", () => {
-	// A webSearch block on disk predates the no-web-search decision; the
-	// settings must be rewritten so the stale block is cleared.
-	const route = { provider: "aixforge", model: "deepseek-v4-flash" };
-	const pc = { baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" };
-	const execPerm = { read: true, write: true, exec: true };
-	const onDiskStale = JSON.stringify({
-		selectedAuthType: "openai",
-		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "yolo", webSearch: { enabled: true, model: route.model } },
-		$version: 4
-	}, null, 2);
-	assert.equal(qwenSettingsCurrent(onDiskStale, route, pc, execPerm), false, "residual webSearch block is stale and triggers a rewrite");
-	const onDiskClean = JSON.stringify({
-		selectedAuthType: "openai",
-		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "yolo" },
-		$version: 4
-	}, null, 2);
-	assert.equal(qwenSettingsCurrent(onDiskClean, route, pc, execPerm), true, "clean settings without webSearch are current");
 });
 
 test("codex argv never enables web_search on any tier", async () => {
@@ -414,12 +330,6 @@ test("findAnthropicToolUseId extracts tool_use id", () => {
 	assert.equal(findAnthropicToolUseId({ content: [] }), null);
 });
 
-test("findChatToolCallId extracts tool_calls id", () => {
-	const body = { choices: [{ message: { tool_calls: [{ id: "call_zz", type: "function" }] } }] };
-	assert.equal(findChatToolCallId(body), "call_zz");
-	assert.equal(findChatToolCallId({ choices: [{ message: {} }] }), null);
-});
-
 test("probeAnthropicContinuation passes on tool_use + tool_result", async () => {
 	let calls = 0;
 	const httpPost = async () => {
@@ -438,23 +348,6 @@ test("probeAnthropicContinuation fails without tool_use", async () => {
 	assert.equal(r.toolContinuation, false);
 	assert.equal(r.step, 1);
 });
-
-test("probeOpenaiChatContinuation passes on tool_calls + tool message", async () => {
-	let calls = 0;
-	const httpPost = async () => {
-		calls += 1;
-		if (calls === 1) return { status: 200, body: { choices: [{ message: { tool_calls: [{ id: "call_a", type: "function" }] } }] } };
-		return { status: 200, body: { choices: [{ message: { content: "现在 12:00 UTC" } }] } };
-	};
-	const r = await probeOpenaiChatContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m" });
-	assert.equal(r.toolContinuation, true);
-	assert.equal(calls, 2);
-});
-
-// ── Probe failure taxonomy (2026-09) ──────────────────────────────────────────
-// A binary pass/fail made every supplier hiccup look like a misconfiguration.
-// These tests pin the six outcomes and the rule that MATTERS: only a
-// deterministic verdict may advise switching relay.
 
 test("classifyProbeFailure maps HTTP status to deterministic vs transient", () => {
 	// 2xx = the probe itself succeeded (no failure to classify).
@@ -540,200 +433,4 @@ test("permissionOf returns a normalized capability profile for a CLI", () => {
 	// Other CLIs are independent.
 	assert.deepEqual(permissionOf(ctx, "claude"), { read: true, write: false, exec: false });
 });
-
-test("ensureCliProviderConfig skips the qwen write when content matches", async () => {
-	const { CLI_REGISTRY } = await import("../lib/registry.js");
-	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	const rendered = qwenSettings(route, pc, "read-only");
-	let wrote = null;
-	const ctx = sampleCtx({
-		value: { models: { qwen: route }, permissions: {} },
-		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
-	});
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => rendered,
-				writeText: async (target, content) => { wrote = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r = await ensureCliProviderConfig(ctx, qwen, route);
-	assert.equal(r.ok, true);
-	assert.equal(r.uptodate, true);
-	assert.equal(wrote, null, "no fs write when the on-disk settings match the rendered content");
-});
-
-test("ensureCliProviderConfig skips the qwen write after qwen migrated its own settings", async () => {
-	// qwen 0.22.3 rewrites settings.json on startup: selectedAuthType moves into
-	// security.auth.selectedType and $version is stamped. The gate must accept
-	// the migrated shape (semantic match on plugin-owned fields), or every run
-	// after the first hits a sandbox-denied rewrite.
-	const { CLI_REGISTRY } = await import("../lib/registry.js");
-	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	// 迁移后的位形必须是「与插件当前档位一致」才能跳过写：默认档位（未配置权限
-	// → read-only）对应 plan，所以这里盘上的 yolo 属于过时值，必须重写。
-	const migrated = JSON.stringify({
-		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "plan" },
-		security: { auth: { selectedType: "openai" } },
-		$version: 4
-	}, null, 2);
-	let wrote = null;
-	const ctx = sampleCtx({
-		value: { models: { qwen: route }, permissions: {} },
-		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
-	});
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => migrated,
-				writeText: async (target, content) => { wrote = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r = await ensureCliProviderConfig(ctx, qwen, route);
-	assert.equal(r.ok, true);
-	assert.equal(r.uptodate, true);
-	assert.equal(wrote, null, "no fs write against qwen's own migrated settings shape");
-});
-
-test("ensureCliProviderConfig renders the turn-granted tier for qwen (grant must not be rolled back)", async () => {
-	// 2026-09-03 修复：A/B 门授权的「本轮档位」经 prepare 穿透进来。修复前
-	// 授权档先落盘、随后配置门按持久化档（read-only → plan）比对，把授权
-	// 静默改写回去——用户批准的写入物理上不可能发生。修复后语义门按本轮档
-	// 比对，盘上的 auto-edit 与本轮档一致，不再触发重写。
-	const { CLI_REGISTRY } = await import("../lib/registry.js");
-	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	const granted = { read: true, write: true, exec: false, approval: "ask" }; // workspace-write
-	const onDiskGranted = JSON.stringify({
-		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "auto-edit" },
-		security: { auth: { selectedType: "openai" } },
-		$version: 4
-	}, null, 2);
-	let wrote = null;
-	const ctx = sampleCtx({
-		value: { models: { qwen: route }, permissions: {} },
-		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
-	});
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => onDiskGranted,
-				writeText: async (target, content) => { wrote = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r = await ensureCliProviderConfig(ctx, qwen, route, granted);
-	assert.equal(r.ok, true);
-	assert.equal(r.uptodate, true, "本轮授权档与盘上一致，不重写");
-	assert.equal(wrote, null, "授权档绝不能被持久化档回滚");
-	// 反向：不传 override（普通轮）时按持久化档比对，盘上的 auto-edit 属过时
-	// 值，必须重写回 plan。（写路径需要 ctx.subprocess 供 runEnsureDir 用。）
-	let wrote2 = null;
-	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => onDiskGranted,
-				writeText: async (target, content) => { wrote2 = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r2 = await ensureCliProviderConfig(ctx, qwen, route);
-	assert.equal(r2.ok, true);
-	assert.equal(r2.uptodate, false, "未授权轮按持久化档重写");
-	assert.ok(wrote2 && JSON.parse(wrote2.content).tools.approvalMode === "plan", "重写回 plan（授权不跨轮泄漏）");
-});
-
-test("qwenSettingsCurrent rejects a stale route in the migrated shape", () => {
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	const stale = JSON.stringify({
-		modelProviders: { openai: [{ id: "other-model", envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "yolo" },
-		security: { auth: { selectedType: "openai" } },
-		$version: 4
-	});
-	assert.equal(qwenSettingsCurrent(stale, route, pc), false);
-	const wrongBase = JSON.stringify({
-		modelProviders: { openai: [{ id: route.model, envKey: pc.apiKeyEnv, baseUrl: "https://elsewhere/v1" }] },
-		tools: { approvalMode: "yolo" },
-		security: { auth: { selectedType: "openai" } },
-		$version: 4
-	});
-	assert.equal(qwenSettingsCurrent(wrongBase, route, pc), false);
-	assert.equal(qwenSettingsCurrent("not json", route, pc), false);
-	assert.equal(qwenSettingsCurrent(null, route, pc), false);
-});
-
-test("ensureCliProviderConfig rewrites qwen settings when content differs", async () => {
-	const { CLI_REGISTRY } = await import("../lib/registry.js");
-	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	const rendered = qwenSettings(route, pc, "read-only");
-	let wrote = null;
-	const ctx = sampleCtx({
-		value: { models: { qwen: route }, permissions: {} },
-		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
-	});
-	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => JSON.stringify({ selectedAuthType: "openai" }, null, 2),
-				writeText: async (target, content) => { wrote = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r = await ensureCliProviderConfig(ctx, qwen, route);
-	assert.equal(r.ok, true);
-	assert.equal(r.uptodate, false);
-	assert.ok(wrote, "the write happened for stale content");
-	assert.equal(wrote.content, rendered);
-});
-
-test("ensureCliProviderConfig treats a missing qwen settings file as stale", async () => {
-	const { CLI_REGISTRY } = await import("../lib/registry.js");
-	const qwen = CLI_REGISTRY.find((e) => e.id === "qwen");
-	const route = { provider: "k3-baoyue", model: "kimi-k3", reasoningEffort: "" };
-	const pc = { baseURL: "https://k3.example/v1", apiKeyEnv: "K3_KEY" };
-	let wrote = null;
-	const ctx = sampleCtx({
-		value: { models: { qwen: route }, permissions: {} },
-		providerCfg: { baseURL: pc.baseURL, apiKeyEnv: pc.apiKeyEnv }
-	});
-	ctx.subprocess = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) };
-	ctx.get = (key) => {
-		if (key === "fs") {
-			return {
-				resolve: async (p) => ({ displayPath: p, targetKey: p }),
-				readText: async () => { throw new Error("ENOENT"); },
-				writeText: async (target, content) => { wrote = { target, content }; }
-			};
-		}
-		return { settings: ctx.settings, llm: ctx.llm, credentials: ctx.credentials }[key];
-	};
-	const r = await ensureCliProviderConfig(ctx, qwen, route);
-	assert.equal(r.ok, true);
-	assert.equal(r.uptodate, false);
-	assert.ok(wrote, "a missing file is (re)created");
-});
+

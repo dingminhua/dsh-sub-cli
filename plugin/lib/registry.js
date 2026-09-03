@@ -80,32 +80,14 @@ export const CLI_REGISTRY = [
 		protocol: "anthropic",
 		protocolLabel: "Anthropic Messages 协议（Claude Code 所需，含 tool_use 续接）",
 		install: "安装 Claude Code，把可执行文件放到统一目录的 bin/claude。"
-	},
-	{
-		id: "qwen",
-		name: "Qwen Code",
-		bin: "qwen",
-		env: "QWEN_HOME",
-		configDir: "config-qwen",
-		npm: "@qwen-code/qwen-code",
-		argv: (task, model, permission) => {
-			// No CLI-side permission flag for Qwen: its only candidate, boolean
-			// --sandbox, shells out to docker/podman and on stock machines
-			// (Windows without docker) the run dies silently with an empty reply
-			// and exit 0 — strictly worse than running ungated. Permission
-			// enforcement is the driver layer's job (launch at yolo, intercept
-			// each tool_use); this template only shapes the probe / one-shot
-			// dispatch launch, which must mirror the driver channels.
-			const args = [];
-			if (model) args.push("--model", model);
-			args.push("--prompt", task);
-			return args;
-		},
-		protocol: "openai-chat",
-		protocolLabel: "Chat Completions 协议（Qwen Code 所需，含 tool_calls 续接）",
-		install: "安装 Qwen Code，把可执行文件放到统一目录的 bin/qwen。"
 	}
 ];
+
+// Qwen Code support was REMOVED (2026-09 product decision): the CLI proved too
+// flaky in practice — its headless stream-json wire emits no tool_use events
+// (driver interception was dead code), every permission tier rides on a single
+// settings.json key it rewrites on startup, and real-run reliability was poor.
+// The registry now manages Codex and Claude Code only.
 
 /** Look up one CLI entry by id. */
 export function cliById(id) {

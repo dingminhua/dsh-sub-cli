@@ -32,7 +32,7 @@ test("binPath and configDirPath build the unified layout", () => {
 });
 
 test("managedNames = bin + every config dir", () => {
-	assert.deepEqual(managedNames(CLI_REGISTRY), ["bin", "config-codex", "config-claude", "config-qwen"]);
+	assert.deepEqual(managedNames(CLI_REGISTRY), ["bin", "config-codex", "config-claude"]);
 });
 
 test("envFor points the CLI config-env at its isolated dir", () => {

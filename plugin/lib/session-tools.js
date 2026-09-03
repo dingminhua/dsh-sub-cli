@@ -1,18 +1,18 @@
 // Model-facing continuation controls for managed external CLI sessions.
 // These are plugin-specific tools, not DSH native send_message semantics.
-// Generated for all session-capable CLI backends (codex, claude, qwen).
+// Generated for all session-capable CLI backends (codex, claude).
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
-const CLI_IDS = ["codex", "claude", "qwen"];
+const CLI_IDS = ["codex", "claude"];
 
 function sessionOutput(value) {
 	return { sessionId: value.session.sessionId, status: value.session.status, output: value.output };
 }
 
 function toolFor(ctx, service, cli) {
-	const displayName = cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Qwen Code";
-	const safe = cli === "qwen" ? "qwen" : cli; // tool name prefix
+	const displayName = cli === "codex" ? "Codex" : "Claude Code";
+	const safe = cli; // tool name prefix
 
 	ctx.tools.register(defineTool({
 		name: `cli_${safe}_followup`,
@@ -42,17 +42,13 @@ function toolFor(ctx, service, cli) {
 		execute: async () => ({ sessions: service.list({ cli }) })
 	}));
 
-	if (cli !== "qwen") {
-		// interrupt is only implemented for codex (app-server SIGINT) and claude (kill SIGTERM);
-		// qwen has no interrupt capability in stream-json headless mode.
-		ctx.tools.register(defineTool({
-			name: `cli_${safe}_interrupt`,
-			description: `中断一个托管 ${displayName} 会话当前正在运行的 turn，但保留 thread，之后仍可使用 cli_${safe}_followup。`,
-			parameters: { sessionId: { type: "string", required: true, description: `cli_${safe} 返回的会话 ID。` } },
-			output: { schema: { type: "json" }, render: (_a, v) => [{ type: "text", text: JSON.stringify(v, null, 2) }] },
-			execute: async (args, _exec) => service.interrupt(args.sessionId)
-		}));
-	}
+	ctx.tools.register(defineTool({
+		name: `cli_${safe}_interrupt`,
+		description: `中断一个托管 ${displayName} 会话当前正在运行的 turn，但保留 thread，之后仍可使用 cli_${safe}_followup。`,
+		parameters: { sessionId: { type: "string", required: true, description: `cli_${safe} 返回的会话 ID。` } },
+		output: { schema: { type: "json" }, render: (_a, v) => [{ type: "text", text: JSON.stringify(v, null, 2) }] },
+		execute: async (args, _exec) => service.interrupt(args.sessionId)
+	}));
 }
 
 export function registerManagedSessionTools(ctx, service) {

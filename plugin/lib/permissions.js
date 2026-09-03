@@ -27,18 +27,6 @@ export const CLAUDE_APPROVAL_METHODS = Object.freeze({
 	"WebFetcher": "exec"
 });
 
-// Qwen Code: stream-json protocol — same mapping as Claude (Wenxin/Workspace-compatible tool names).
-export const QWEN_APPROVAL_METHODS = Object.freeze({
-	"Bash": "command",
-	"Write": "file-change",
-	"MultiWrite": "file-change",
-	"Edit": "file-change",
-	"Delete": "file-change",
-	"NpmcliLifecyclePlugin": "command",
-	"WebSearch": "exec",
-	"WebFetcher": "exec"
-});
-
 export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "rejected", "cancelled", "unavailable"]);
 
 // ── Fine-grained permission profiles ─────────────────────────────────────────
@@ -196,8 +184,8 @@ function toolCapability(toolName) {
  *   turnId, itemId, capability, operation, target, reason, requestedScope,
  *   supportedDecisions, createdAt, raw }
  *
- * @param {"codex"|"claude"|"qwen"} cli
- * @param {string} method  — protocol method (Codex) or tool name (Claude/Qwen)
+ * @param {"codex"|"claude"} cli
+ * @param {string} method  — protocol method (Codex) or tool name (Claude)
  * @param {object} params  — protocol params or { toolName, toolInput, ... }
  * @param {object} context — { requestId, childId, pluginSessionId, remoteSessionId, turnId, signal }
  */
@@ -209,11 +197,11 @@ export function normalizePermissionRequest(cli, method, params = {}, context = {
 		return normalizeCodexPermissionRequest(method, params, context);
 	}
 
-	// Claude Code / Qwen Code: method is the tool name; map to capability.
+	// Claude Code: method is the tool name; map to capability.
 	const capability = toolCapability(method);
 	if (!capability) return null; // read tool or unknown
 
-	const cliName = cli === "claude" ? "Claude Code" : "Qwen Code";
+	const cliName = "Claude Code";
 	const remoteRequestId = context.remoteRequestId ?? params.approvalId ?? params.itemId ?? null;
 
 	// Build a human-readable operation label.

@@ -1,19 +1,18 @@
 // Managed CLI driver assembly. Each entry adapts one external CLI's protocol
 // to the small, product-independent lifecycle defined by `./types.js`.
 // `createManagedCliDrivers` returns a frozen map keyed by CLI id (codex,
-// claude, qwen, …); callers register individual drivers explicitly so a
+// claude, …); callers register individual drivers explicitly so a
 // missing transport / unused CLI never blocks the rest of the plugin.
+// Qwen Code support was removed (2026-09); see registry.js for the rationale.
 
 import { CodexAppServerDriver } from "./codex-app-server.js";
 import { CodexAppServerProvider, registerCodexAppServerProvider } from "./codex-provider.js";
 import { createCodexSubprocessTransportFactory } from "./subprocess-transport.js";
 import { ClaudeStreamJsonDriver } from "./claude-stream-json.js";
-import { QwenStreamJsonDriver } from "./qwen-stream-json.js";
 import { assertManagedCliDriver } from "./types.js";
 
 export { CodexAppServerProvider, registerCodexAppServerProvider };
 export { ClaudeStreamJsonDriver } from "./claude-stream-json.js";
-export { QwenStreamJsonDriver } from "./qwen-stream-json.js";
 
 /**
  * Assemble the managed CLI driver map. Each entry must pass the
@@ -28,9 +27,8 @@ export { QwenStreamJsonDriver } from "./qwen-stream-json.js";
  * }} options
  *   `drivers` lets the caller inject non-default drivers (e.g. test fakes
  *   or future custom implementations) without changing this module.
- *   The default map registers Codex (app-server), Claude (subprocess +
- *   stream-json), and Qwen (subprocess + stream-json) when their binaries
- *   are present in the unified directory.
+ *   The default map registers Codex (app-server) and Claude (subprocess +
+ *   stream-json) when their binaries are present in the unified directory.
  */
 export function createManagedCliDrivers({ subprocess, dirSource, prepare, drivers = {}, turnTimeoutSource = null }) {
 	// Each CLI carries its own configured timeout (minutes). This factory only
@@ -45,9 +43,6 @@ export function createManagedCliDrivers({ subprocess, dirSource, prepare, driver
 	}
 	if (!map.claude) {
 		map.claude = new ClaudeStreamJsonDriver({ subprocess, dirSource, prepare, turnTimeoutMs: timeoutMsFor("claude") });
-	}
-	if (!map.qwen) {
-		map.qwen = new QwenStreamJsonDriver({ subprocess, dirSource, prepare, turnTimeoutMs: timeoutMsFor("qwen") });
 	}
 	const ids = Object.keys(map);
 	if (!ids.length) throw new TypeError("createManagedCliDrivers requires at least one driver");

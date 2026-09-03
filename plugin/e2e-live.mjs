@@ -27,11 +27,10 @@ import { CLI_REGISTRY, cliById } from "./lib/registry.js";
 import { envFor, binPath, PLATFORM } from "./lib/paths.js";
 import { normalizePermission, deriveSandboxMode } from "./lib/permissions.js";
 import { winShimArgv } from "./lib/dispatch.js";
-import { codexToml, gateToml, qwenSettings, fingerprint, stripTrailingV1, isOkReply } from "./lib/verify.js";
+import { codexToml, gateToml, fingerprint, stripTrailingV1, isOkReply } from "./lib/verify.js";
 import { CLI_SUBAGENT_TOOLS } from "./lib/subagent-tools.js";
 import { CodexAppServerDriver } from "./lib/drivers/codex-app-server.js";
 import { ClaudeStreamJsonDriver } from "./lib/drivers/claude-stream-json.js";
-import { QwenStreamJsonDriver } from "./lib/drivers/qwen-stream-json.js";
 import { ManagedCliAgentsService } from "./lib/managed-cli-agents.js";
 
 // ── minimal settings.yaml extraction (only the bits the plugin owns) ─────────
@@ -135,7 +134,7 @@ function scalarAfter(text, key) {
  */
 function parseMapping(text, key) {
 	// Same-line flow object first: `key: { a: 1 }`.
-	const sameLine = new RegExp(`^(\\s*)${key}:[ \\t]*(\\{.*)$`, "m");
+	const sameLine = new RegExp(`^([ \\t]*)${key}:[ \\t]*(\\{.*)$`, "m");
 	const sm = sameLine.exec(text);
 	if (sm) {
 		const block = flowBlockAfter(text, key);
@@ -143,20 +142,22 @@ function parseMapping(text, key) {
 	}
 	// Value on following lines: either a next-line flow object
 	// (`key:\n    { a: 1 }`) or a block mapping (`key:\n    a: 1`).
-	const re = new RegExp(`^(\\s*)${key}:[ \\t]*$`, "m");
+	// `[ \t]*` (never `\s*`, which would swallow the preceding newline and
+	// corrupt the indent math) + `\r?` for CRLF files persisted by dsh-settings.
+	const re = new RegExp(`^([ \\t]*)${key}:[ \\t]*\\r?$`, "m");
 	const m = re.exec(text);
 	if (!m) return null;
 	const keyIndent = m[1].length;
 	const rest = text.slice(m.index + m[0].length);
 	// The next NON-EMPTY line decides the shape. Note `rest` starts with "\n";
 	// without the m flag `^` would anchor to that (empty) first line and fail.
-	const nextLine = (/[ \t]*(\S[^\n]*)/.exec(rest) || [])[1] ?? "";
+	const nextLine = ((/[ \t]*(\S[^\n\r]*)/.exec(rest) || [])[1] ?? "").replace(/\r$/, "");
 	if (nextLine.startsWith("{")) {
 		const block = flowBlockAfter(text, key);
 		return block ? parseFlowObject(block) : null;
 	}
 	if (nextLine === "") return null; // empty value, not a mapping
-	const lines = rest.split("\n");
+	const lines = rest.split(/\r?\n/);
 	const root = {};
 	let current = null;
 	for (const raw of lines) {
@@ -348,13 +349,6 @@ async function main() {
 			const ok = mode === CLAUDE_MODE_BY_TIER[tier];
 			console.log(`  [${ok ? "ok" : "FAIL"}] argv --permission-mode=${mode} 期望=${CLAUDE_MODE_BY_TIER[tier]}`);
 			if (!ok) failures++;
-		} else if (entry.id === "qwen") {
-			// No CLI-side permission flag at any tier: boolean --sandbox needs
-			// docker/podman and dies silently (empty reply, exit 0) on stock
-			// machines. Enforcement lives in the driver layer.
-			const ok = !argv.includes("--sandbox");
-			console.log(`  [${ok ? "ok" : "FAIL"}] argv --sandbox=${argv.includes("--sandbox")} 期望=false(任意档位)`);
-			if (!ok) failures++;
 		}
 
 		// 2) Write the isolated supplier config (same renderers as production).
@@ -363,14 +357,6 @@ async function main() {
 		const fp = fingerprint(route.provider, route.model, route.reasoningEffort, pc.baseURL);
 		if (entry.id === "codex") {
 			writeFileSync(path.join(cfgDir, "config.toml"), gateToml(codexToml(route, pc), route, pc, fp));
-		} else if (entry.id === "qwen") {
-			// Pass the parsed permission: qwenSettings defaults to read-only
-			// (approvalMode "plan") without it, which leaves the on-disk config
-			// semantically stale w.r.t. the persisted profile — the host-side
-			// cli_test gate then demands a rewrite that the session sandbox
-			// denies. Writing the live tier keeps the gate green without any
-			// rewrite, exactly like the Codex fingerprint gate.
-			writeFileSync(path.join(cfgDir, "settings.json"), qwenSettings(route, pc, permission));
 		}
 		console.log(`  [ok] 已写入隔离配置 ${entry.configDir}/`);
 
@@ -482,7 +468,7 @@ async function main() {
 		}
 	}
 
-	// ── Claude / Qwen 双模式会话验证（stream-json NDJSON + 真实网络）───────────
+	// ── Claude 双模式会话验证（stream-json NDJSON + 真实网络）───────────
 	// 这两个 CLI 没有 app-server：每次 turn spawn 一个独立 CLI 进程，--session-id
 	// 首次注册会话、--resume 后续续接；service 层把两次调用的 sessionId 锁到同
 	// 一记录，验证 "followup 后 sessionId 不变" 即证明持续会话路径真的生效。
@@ -521,33 +507,21 @@ async function main() {
 			child.on("error", (err) => resolveDone({ exitCode: 1, error: err }));
 			return { ...child, done, terminate: () => { try { child.kill("SIGTERM"); } catch {} } };
 		};
-		// The Claude/Qwen drivers hand back a FULLY wrapped argv (winShimArgv:
+		// The Claude driver hands back a FULLY wrapped argv (winShimArgv:
 		// [cmd.exe, /d, /c, <bin>, ...flags] on Windows, [<bin>, ...flags] on
 		// POSIX) — spawn it directly. The previous double-wrap (spawnCli over
-		// argv.slice(1)) leaked `/d /c <bin>` into the CLI's positionals, which
-		// Qwen rejects ("positional prompt + --prompt flag together").
+		// argv.slice(1)) leaked `/d /c <bin>` into the CLI positionals.
 		const spawnDriverArgv = (argv, opts) => {
 			const [exe, ...rest] = argv;
 			return spawn(exe, rest, opts);
 		};
 		// Claude driver: stream-json over --resume.
-		// Qwen driver: stream-json over --resume.
 		for (const spec of [
 			{
 				id: "claude", displayName: "Claude Code",
 				driver: ({ env }) => new ClaudeStreamJsonDriver({
 					subprocess: {
 						resolveExecutable: () => binPath(dir, "claude"),
-						spawn: (opts) => wrapChild(spawnDriverArgv(opts.argv, { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
-					},
-					dirSource: () => dir
-				})
-			},
-			{
-				id: "qwen", displayName: "Qwen Code",
-				driver: ({ env }) => new QwenStreamJsonDriver({
-					subprocess: {
-						resolveExecutable: () => binPath(dir, "qwen"),
 						spawn: (opts) => wrapChild(spawnDriverArgv(opts.argv, { cwd: opts.cwd, env: { ...process.env, ...opts.env, ...env }, stdio: ["pipe", "pipe", "inherit"] }))
 					},
 					dirSource: () => dir
@@ -580,7 +554,7 @@ async function main() {
 			try {
 				const signal = new AbortController().signal;
 				const first = await service.dispatch({ cli: spec.id, cwd: dir, prompt: `请只用一句话回答：${spec.displayName} 第一轮 OK。不要使用任何工具。`, signal });
-				// Codex CLI executes prompts as instructions; Claude/Qwen may interpret
+				// Codex CLI executes prompts as instructions; Claude may interpret
 				// the prompt text differently (e.g. Claude Code treats the prompt as
 				// a query). Accept any non-error stopReason as success here — the
 				// real contract is that output.length > 0.

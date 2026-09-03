@@ -9,7 +9,7 @@ import { RELAY_SUBMIT_TOOL } from "./relay-tools.js";
 import { AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
 
 export function relayPersonaFor(cli) {
-	const name = cli === "qwen" ? "Qwen Code" : cli === "claude" ? "Claude Code" : "Codex";
+	const name = cli === "claude" ? "Claude Code" : "Codex";
 	return `You are a relay bridge to an external ${name} CLI agent, not the task executor.
 For every user message, you must call managed_cli_submit exactly once with the complete task. Do not use your own knowledge to answer, do not inspect or modify files yourself, and do not claim work that ${name} did not perform. After managed_cli_submit returns, faithfully report its result to the parent using report. A report before managed_cli_submit is rejected.`;
 }
@@ -94,8 +94,7 @@ function registerCliSubagentTool(ctx, { cli, displayName, preflight }) {
 
 const SUPPORTED_CLIS = [
 	{ cli: "codex", displayName: "Codex" },
-	{ cli: "claude", displayName: "Claude Code" },
-	{ cli: "qwen", displayName: "Qwen Code" }
+	{ cli: "claude", displayName: "Claude Code" }
 ];
 
 export function registerManagedCliSubagentTools(ctx, preflight) {
