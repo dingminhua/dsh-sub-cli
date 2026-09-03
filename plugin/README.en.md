@@ -36,9 +36,9 @@ This plugin does not touch the CLIs' tools — whatever a CLI has, it uses. What
 | Shell commands (exec / Bash) | ✅ | ✅ | ✅ |
 | Internal subagents (Agent / Task / spawn) | ✅ | ✅ | ✅ |
 
-**Division of labour: the controller researches, the CLIs execute.**
+**Division of labour: the controller researches online, the CLIs work offline.**
 
-- **Web research / URL fetching**: done by the controller with DSH's own `advanced_search` / `web_fetch` / `platform_search`, **never delegated to a CLI** — dispatch attempts are refused by the capability gate with this explanation. Claude Code does ship WebSearch/WebFetch, but they are Anthropic server-side tools that only work when the provider executes them (official API or fully passthrough relays; chat-style relays measured non-working), so they are not a supported path;
+- **Web search / research / URL fetching**: done by the controller with DSH's own `advanced_search` / `web_fetch` / `platform_search` — **the three managed CLIs deliberately ship WITHOUT web search** (2026-09 product decision). Rationale: Codex web_search and Claude WebSearch are provider-side server tools that relays generally never execute; Qwen webSearch requires a separately billed DashScope search model. The controller's own search stack has none of these limits;
 - **Code work (read / write / edit / run commands)**: all three CLIs are fully symmetric — pick by preference;
 - **Multi-step complex tasks**: use a Relay subagent (`cli_<cli>_subagent`) and let the child keep pushing;
 - **If a CLI must handle research material**: the controller researches first, then hands the material over as task content.

@@ -173,56 +173,61 @@ test("qwenSettings maps the tier onto qwen's own enforcement (plan / auto-edit /
 	}
 });
 
-test("qwenSettings enables built-in webSearch only on the exec tier", () => {
-	// Qwen's web_search is opt-in: it only registers when tools.webSearch.enabled
-	// is true. The exec tier (danger-full-access) carries egress intent, so the
-	// plugin must write it there; lower tiers must NOT (no egress tool).
-	const danger = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-		{ read: true, write: true, exec: true, approval: "ask" }
-	));
-	assert.equal(danger.tools.approvalMode, "yolo");
-	assert.deepEqual(danger.tools.webSearch, { enabled: true, model: "deepseek-v4-flash" }, "exec tier enables webSearch");
-
-	const readOnly = JSON.parse(qwenSettings(
-		{ provider: "aixforge", model: "deepseek-v4-flash" },
-		{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
-		{ read: true, write: false, exec: false, approval: "ask" }
-	));
-	assert.equal(readOnly.tools.approvalMode, "plan");
-	assert.equal(readOnly.tools.webSearch, undefined, "non-exec tier has no webSearch tool");
+test("qwenSettings never writes a webSearch block on any tier", () => {
+	// 2026-09 decision: the managed CLIs ship WITHOUT web search. Qwen's
+	// webSearch needs a dedicated DashScope search model + API key (the chat
+	// model cannot stand in), so a webSearch block keyed to the routed chat
+	// model registered a tool that could never work. No tier writes it.
+	for (const perm of [
+		{ read: true, write: true, exec: true },
+		{ read: true, write: true, exec: false },
+		{ read: true, write: false, exec: false }
+	]) {
+		const rendered = JSON.parse(qwenSettings(
+			{ provider: "aixforge", model: "deepseek-v4-flash" },
+			{ baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" },
+			perm
+		));
+		assert.equal(rendered.tools.webSearch, undefined, `tier ${JSON.stringify(perm)} has no webSearch block`);
+	}
 });
 
-test("qwenSettingsCurrent treats a mismatched webSearch switch as stale", () => {
+test("qwenSettingsCurrent treats a residual webSearch block as stale", () => {
+	// A webSearch block on disk predates the no-web-search decision; the
+	// settings must be rewritten so the stale block is cleared.
 	const route = { provider: "aixforge", model: "deepseek-v4-flash" };
 	const pc = { baseURL: "https://api.aixforge.com/v1", apiKeyEnv: "AIXFORGE_API_KEY" };
-	const dangerPerm = { read: true, write: true, exec: true, approval: "ask" };
-	const onDiskDanger = JSON.stringify({
-		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
-		tools: { approvalMode: "yolo" }, // missing webSearch
-		$version: 4
-	}, null, 2);
-	assert.equal(qwenSettingsCurrent(onDiskDanger, route, pc, dangerPerm), false, "exec tier on disk without webSearch is stale");
-	const onDiskDangerOk = JSON.stringify({
+	const execPerm = { read: true, write: true, exec: true };
+	const onDiskStale = JSON.stringify({
 		selectedAuthType: "openai",
 		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
 		tools: { approvalMode: "yolo", webSearch: { enabled: true, model: route.model } },
 		$version: 4
 	}, null, 2);
-	assert.equal(qwenSettingsCurrent(onDiskDangerOk, route, pc, dangerPerm), true, "exec tier on disk with webSearch is current");
+	assert.equal(qwenSettingsCurrent(onDiskStale, route, pc, execPerm), false, "residual webSearch block is stale and triggers a rewrite");
+	const onDiskClean = JSON.stringify({
+		selectedAuthType: "openai",
+		modelProviders: { openai: [{ id: route.model, name: route.model, envKey: pc.apiKeyEnv, baseUrl: pc.baseURL }] },
+		tools: { approvalMode: "yolo" },
+		$version: 4
+	}, null, 2);
+	assert.equal(qwenSettingsCurrent(onDiskClean, route, pc, execPerm), true, "clean settings without webSearch are current");
 });
 
-test("codex argv enables web_search via -c override only on the exec tier", async () => {
+test("codex argv never enables web_search on any tier", async () => {
 	const { CLI_REGISTRY } = await import("../lib/registry.js");
 	const entry = CLI_REGISTRY.find((e) => e.id === "codex");
-	const dangerArgs = entry.argv("do X", "m", { read: true, write: true, exec: true, approval: "ask" });
-	// `--search` is TUI-only and codex exec rejects it; the -c override is the
-	// exec-compatible form (per openai/codex#2760).
-	assert.ok(dangerArgs.includes("-c") && dangerArgs.includes("tools.web_search=true"), "exec tier passes -c tools.web_search=true for Codex web search");
-	assert.ok(!dangerArgs.includes("--search"), "must NOT pass the TUI-only --search flag to codex exec");
-	const readOnlyArgs = entry.argv("do X", "m", { read: true, write: false, exec: false, approval: "ask" });
-	assert.ok(!readOnlyArgs.includes("tools.web_search=true"), "non-exec tier does not enable web search");
+	for (const perm of [
+		{ read: true, write: true, exec: true },
+		{ read: true, write: false, exec: false }
+	]) {
+		const args = entry.argv("do X", "m", perm);
+		// 2026-09 decision: no web search. The -c tools.web_search=true override
+		// (deprecated legacy alias) is not passed on any tier, and the TUI-only
+		// --search flag never was exec-compatible anyway.
+		assert.ok(!args.some((a) => String(a).includes("web_search")), `tier ${JSON.stringify(perm)} passes no web_search flag`);
+		assert.ok(!args.includes("--search"), "must NOT pass the TUI-only --search flag to codex exec");
+	}
 });
 
 test("codexToml points Codex at the supplier with responses wire", () => {

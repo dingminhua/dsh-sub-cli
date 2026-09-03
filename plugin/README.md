@@ -36,12 +36,12 @@
 | Shell 命令（exec / Bash） | ✅ | ✅ | ✅ |
 | 内部子代理（Agent / Task / spawn） | ✅ | ✅ | ✅ |
 
-**分工原则：主控调研，CLI 执行。**
+**分工原则：主控联网调研，CLI 离线执行。**
 
-- **联网调研 / 抓 URL**：由主控用 DSH 自带的 `advanced_search` / `web_fetch` / `platform_search` 直接完成，**不派给任何 CLI**——派发会被能力门禁拒绝并提示此分工。Claude Code 虽内置 WebSearch/WebFetch，但它们是 Anthropic 的 server-side 工具，仅在供应商执行此类工具时才可用（官方 API 或全透传中转；chat 型中转实测不可用），因此不作为依赖路径。
+- **联网搜索 / 调研 / 抓 URL**：由主控用 DSH 自带的 `advanced_search` / `web_fetch` / `platform_search` 直接完成，**三个 CLI 均明确不提供联网搜索功能**（2026-09 产品决策，不再折腾）。技术依据：Codex 的 web_search 与 Claude 的 WebSearch 都是模型供应商的 server-side 工具，中转商路线下基本不被执行；Qwen 的 webSearch 需要单独付费的 DashScope 搜索模型。主控的搜索工具链完整且不受这些限制，联网任务直接用它。
 - **代码工作（读 / 写 / 改 / 跑命令）**：三个 CLI 完全对称，按习惯选。
 - **多步复杂任务**：用 Relay 子代理（`cli_<cli>_subagent`），让子代理持续推进。
-- **如需 CLI 处理调研相关材料**：主控先调研，把材料作为任务内容派给 CLI。
+- **如需 CLI 处理调研相关材料**：主控先搜好，把材料作为任务内容派给 CLI。
 
 > 设置卡的权限是单一三档下拉：**只读 ⊆ 可写 ⊆ 可调用工具**。读取在三档中恒为允许；档位勾选的能力运行时静默放行，未勾选的能力被触发时确定拒绝并记录，任务做不了就清晰报错引导到设置卡调整（审批模式已移除：档位启动时定死，无弹窗、无运行中提权）。「可调用工具」（exec）已承载联网意图：npm install / git clone 等命令属普通执行，没有独立的网络开关。
 
@@ -117,17 +117,22 @@ cli_<cli>_subagent(description, prompt)  # codex / claude / qwen
 | Claude Code | `CLAUDE_CONFIG_DIR` |
 | Qwen Code | `QWEN_HOME` |
 
-## CLI 联网搜索的设计意图（2026-09 确认）
+## CLI 联网搜索的最终决策（2026-09）
 
-派 CLI 做联网调查的意图是**借用各 CLI 自带的搜索工具**（Codex `web_search`、Claude `WebSearch`/`WebFetch`、Qwen `webSearch`）获得更好的搜索效果——**不存在"主控代为搜索"的兜底**：主控自己有 `web_search`/`read_page`，但派 CLI 就是为了用它的工具，主控代搜等于失去派的意义。
+**三个托管 CLI 均不提供联网搜索功能，此事已关闭。** 联网任务一律由主控自带的搜索工具（`advanced_search` / `web_fetch` / `platform_search`）完成。
 
-由此推论：
+决策依据（详见根目录 `CLI-WEB-SEARCH-RESEARCH.md` 的完整调研）：
 
-- CLI 搜索不可用时，**正确动作是修复配置或如实标注能力边界**（如"该中转商不执行服务端工具"），而不是主控代劳；
-- "主控先调研，把材料派给 CLI"纪律只适用于**离线任务**的上下文准备，不适用于"明确要 CLI 搜索工具"的场景——两者是不同场景，不冲突；
-- exec 档（可调用工具）承载联网意图：搜索工具随 exec 档启用（Codex `-c tools.web_search=true`、Qwen `tools.webSearch.enabled`、Claude 自带）。
+- **Codex**：web_search 是 Responses server-side 工具，执行权在中转商——多数 chat 型中转商不执行；且旧开关形式（`-c tools.web_search=true`）已是 deprecated 别名，新语义默认 `cached`（查索引缓存，不真联网）；
+- **Claude**：WebSearch 同为 Anthropic server-side 工具（`web_search_20250305`），中转商转换时实测损坏；WebFetch 虽是本地执行但它只是抓取器，不解决"搜索发现"；
+- **Qwen**：webSearch 需要独立付费的 DashScope 搜索模型 + API key，对话模型顶不上——启用配置形同虚设；
+- 结论：三家的搜索在我们的中转商路线上**要么不可用、要么需要额外付费前提**，投入产出不成立，明确降级为"不提供"。
 
-搜索链路的完整可用性（开关生效 → 工具注册 → 模型触发 → 中转商执行 server-side 工具 → 结果含真实 URL）以第十一轮真机矩阵实测为准；实测结论将写进 `VERIFICATION-FLOW.md` 与工具描述。
+实现层面的对应处理：
+
+- `registry.js` 不再向 codex 传任何 web_search 参数；`verify.js` 的 `qwenSettings()` 不再渲染 webSearch 块（盘上残留块会触发重写以清除）；
+- permissions 的工具映射表**保留** WebSearch/WebFetcher → exec 分类——那是权限分类不是功能授予：万一 CLI 侧触发这类工具，仍由 exec 能力开关裁决（未勾选 → 确定拒绝），删映射反而会让未知工具静默放行；
+- 未来若要提供"CLI 联网检索"能力，路线是纳入搜索开箱即用的 CLI（如 Gemini CLI，见调研文档第三节），而非修补这三家。
 
 ## 本地开发
 

@@ -10,7 +10,12 @@ export const CODEX_APPROVAL_METHODS = Object.freeze({
 
 // Claude Code: stream-json protocol — each tool_use name maps to one capability.
 // These are the write-capable tools Claude Code may emit; read tools (Read,
-// WebFetch, Glob, Grep, etc.) are always allowed silently.
+// Glob, Grep, etc.) are always allowed silently.
+// Note: WebSearch/WebFetcher stay mapped even though the managed CLIs
+// deliberately ship WITHOUT web search (2026-09 decision) — the map is a
+// permission classification, not a feature grant. If one of these tools is
+// ever triggered (user-configured CLI, protocol drift), the exec capability
+// still decides; unmapping would silently allow an unknown tool instead.
 export const CLAUDE_APPROVAL_METHODS = Object.freeze({
 	"Bash": "command",
 	"Write": "file-change",

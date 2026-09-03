@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({
       "guide.direct": "直连会话（Codex / Claude / Qwen 均有）",
       "guide.directEx": "用 Codex 直连看看这个项目。",
       "guide.subagent": "代理子代理；并行调度多个 CLI 用这个",
-      "guide.subagentEx": "用 Claude Code 代理联网查新闻；用 Qwen 代理重构这段。",
+      "guide.subagentEx": "用 Claude Code 代理重构这段；用 Qwen 代理跑这组测试。",
       "guide.dispatch": "通用无头执行",
       "guide.dispatchEx": "让 Codex 无头跑这个任务。"
     };

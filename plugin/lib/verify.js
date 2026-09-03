@@ -379,14 +379,12 @@ export function qwenApprovalMode(tier) {
 export function qwenSettings(route, pc, permission) {
 	const normalized = normalizePermission(permission);
 	const approvalMode = qwenApprovalMode(deriveSandboxMode(normalized));
-	// Qwen's built-in web_search is opt-in: it only registers when
-	// tools.webSearch.enabled is true (or ENABLE_WEB_SEARCH env). The exec tier
-	// (danger-full-access) carries egress intent, so enable it there — otherwise
-	// a "research" task silently has no web tool and returns nothing useful.
+	// No webSearch block: the three managed CLIs deliberately ship without web
+	// search (2026-09 decision). Qwen's webSearch needs a dedicated DashScope
+	// search model + API key (the chat model cannot stand in), so enabling it
+	// with the routed chat model registered a tool that could never work.
+	// Web research stays with the controller's own search tools.
 	const tools = { approvalMode };
-	if (deriveSandboxMode(normalized) === "danger-full-access") {
-		tools.webSearch = { enabled: true, model: route.model };
-	}
 	return JSON.stringify({
 		selectedAuthType: "openai",
 		modelProviders: {
@@ -417,10 +415,10 @@ export function qwenSettingsCurrent(text, route, pc, permission) {
 	const normalized = normalizePermission(permission ?? DEFAULT_PERMISSION);
 	const wantTier = deriveSandboxMode(normalized);
 	if (!parsed.tools || parsed.tools.approvalMode !== qwenApprovalMode(wantTier)) return false;
-	// The webSearch switch must match the tier: present iff the exec tier is on.
-	const wantWebSearch = wantTier === "danger-full-access";
-	const hasWebSearch = !!(parsed.tools.webSearch && parsed.tools.webSearch.enabled);
-	if (wantWebSearch !== hasWebSearch) return false;
+	// The webSearch block must be absent (2026-09: managed CLIs ship without
+	// web search). A stale on-disk block means the settings predate this
+	// decision and must be rewritten.
+	if (parsed.tools.webSearch && parsed.tools.webSearch.enabled) return false;
 	const auth = parsed.selectedAuthType ?? (parsed.security && parsed.security.auth && parsed.security.auth.selectedType);
 	return auth === "openai";
 }
@@ -784,7 +782,7 @@ export async function testCli(ctx, cliId, signal) {
 		if (!gate.toolContinuation) {
 			return {
 				ok: false,
-				error: `当前代理/中转商（${route.provider}）不提供 ${entry.name} 所需的 ${entry.protocolLabel.split("（")[0]}工具续接能力，CLI 无法运行工具/联网任务。请更换支持该协议的代理商（Codex 可试 modelflare）。`,
+				error: `当前代理/中转商（${route.provider}）不提供 ${entry.name} 所需的 ${entry.protocolLabel.split("（")[0]}工具续接能力，CLI 无法运行工具任务。请更换支持该协议的代理商（Codex 可试 modelflare）。`,
 				capabilities
 			};
 		}

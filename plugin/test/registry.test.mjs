@@ -35,11 +35,11 @@ test("permission tier maps into each CLI's argv", () => {
 	const codex = cliById("codex");
 	assert.deepEqual(codex.argv("t", "", "read-only"), ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "t"]);
 	assert.deepEqual(codex.argv("t", "", "workspace-write"), ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write", "t"]);
-	// The exec tier (danger-full-access) also enables Codex's built-in web
-	// search — NOT via `--search` (TUI-only; codex exec rejects it) but via the
-	// config override `-c tools.web_search=true` (works for exec, same as the
-	// TOML key [tools].web_search, per openai/codex#2760). Lower tiers do not.
-	assert.deepEqual(codex.argv("t", "", "danger-full-access"), ["exec", "--json", "--skip-git-repo-check", "-s", "danger-full-access", "-c", "tools.web_search=true", "t"]);
+	// No web_search flag on ANY tier (2026-09 decision): the managed CLIs ship
+	// without web search. Codex's web_search is a Responses server-side tool
+	// relays never execute, and `-c tools.web_search=true` is a deprecated
+	// legacy alias anyway — web research stays with the controller's tools.
+	assert.deepEqual(codex.argv("t", "", "danger-full-access"), ["exec", "--json", "--skip-git-repo-check", "-s", "danger-full-access", "t"]);
 	const claude = cliById("claude");
 	assert.deepEqual(claude.argv("t", "", "read-only").includes("--permission-mode", "plan"), true);
 	assert.ok(claude.argv("t", "", "read-only").includes("plan"));

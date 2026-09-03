@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **三 CLI 明确不提供联网搜索功能（2026-09 产品决策，问题二关闭）**：联网任务一律由主控自带的搜索工具（`advanced_search` / `web_fetch` / `platform_search`）完成，CLI 只处理离线任务。依据（完整调研见根目录 `CLI-WEB-SEARCH-RESEARCH.md`）：① Codex 的 web_search 是 Responses server-side 工具，执行权在中转商——多数 chat 型中转不执行，且 `-c tools.web_search=true` 是 deprecated 别名（新语义默认 `cached` 只查索引缓存不真联网）；② Claude 的 WebSearch 同为 server-side 工具，中转转换实测损坏；③ Qwen 的 webSearch 需独立付费的 DashScope 搜索模型 + API key，用对话模型顶替的启用配置形同虚设。具体变更：`registry.js` 删除 codex exec 档的 `-c tools.web_search=true`；`verify.js` 的 `qwenSettings()` 不再渲染 webSearch 块、`qwenSettingsCurrent()` 把盘上残留块判为 stale 触发重写清除；permissions 的工具映射表**保留** WebSearch/WebFetcher → exec 分类（权限分类非功能授予——万一 CLI 侧触发仍由 exec 开关裁决，删映射会让未知工具静默放行）；README 中英文的分工原则更新为"主控联网调研，CLI 离线执行"。未来若要提供 CLI 联网检索能力，路线是纳入搜索开箱即用的 CLI（如 Gemini CLI，调研文档第三节），而非修补这三家。**249/249 全绿**。
+
 ### Changed
 
 - **轮次超时档位与默认值调整：10/20/30（默认 20）→ 3/5/10 分钟（默认 5）**：卡死检测语义已从"任务时长上限"变为"静默检测点"（见上一条 probe 循环改造）——值越小的含义是"越早开始怀疑卡死"，而健康任务不受总时长约束（每个活跃窗口都续期）。旧档位对"静默检测"过于迟钝（真卡死要 10-30 分钟才发现），新档位让卡死 3 分钟即可被发现，同时 3 分钟下限仍覆盖正常的慢启动/长思考（首输出延迟通常 <2 分钟）。设置卡下拉与 hint 文案同步更新；**存量兼容**：已存 10/20/30 的设置仍然合法生效（只是不在下拉里），未设置的 CLI 落到新默认 5。
