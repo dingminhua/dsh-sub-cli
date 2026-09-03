@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({
     var NS = "settings.dshSubCli";
     var ZH = {
       "row.title": "外部 Agent CLI 管理器（dsh-sub-cli）",
-      "row.desc": "统一管理并调用外部 Agent CLI，与原生安装隔离，可预设各种模型并像子代理一样被主控调用。",
+      "row.desc": "统一管理并调用外部 Agent CLI，与用户原生安装完全隔离，可为每个 CLI 预设 Provider、模型、推理强度和权限，并让它们可直接或像原生子代理一样被主控调用。",
       "row.dir": "CLI 统一目录",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "推理 Provider",
@@ -107,7 +107,7 @@ window.__ModuleLoader__.load({
     };
     var EN = {
       "row.title": "External Agent CLI manager (dsh-sub-cli)",
-      "row.desc": "Unified management and invocation of external Agent CLIs, isolated from native installs, with configurable models, callable by the controller like subagents.",
+      "row.desc": "Unified management and invocation of external Agent CLIs, fully isolated from the user's native installs; preset Provider, model, reasoning effort, and permissions per CLI, callable directly or like native subagents.",
       "row.dir": "Unified CLI directory",
       "row.dirPlaceholder": "~/dsh-clis",
       "row.provider": "Provider",

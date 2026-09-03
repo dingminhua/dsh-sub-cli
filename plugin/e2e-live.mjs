@@ -364,7 +364,13 @@ async function main() {
 		if (entry.id === "codex") {
 			writeFileSync(path.join(cfgDir, "config.toml"), gateToml(codexToml(route, pc), route, pc, fp));
 		} else if (entry.id === "qwen") {
-			writeFileSync(path.join(cfgDir, "settings.json"), qwenSettings(route, pc));
+			// Pass the parsed permission: qwenSettings defaults to read-only
+			// (approvalMode "plan") without it, which leaves the on-disk config
+			// semantically stale w.r.t. the persisted profile — the host-side
+			// cli_test gate then demands a rewrite that the session sandbox
+			// denies. Writing the live tier keeps the gate green without any
+			// rewrite, exactly like the Codex fingerprint gate.
+			writeFileSync(path.join(cfgDir, "settings.json"), qwenSettings(route, pc, permission));
 		}
 		console.log(`  [ok] 已写入隔离配置 ${entry.configDir}/`);
 

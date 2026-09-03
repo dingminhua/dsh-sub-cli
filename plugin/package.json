@@ -1,7 +1,7 @@
 {
   "name": "dsh-sub-cli",
   "version": "0.1.0",
-  "description": "Manage external Agent CLIs in DSH: a unified install dir, per-CLI isolated config, install/test status, three-layer model routing (provider → model → reasoning effort), and a headless cli_dispatch tool. Each CLI can be opened into its own conversation.",
+  "description": "Unified management and invocation of external Agent CLIs in DSH, fully isolated from the user's native installs; preset Provider, model, reasoning effort, and permissions per CLI, callable directly or like native subagents.",
   "keywords": [
     "deepseek-harness",
     "dsh",
