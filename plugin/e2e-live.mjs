@@ -134,17 +134,29 @@ function scalarAfter(text, key) {
  * or permissions.<cli>: <string tier>).
  */
 function parseMapping(text, key) {
-	const re = new RegExp(`^(\\s*)${key}:[ \\t]*(.*)$`, "m");
-	const m = re.exec(text);
-	if (!m) return null;
-	const keyIndent = m[1].length;
-	const inline = m[2].trim();
-	if (inline.startsWith("{")) {
+	// Same-line flow object first: `key: { a: 1 }`.
+	const sameLine = new RegExp(`^(\\s*)${key}:[ \\t]*(\\{.*)$`, "m");
+	const sm = sameLine.exec(text);
+	if (sm) {
 		const block = flowBlockAfter(text, key);
 		return block ? parseFlowObject(block) : null;
 	}
-	if (inline && inline !== "") return null; // scalar value, not a mapping
-	const lines = text.slice(m.index + m[0].length).split("\n");
+	// Value on following lines: either a next-line flow object
+	// (`key:\n    { a: 1 }`) or a block mapping (`key:\n    a: 1`).
+	const re = new RegExp(`^(\\s*)${key}:[ \\t]*$`, "m");
+	const m = re.exec(text);
+	if (!m) return null;
+	const keyIndent = m[1].length;
+	const rest = text.slice(m.index + m[0].length);
+	// The next NON-EMPTY line decides the shape. Note `rest` starts with "\n";
+	// without the m flag `^` would anchor to that (empty) first line and fail.
+	const nextLine = (/[ \t]*(\S[^\n]*)/.exec(rest) || [])[1] ?? "";
+	if (nextLine.startsWith("{")) {
+		const block = flowBlockAfter(text, key);
+		return block ? parseFlowObject(block) : null;
+	}
+	if (nextLine === "") return null; // empty value, not a mapping
+	const lines = rest.split("\n");
 	const root = {};
 	let current = null;
 	for (const raw of lines) {
@@ -243,7 +255,7 @@ function mask(value, keep = 8) {
 
 function describePermission(p) {
 	const n = normalizePermission(p);
-	return `${n.read ? "r" : "-"}${n.write ? "w" : "-"}${n.exec ? "e" : "-"}${n.network ? "n" : "-"}(${n.approval})`;
+	return `${n.read ? "r" : "-"}${n.write ? "w" : "-"}${n.exec ? "e" : "-"}`;
 }
 
 async function main() {
@@ -435,8 +447,7 @@ async function main() {
 			const service = new ManagedCliAgentsService({
 				drivers: { codex: driver },
 				routeSource: () => ({ provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort }),
-				permissionSource: () => permission,
-				approvalRequest: async () => (normalizePermission(permission).approval === "never" ? "rejected" : "allowed-once")
+				permissionSource: () => permission
 			});
 			try {
 				const signal = new AbortController().signal;
@@ -558,8 +569,7 @@ async function main() {
 			const service = new ManagedCliAgentsService({
 				drivers: { [spec.id]: driver },
 				routeSource: () => ({ provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort }),
-				permissionSource: () => permission,
-				approvalRequest: async () => (normalizePermission(permission).approval === "never" ? "rejected" : "allowed-once")
+				permissionSource: () => permission
 			});
 			try {
 				const signal = new AbortController().signal;
