@@ -117,6 +117,18 @@ cli_<cli>_subagent(description, prompt)  # codex / claude / qwen
 | Claude Code | `CLAUDE_CONFIG_DIR` |
 | Qwen Code | `QWEN_HOME` |
 
+## CLI 联网搜索的设计意图（2026-09 确认）
+
+派 CLI 做联网调查的意图是**借用各 CLI 自带的搜索工具**（Codex `web_search`、Claude `WebSearch`/`WebFetch`、Qwen `webSearch`）获得更好的搜索效果——**不存在"主控代为搜索"的兜底**：主控自己有 `web_search`/`read_page`，但派 CLI 就是为了用它的工具，主控代搜等于失去派的意义。
+
+由此推论：
+
+- CLI 搜索不可用时，**正确动作是修复配置或如实标注能力边界**（如"该中转商不执行服务端工具"），而不是主控代劳；
+- "主控先调研，把材料派给 CLI"纪律只适用于**离线任务**的上下文准备，不适用于"明确要 CLI 搜索工具"的场景——两者是不同场景，不冲突；
+- exec 档（可调用工具）承载联网意图：搜索工具随 exec 档启用（Codex `-c tools.web_search=true`、Qwen `tools.webSearch.enabled`、Claude 自带）。
+
+搜索链路的完整可用性（开关生效 → 工具注册 → 模型触发 → 中转商执行 server-side 工具 → 结果含真实 URL）以第十一轮真机矩阵实测为准；实测结论将写进 `VERIFICATION-FLOW.md` 与工具描述。
+
 ## 本地开发
 
 ```bash
