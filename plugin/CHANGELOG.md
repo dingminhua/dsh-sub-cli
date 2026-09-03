@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI 卡死检测补齐到 Codex + 持续输出任务不再被误杀（2026-09）**：① **Codex app-server driver 此前到点直接 interrupt**（无探测），健康的慢任务会在 20 分钟被硬中断——现在与 Claude/Qwen 同一策略：超时先 probe，session 记录 `lastNotificationAt`（每条 inbound 通知刷新），持续有事件 → 延长；静默超过宽限窗（60s）才判死 interrupt；**awaiting_permission 状态（权限请求挂起）不判死**——等待用户决定不是 CLI 的错；② 三个 driver 的"延长一次"改为 **probe 循环**（`watchTurnDeadline`）：持续输出的任务每个窗口都续期，只有完整静默一个窗口才判"卡死"——旧逻辑第二个 deadline 无条件失败，超过两倍超时的健康长任务仍会被杀。新增 `watchTurnDeadline` 共享助手（`drivers/turn-timeout.js`）+ 8 个测试（循环续期/静默判死/cancel 清理/abort 短路/probe 错误/Codex 无事件判死/Codex 持续事件不中断），**249/249 全绿**。
+
 ### Removed
 
 - **审批模式整体移除（2026-09，产品决策）**：权限模型收敛为「勾选即授权，档位启动时定死」——无弹窗、无 A/B 门、无运行中提权。依据：① A/B 门的核心是正则猜自然语言（prompt 能力预测 + 失败文本缺口提取），误判必然存在且 B 门重开一轮意味着工作重做；② round 9 实证单向 wire 的事后拦截撤不回已执行副作用，档位前置执法才是可靠边界；③ 生态印证——dsh-plugin-cc 明确 "No mid-run approvals"、dsh-codex-workflow 用 `approval_policy=never` 回避、dsh-plugin-codex 对 server-request 一律安全拒绝，唯一走通交互审批的 dsh-claude-code 走的是 Agent SDK 的 canUseTool 而非 CLI 直连。具体变更：删除 `permissions.js` 的 `APPROVAL_MODES` / `approval` 字段 / `requiredCapabilities()` / `missingCapabilities()` / `profileWith()` / `isPermissionBlocked()` / `permissionReason()`；删除 `managed-cli-agents.js` 的 `gateMissing()` / `blockedCapabilitiesOf()` / `approvalRequest` seam / `pendingPermission` / `awaiting_permission` 会话状态——`resolvePermission()` 改为纯确定性应答（勾选 → allowed-once，未勾选 → rejected，均留痕 `lastPermissionDecision`）；删除 `capability-gate.js`（no-op 门）及其全部调用点；`inject` 移除 `approval`；设置卡 profile 不再携带 approval 键（存量 ask/never 读取时静默丢弃，legacy allow 仍迁移为全勾选）；Codex 的 requestApproval 仍走 `on-request` + 确定性应答（保留审计留痕），`approvalPolicy` 恒 `on-request`。`DESIGN-approval-copy.md` 删除；roadmap 第 9 节降级为历史设计（远期复活路径：Claude 侧 Agent SDK canUseTool）。测试重写后 **241/241 全绿**。

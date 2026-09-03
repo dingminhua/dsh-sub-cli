@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { createRunState, defineDriverCapabilities } from "./types.js";
 import { codexApprovalResponse, normalizeCodexPermissionRequest } from "../permissions.js";
 import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
+import { DEFAULT_PROBE_GRACE_MS, watchTurnDeadline } from "./turn-timeout.js";
 
 export const CODEX_APP_SERVER_CAPABILITIES = defineDriverCapabilities({
 	streaming: true,
@@ -162,9 +163,17 @@ class CodexAppServerSession {
 		this.activeTurn = null;
 		this.progress = "";
 		this.usage = null;
+		// Liveness signal for the deadline probe: every inbound app-server
+		// notification (item/*, token usage, even notifications for other
+		// turns) proves the process and wire are alive. Refreshed by the
+		// session-level notification tap installed in initialize().
+		this.lastNotificationAt = null;
 		this.state = createRunState("starting");
 		this.disposed = false;
 		this.offRequest = this.wire.onRequest((method, params, reply) => this.handleServerRequest(method, params, reply));
+		this.offActivityTap = this.wire.onNotification(() => {
+			this.lastNotificationAt = Date.now();
+		});
 	}
 
 	handleServerRequest(method, params, reply) {
@@ -275,7 +284,7 @@ class CodexAppServerSession {
 				// MEDIUM fix: distinguish user-initiated cancellation from real
 				// turn failure. The old code mapped both to "cancelled", which
 				// made "Codex turn failed" indistinguishable from "user pressed
-				// Ctrl-C" downstream. timeoutMs-based interrupts also land here
+				// Ctrl-C" downstream. Probe-based interrupts also land here
 				// and are still "cancelled" (not "failed") by design.
 				const stopReason = outcome.cancelled ? "cancelled" : "failed";
 				this.state.transition(stopReason, outcome.error.message);
@@ -329,8 +338,44 @@ class CodexAppServerSession {
 		});
 		const promise = new Promise((resolve, reject) => {
 			this.activeTurn = { turnId, resolve, reject };
+			const startedAt = Date.now();
 			timer = setTimeout(() => {
-				void this.interrupt().finally(() => finish(resolve, reject, { error: new Error(`Codex turn timed out after ${this.timeoutMs}ms`), cancelled: true }));
+				// The deadline is NOT an automatic failure: probe the wire for
+				// liveness first (same policy as the Claude/Qwen drivers). A
+				// Codex turn streams notifications while it works (item/*,
+				// token usage) and while it waits on a permission request
+				// (awaiting_permission state) — silence for a full grace
+				// window is the only genuine "stuck" verdict. Healthy slow
+				// turns get another window every time they stay chatty.
+				const probe = async () => {
+					if (this.state.state === "awaiting_permission") {
+						// A pending permission decision is not the CLI's fault:
+						// the turn cannot proceed until the answer arrives. Keep
+						// waiting (bounded only by the caller's signal/timeout).
+						return { stalled: false, reason: "awaiting permission decision", extendMs: DEFAULT_PROBE_GRACE_MS };
+					}
+					const last = this.lastNotificationAt;
+					if (typeof last !== "number") {
+						return { stalled: true, reason: `no app-server notification observed within ${this.timeoutMs}ms` };
+					}
+					const idleMs = Date.now() - last;
+					if (idleMs < DEFAULT_PROBE_GRACE_MS) {
+						return { stalled: false, reason: `still receiving app-server events (idle ${idleMs}ms)`, extendMs: DEFAULT_PROBE_GRACE_MS };
+					}
+					return { stalled: true, reason: `no app-server events for ${idleMs}ms (limit ${DEFAULT_PROBE_GRACE_MS}ms)` };
+				};
+				const stopWatch = watchTurnDeadline({
+					probe,
+					onStalled: (reason) => {
+						void this.interrupt().finally(() => {
+							finish(resolve, reject, { error: new Error(`Codex turn stalled after ${Date.now() - startedAt}ms: ${reason}`), cancelled: true });
+						});
+					}
+				});
+				// If the turn settles by other means (result, failure, wire
+				// close), stop the watch loop; the finish() path clears the
+				// initial timer but this watcher owns its own timers.
+				promise.then(stopWatch, stopWatch);
 			}, this.timeoutMs);
 			timer.unref?.();
 		});
@@ -367,6 +412,7 @@ class CodexAppServerSession {
 		this.disposed = true;
 		await this.interrupt();
 		this.offRequest?.();
+		this.offActivityTap?.();
 		await this.wire.dispose();
 	}
 }
@@ -378,9 +424,9 @@ export class CodexAppServerDriver {
 		this.capabilities = CODEX_APP_SERVER_CAPABILITIES;
 		this.createTransport = createTransport;
 		this.requestTimeoutMs = requestTimeoutMs;
-		// Codex drives its turn over the app-server wire, so this is a request
-		// timeout rather than a process deadline; the deadline probe belongs to the
-		// subprocess-based drivers (Claude/Qwen), which own a live child.
+		// Codex drives its turn over the app-server wire; the deadline is a
+		// stall probe (see awaitTurn) — notifications flowing on the wire
+		// prove liveness, silence for a grace window means stuck.
 		this.turnTimeoutMs = resolveTurnTimeoutMs(turnTimeoutMs);
 		this.clientInfo = clientInfo ?? { name: "dsh-sub-cli", version: "0.1.0" };
 	}

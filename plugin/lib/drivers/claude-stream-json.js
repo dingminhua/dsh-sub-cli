@@ -24,7 +24,7 @@
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
 import { SubprocessLineTransport } from "./subprocess-transport.js";
-import { probeStalledTurn } from "./turn-timeout.js";
+import { probeStalledTurn, watchTurnDeadline } from "./turn-timeout.js";
 import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
@@ -135,10 +135,12 @@ function runTurn({ transport, prompt, timeoutMs, onPermissionRequest, signal }) 
 		const decisions = []; // [{ callId, toolName, capability, outcome }]
 		let settled = false;
 		let timer;
+		let stopWatch = null;
 		const finish = (ok, value) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			stopWatch?.();
 			offLine();
 			offClose?.();
 			ok ? resolve(value) : reject(value);
@@ -204,26 +206,17 @@ function runTurn({ transport, prompt, timeoutMs, onPermissionRequest, signal }) 
 		});
 		// Hitting the deadline is not an automatic failure: probe the child and
 		// only reject when it is genuinely silent (see drivers/turn-timeout.js).
+		// A turn that keeps emitting output gets another grace window every
+		// time — only sustained silence for a full window is "stuck".
 		timer = setTimeout(() => {
 			if (settled) return;
 			const startedAt = Date.now() - timeoutMs;
-			probeStalledTurn({ transport, elapsedMs: timeoutMs })
-				.then((probe) => {
-					if (settled) return;
-					if (probe.stalled) {
-						finish(false, new Error(`Claude turn stalled after ${timeoutMs}ms: ${probe.reason}`));
-						return;
-					}
-					timer = setTimeout(() => {
-						finish(false, new Error(
-							`Claude turn timed out after ${Date.now() - startedAt}ms (granted extra time: ${probe.reason})`
-						));
-					}, probe.extendMs ?? 0);
-					timer.unref?.();
-				})
-				.catch((error) => {
-					if (!settled) finish(false, error);
-				});
+			stopWatch = watchTurnDeadline({
+				probe: () => probeStalledTurn({ transport, elapsedMs: Date.now() - startedAt }),
+				onStalled: (reason) => {
+					finish(false, new Error(`Claude turn stalled after ${Date.now() - startedAt}ms: ${reason}`));
+				}
+			});
 		}, timeoutMs);
 		timer.unref?.();
 		// stream-json requires one NDJSON line per message. The wire stays

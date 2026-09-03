@@ -22,7 +22,7 @@
 import { randomUUID } from "node:crypto";
 import { defineDriverCapabilities } from "./types.js";
 import { SubprocessLineTransport } from "./subprocess-transport.js";
-import { probeStalledTurn } from "./turn-timeout.js";
+import { probeStalledTurn, watchTurnDeadline } from "./turn-timeout.js";
 import { binPath } from "../paths.js";
 import { winShimArgv } from "../dispatch.js";
 import { resolveTurnTimeoutMs } from "../turn-timeout-policy.js";
@@ -103,10 +103,12 @@ function runTurn({ transport, timeoutMs, onPermissionRequest, signal }) {
 		const decisions = [];
 		let settled = false;
 		let timer;
+		let stopWatch = null;
 		const finish = (ok, value) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			stopWatch?.();
 			offLine();
 			offClose?.();
 			ok ? resolve(value) : reject(value);
@@ -168,29 +170,18 @@ function runTurn({ transport, timeoutMs, onPermissionRequest, signal }) {
 		});
 		// Hitting the deadline is not an automatic failure. Probe the child: an
 		// exited process is left to the close handler (which carries the real
-		// result), and a turn that is still emitting output gets more time. Only a
-		// genuinely silent turn is rejected.
+		// result), and a turn that is still emitting output gets more time. Only
+		// a genuinely silent turn is rejected — and a chatty turn gets another
+		// grace window every time it stays chatty.
 		timer = setTimeout(() => {
 			if (settled) return;
 			const startedAt = Date.now() - timeoutMs;
-			probeStalledTurn({ transport, elapsedMs: timeoutMs })
-				.then((probe) => {
-					if (settled) return;
-					if (probe.stalled) {
-						finish(false, new Error(`Qwen turn stalled after ${timeoutMs}ms: ${probe.reason}`));
-						return;
-					}
-					// Grant more time and keep listening.
-					timer = setTimeout(() => {
-						finish(false, new Error(
-							`Qwen turn timed out after ${formatElapsed(startedAt)}ms (granted extra time: ${probe.reason})`
-						));
-					}, probe.extendMs ?? 0);
-					timer.unref?.();
-				})
-				.catch((error) => {
-					if (!settled) finish(false, error);
-				});
+			stopWatch = watchTurnDeadline({
+				probe: () => probeStalledTurn({ transport, elapsedMs: Date.now() - startedAt }),
+				onStalled: (reason) => {
+					finish(false, new Error(`Qwen turn stalled after ${formatElapsed(startedAt)}ms: ${reason}`));
+				}
+			});
 		}, timeoutMs);
 		timer.unref?.();
 	});

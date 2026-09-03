@@ -148,6 +148,73 @@ test("Codex driver maps rejected and cancelled approvals without restarting the 
 	}
 });
 
+// ── Deadline stall probe (2026-09) ────────────────────────────────────────────
+// The deadline used to be an automatic interrupt. Now it probes the wire for
+// liveness: a turn with NO app-server notifications at all is genuinely stuck
+// and gets interrupted; a turn that keeps receiving notifications (even across
+// many grace windows) is healthy and keeps running.
+
+test("Codex driver interrupts a turn that produced no app-server events", async () => {
+	// turn/start succeeds but the fake server never emits any notification:
+	// lastNotificationAt stays null → the first probe says "stalled" →
+	// interrupt + reject with the stall reason.
+	const transport = new FakeTransport((message, target) => {
+		if (message.method === "initialize") target.emit({ jsonrpc: "2.0", id: message.id, result: {} });
+		else if (message.method === "thread/start") target.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: "thread-s" } } });
+		else if (message.method === "turn/start") target.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-s" } } });
+		else if (message.method === "turn/interrupt") target.emit({ jsonrpc: "2.0", id: message.id, result: {} });
+	});
+	const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 30 });
+	const run = await driver.start({ cwd: "/repo", prompt: "silence", approvalPolicy: "on-request" });
+	await assert.rejects(run.result, (error) => {
+		assert.match(error.message, /stalled/);
+		assert.match(error.message, /no app-server notification observed/);
+		assert.equal(error.stopReason, "cancelled");
+		return true;
+	});
+	assert.ok(transport.requests.some((entry) => entry.method === "turn/interrupt"), "the stuck turn was interrupted");
+	await run.dispose();
+});
+
+test("Codex driver keeps waiting for a turn that keeps emitting events", async () => {
+	// A slow but healthy turn: the fake server keeps emitting delta
+	// notifications well past the deadline. The probe sees recent
+	// lastNotificationAt on every check and must NOT interrupt; the turn
+	// completes when the server finally says so.
+	let ticks = 0;
+	let timer = null;
+	const transport = new FakeTransport((message, target) => {
+		if (message.method === "initialize") target.emit({ jsonrpc: "2.0", id: message.id, result: {} });
+		else if (message.method === "thread/start") target.emit({ jsonrpc: "2.0", id: message.id, result: { thread: { id: "thread-h" } } });
+		else if (message.method === "turn/start") {
+			target.emit({ jsonrpc: "2.0", id: message.id, result: { turn: { id: "turn-h" } } });
+			// Emit a delta every 20ms — well within the 60s grace window —
+			// and complete the turn after 6 ticks (≈120ms, i.e. 4 deadlines).
+			timer = setInterval(() => {
+				ticks++;
+				target.emit({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { delta: `chunk-${ticks} ` } });
+				if (ticks >= 6) {
+					clearInterval(timer);
+					target.emit({ jsonrpc: "2.0", method: "turn/completed", params: { turn: { id: "turn-h", status: "completed" } } });
+				}
+			}, 20);
+		} else if (message.method === "turn/interrupt") {
+			throw new Error("healthy turn must not be interrupted");
+		}
+	});
+	try {
+		const driver = new CodexAppServerDriver({ createTransport: async () => transport, requestTimeoutMs: 1000, turnTimeoutMs: 30 });
+		const run = await driver.start({ cwd: "/repo", prompt: "slow", approvalPolicy: "on-request" });
+		const result = await run.result;
+		assert.equal(result.stopReason, "completed");
+		assert.match(result.text, /chunk-6/);
+		assert.ok(ticks >= 6);
+		await run.dispose();
+	} finally {
+		clearInterval(timer);
+	}
+});
+
 test("Codex driver maps file-change approvals on the same turn", async () => {
 	let response;
 	const transport = new FakeTransport((message, target) => {

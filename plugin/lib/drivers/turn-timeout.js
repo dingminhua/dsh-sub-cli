@@ -69,3 +69,61 @@ export async function probeStalledTurn({ transport, elapsedMs, graceMs = DEFAULT
 	// 3. No observable activity: treat it as stuck rather than waiting forever.
 	return { stalled: true, reason: `no output observed within ${elapsedMs}ms` };
 }
+
+/**
+ * Repeatedly re-probe a live turn that has already hit its deadline, instead
+ * of failing it once the first grace window lapses. A turn that keeps emitting
+ * output (slow model, cold start, long tool loop) is healthy and deserves
+ * another window every time; only a turn that goes SILENT for a full grace
+ * window is judged stuck. The first probe runs immediately (the deadline has
+ * already passed when this is called); each "still alive" verdict schedules
+ * the next probe after the granted extendMs.
+ *
+ * @param {object} options
+ * @param {() => Promise<{stalled: boolean, reason: string, extendMs?: number}>} options.probe
+ *   Runs one staleness check; called once immediately and once per granted
+ *   grace window thereafter.
+ * @param {(reason: string) => void} options.onStalled
+ *   Called exactly once when a probe reports the turn as genuinely stuck; the
+ *   caller rejects the turn here.
+ * @param {object} [options.signal] - optional AbortSignal that stops the loop
+ *   (used when the turn settles by other means, e.g. the result event).
+ * @returns {() => void} cancel - stops the watch loop; call when the turn
+ *   settles normally.
+ */
+export function watchTurnDeadline({ probe, onStalled, signal }) {
+	let stopped = false;
+	let timer = null;
+	const stop = () => {
+		stopped = true;
+		if (timer) clearTimeout(timer);
+		signal?.removeEventListener("abort", stop);
+	};
+	const tick = () => {
+		if (stopped) return;
+		probe()
+			.then((result) => {
+				if (stopped) return;
+				if (result.stalled) {
+					stop();
+					onStalled(result.reason);
+					return;
+				}
+				timer = setTimeout(tick, result.extendMs ?? DEFAULT_PROBE_GRACE_MS);
+				timer.unref?.();
+			})
+			.catch((error) => {
+				if (stopped) return;
+				stop();
+				onStalled(error instanceof Error ? error.message : String(error ?? "probe error"));
+			});
+	};
+	if (signal) {
+		if (signal.aborted) return () => {};
+		signal.addEventListener("abort", stop, { once: true });
+	}
+	// The deadline has already passed when the caller invokes this: probe now.
+	timer = setTimeout(tick, 0);
+	timer.unref?.();
+	return stop;
+}
