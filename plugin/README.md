@@ -105,7 +105,7 @@ cli_<cli>_subagent(description, prompt)  # codex / claude / qwen
 | `models.<cli>.model` | 该 CLI 的模型 |
 | `models.<cli>.reasoningEffort` | 该 CLI 的推理强度 |
 | `autoContinue.<cli>.max` | 自动补全续接次数（0–10，默认 3；**0 = 关闭**。旧配置的 `enabled:false` 会归一化为 0，字段本身已废弃） |
-| `turnTimeoutMinutes.<cli>` | 轮次超时（分钟，10/20/30 三档，默认 20）。到点先探测：进程已退出交由真实结果、仍在输出则继续等、确认卡死才报错 |
+| `turnTimeoutMinutes.<cli>` | 静默检测点（分钟，3/5/10 三档，默认 5）。到点先探测：进程已退出交由真实结果、仍在输出则继续等并每个活跃窗口自动续期、连续静默 60 秒才判卡死 |
 
 `<cli>` 取值：`codex` / `claude` / `qwen`。
 

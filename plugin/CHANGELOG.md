@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **轮次超时档位与默认值调整：10/20/30（默认 20）→ 3/5/10 分钟（默认 5）**：卡死检测语义已从"任务时长上限"变为"静默检测点"（见上一条 probe 循环改造）——值越小的含义是"越早开始怀疑卡死"，而健康任务不受总时长约束（每个活跃窗口都续期）。旧档位对"静默检测"过于迟钝（真卡死要 10-30 分钟才发现），新档位让卡死 3 分钟即可被发现，同时 3 分钟下限仍覆盖正常的慢启动/长思考（首输出延迟通常 <2 分钟）。设置卡下拉与 hint 文案同步更新；**存量兼容**：已存 10/20/30 的设置仍然合法生效（只是不在下拉里），未设置的 CLI 落到新默认 5。
+
 ### Added
 
 - **CLI 卡死检测补齐到 Codex + 持续输出任务不再被误杀（2026-09）**：① **Codex app-server driver 此前到点直接 interrupt**（无探测），健康的慢任务会在 20 分钟被硬中断——现在与 Claude/Qwen 同一策略：超时先 probe，session 记录 `lastNotificationAt`（每条 inbound 通知刷新），持续有事件 → 延长；静默超过宽限窗（60s）才判死 interrupt；**awaiting_permission 状态（权限请求挂起）不判死**——等待用户决定不是 CLI 的错；② 三个 driver 的"延长一次"改为 **probe 循环**（`watchTurnDeadline`）：持续输出的任务每个窗口都续期，只有完整静默一个窗口才判"卡死"——旧逻辑第二个 deadline 无条件失败，超过两倍超时的健康长任务仍会被杀。新增 `watchTurnDeadline` 共享助手（`drivers/turn-timeout.js`）+ 8 个测试（循环续期/静默判死/cancel 清理/abort 短路/probe 错误/Codex 无事件判死/Codex 持续事件不中断），**249/249 全绿**。

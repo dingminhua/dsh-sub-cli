@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
       "row.turnTimeout": "轮次超时",
       "row.turnTimeoutUnit": "分钟",
-      "row.turnTimeoutHint": "到点不会直接判失败：先检查进程是否还在运行、是否仍在输出，仍在推进就继续等，确认卡死才报错。Codex 走 app-server 协议，此处同样作为其请求超时。",
+      "row.turnTimeoutHint": "多久没有任何输出才开始怀疑卡死：到点先探测（进程还在吗、还有事件吗），仍在推进就继续等、每个活跃窗口自动续期，连续静默超过 60 秒才判定卡死。慢而健康的长任务不会被误杀。",
       "row.inherit": "（继承）",
       "row.save": "保存",
       "row.discard": "放弃修改",
@@ -119,7 +119,7 @@ window.__ModuleLoader__.load({
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
       "row.turnTimeout": "Turn timeout",
       "row.turnTimeoutUnit": "min",
-      "row.turnTimeoutHint": "Hitting the limit is not an instant failure: the driver first checks whether the process is still running and still producing output, waits on when it is progressing, and only fails when it is truly stuck. Codex uses this as its app-server request timeout.",
+      "row.turnTimeoutHint": "How long without any output before a turn is suspected stuck: at the deadline the driver probes (process alive? events flowing?), keeps waiting while it progresses and renews every active window, and only declares it stuck after 60s of continuous silence. Slow-but-healthy long tasks are not killed.",
       "row.inherit": "(inherit)",
       "row.save": "Save",
       "row.discard": "Discard",
@@ -369,10 +369,10 @@ window.__ModuleLoader__.load({
         React.createElement("div", { className: "dsc-ac-block" },
           React.createElement("div", { className: "dsc-ac-row" },
             React.createElement("label", { className: "dsc-ac-max" }, t("row.turnTimeout"),
-              React.createElement("select", { value: props.turnTimeoutMinutes || 20, onChange: function (e) { props.onTurnTimeoutChange(Number(e.target.value)); } },
-                React.createElement("option", { value: 10 }, "10"),
-                React.createElement("option", { value: 20 }, "20"),
-                React.createElement("option", { value: 30 }, "30")
+              React.createElement("select", { value: props.turnTimeoutMinutes || 5, onChange: function (e) { props.onTurnTimeoutChange(Number(e.target.value)); } },
+                React.createElement("option", { value: 3 }, "3"),
+                React.createElement("option", { value: 5 }, "5"),
+                React.createElement("option", { value: 10 }, "10")
               ),
               React.createElement("span", { className: "dsc-ac-unit" }, t("row.turnTimeoutUnit"))
             )
@@ -540,7 +540,7 @@ window.__ModuleLoader__.load({
                 React.createElement("span", { className: stateCls }, stateText)
               )
             ),
-            React.createElement(RouteSelects, { t: t, cli: cli, groups: groupsState[0], route: route, permission: permissionsState[0][cli.id] || DEFAULT_PERMISSION, autoContinue: autoContinueState[0][cli.id] || { enabled: true, max: 3 }, turnTimeoutMinutes: turnTimeoutState[0][cli.id] || 20, onChange: function (r) { updateRoute(cli.id, r); }, onPermissionChange: function (p) { updatePermission(cli.id, p); }, onAutoContinueChange: function (c) { updateAutoContinue(cli.id, c); }, onTurnTimeoutChange: function (m) { updateTurnTimeout(cli.id, m); } }),
+            React.createElement(RouteSelects, { t: t, cli: cli, groups: groupsState[0], route: route, permission: permissionsState[0][cli.id] || DEFAULT_PERMISSION, autoContinue: autoContinueState[0][cli.id] || { enabled: true, max: 3 }, turnTimeoutMinutes: turnTimeoutState[0][cli.id] || 5, onChange: function (r) { updateRoute(cli.id, r); }, onPermissionChange: function (p) { updatePermission(cli.id, p); }, onAutoContinueChange: function (c) { updateAutoContinue(cli.id, c); }, onTurnTimeoutChange: function (m) { updateTurnTimeout(cli.id, m); } }),
             React.createElement("div", { className: "dsc-cli-test-hint" + (f ? " dsc-cli-test-hint-error" : "") },
               guideText
             )

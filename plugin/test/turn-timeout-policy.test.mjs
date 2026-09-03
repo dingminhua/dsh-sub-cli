@@ -8,16 +8,16 @@ import {
 	resolveTurnTimeoutMs
 } from "../lib/turn-timeout-policy.js";
 
-test("offers 10/20/30 minutes and defaults to 20", () => {
-	assert.deepEqual([...TURN_TIMEOUT_MINUTE_CHOICES], [10, 20, 30]);
-	assert.equal(DEFAULT_TURN_TIMEOUT_MINUTES, 20);
-	assert.equal(DEFAULT_TURN_TIMEOUT_MS, 20 * 60_000);
+test("offers 3/5/10 minutes and defaults to 5", () => {
+	assert.deepEqual([...TURN_TIMEOUT_MINUTE_CHOICES], [3, 5, 10]);
+	assert.equal(DEFAULT_TURN_TIMEOUT_MINUTES, 5);
+	assert.equal(DEFAULT_TURN_TIMEOUT_MS, 5 * 60_000);
 });
 
 test("minutes convert to milliseconds", () => {
+	assert.equal(turnTimeoutMs(3), 180_000);
+	assert.equal(turnTimeoutMs(5), 300_000);
 	assert.equal(turnTimeoutMs(10), 600_000);
-	assert.equal(turnTimeoutMs(20), 1_200_000);
-	assert.equal(turnTimeoutMs(30), 1_800_000);
 });
 
 test("an unusable configured value falls back to the default", () => {

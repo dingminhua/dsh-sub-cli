@@ -3,10 +3,10 @@
 // for the settings schema and the Web card.
 
 /** Selectable turn timeouts, in minutes. */
-export const TURN_TIMEOUT_MINUTE_CHOICES = Object.freeze([10, 20, 30]);
+export const TURN_TIMEOUT_MINUTE_CHOICES = Object.freeze([3, 5, 10]);
 
 /** Default turn timeout in minutes. */
-export const DEFAULT_TURN_TIMEOUT_MINUTES = 20;
+export const DEFAULT_TURN_TIMEOUT_MINUTES = 5;
 
 /** Default turn timeout in milliseconds, as consumed by the drivers. */
 export const DEFAULT_TURN_TIMEOUT_MS = DEFAULT_TURN_TIMEOUT_MINUTES * 60_000;
