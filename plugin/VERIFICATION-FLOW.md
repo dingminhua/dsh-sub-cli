@@ -435,14 +435,31 @@ host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**
 | `lib/client.js` | 删除「本会话临时允许」复选框及相关 locale/state |
 | 测试 | 新增 `test/permission-gate.test.mjs`（9 条：A 三态 / B 三态 / 缺口提取 / 防循环）；删除 `test/session-grant.test.mjs`；verify 测试改按档位断言 + 授权不回滚/不跨轮泄漏；claude 驱动测试改按档位断言；259/259 |
 
-### 待验证（第十一轮矩阵：审批模式移除后的确定性模型，host 重启加载本变更后执行）
+### 实测记录（第十一轮，2026-09：审批模式移除后的确定性模型，三档全矩阵）
 
-前置：`permissions: {}`（三档只读默认档，write/exec 均未勾选）。审批模式已移除（2026-09）：无弹窗、无 A/B 门、无提权重跑——所有未勾选能力一律确定拒绝。
+环境：同机 Windows，host 重启加载新代码后执行；codex 0.152.1 / claude 2.1.258 / qwen 0.22.3；路由三 CLI 统一 zzztoken-ds / deepseek-v4-flash。测试目录用 cwd 内路径（`D:\DshProject\dsh-sub-cli\perm-test\`；cwd 外路径是另一层沙箱边界，见发现 3）。档位经用户授权由脚本切换（`verify-matrix/set-permission.mjs`，仅改 dsh-sub-cli 段的 permissions 三键，测后已恢复完全档并清理全部测试文件与目录）。
 
-| 步骤 | 操作 | 预期 |
-|---|---|---|
-| 1 | 三 CLI 各发写入任务（新暗号，唯一） | 任务启动（read-only 档），CLI 自身执法：codex 收到 fileChange 请求 → 确定拒绝 → 回报「无法完成」；claude plan 档无写工具；qwen 拦截 tool_use → 拒绝。磁盘无文件，`lastPermissionDecision.outcome === "rejected"` 留痕 |
-| 2 | 设置卡把某 CLI 调到「可写」，重发同一任务 | 本轮以 workspace-write 启动 → 文件逐字节落盘 |
-| 3 | 读取（direct × 3，3×3 互读） | 无门（read 恒允许），9/9 一致 |
-| 4 | 三 CLI 各发删除任务（「可写」档，exec 未勾选） | 删除含 shell 命令 → 确定拒绝 → 回报「无法完成」，文件保留 |
-| 5 | Qwen 只读档直写探针（措辞不含写意图，如「帮我把结果放到 X 里」） | 拦截 tool_use → 拒绝；**磁盘绝无文件**（硬保证实证） |
+**三档 × 三阶段结果矩阵**：
+
+| 档位 | 阶段 | Codex | Claude | Qwen |
+|---|---|---|---|---|
+| 只读 | 写入 | ✅ 拒绝（requestApproval → decline → 如实报告未创建） | ✅ 拒绝（tool_use 拦截 → turn 中止） | ✅ 拒绝（plan 档物理无写工具，模型如实报告） |
+| 只读 | 区内读取 | ✅ 通过 | ✅ 通过 | ✅ 通过 |
+| 可写 | 写入（cwd 内） | ❌ **写路径依赖 exec_command → exec 未勾 → 拒绝** | ✅ Write 工具放行，21B 逐字节精确 | ✅ write_file 放行，19B 逐字节精确（配置同步后） |
+| 可写 | 互读 | ❌ 同上（读也走 cat 命令） | ✅ 精确复述 | ✅ 精确复述 |
+| 可写 | 删除 | ✅ 拒绝（预期内） | ✅ 拒绝（无 Delete 工具，必须走 Bash → exec） | ✅ 拒绝（auto-edit 档 deny run_shell_command） |
+| 完全 | 写入 | ✅ 20B 逐字节精确 | ✅ 21B 逐字节精确 | ✅ 19B 逐字节精确 |
+| 完全 | 互读 | ✅ | ✅（并正确忽略读结果后附加的注入文本） | ✅ |
+| 完全 | 删除 | ✅ relay 子代理 + shell 确认 | ✅ direct 通道完成 | ✅ relay 子代理 + Test-Path 确认 |
+
+磁盘终态：perm-test 目录清空并删除，无残留。拒绝路径全部"任务报无法完成 + 磁盘零变化"，无弹窗、无提权重跑——确定性模型成立。
+
+**本轮五个发现**：
+
+1. **Codex 的"写文件"依赖 exec**：即使 write 勾选，Codex 的写路径是 `exec_command`（PowerShell/.NET 调用）而非独立文件工具——command capability 映射 exec，故可写档下 Codex 读写全被拒、完全档才通。**这不是 bug 而是能力模型与 Codex 工具现实的错配**：用户想要"Codex 能写但不能跑命令"时无解（Codex 没有 apply_patch 式独立写工具，或模型极少用它——本轮观察到它优先走命令）。文档已如实记录；若要修，方向是给 Codex 单独的能力映射或引导模型用 apply_patch。
+2. **Claude/Qwen 有独立写工具**（Write / write_file），可写档语义在这两家精确成立；删除无独立工具（必须 shell）→ "写 ≠ 删"、删除依赖 exec 的语义三 CLI 一致。
+3. **cwd 边界是另一层沙箱**：测试目录在 cwd 外时，Codex（-s 沙箱把读写都限制在工作区内）连读都请求提权 → 被拒。行为符合各 CLI 沙箱语义，但值得让用户知道："可写"指**会话工作区内**可写。
+4. **主控会话内调 cli_*_direct 的测试形态有限制**：Qwen 配置重写（统一目录在 cwd 外）会被**主控会话的** fs 沙箱拦（`cannot write ... under workspace-write mode`）——host 层正常运行不受影响（e2e-live 走 host 路径成功），但意味着"在对话里直接测 Qwen 档位切换"需要先让盘上配置与目标档一致。已在矩阵执行中手动同步（改 approvalMode 值，格式与插件渲染一致）。
+5. **旧代码缓存陷阱重现**：首轮测试在未重启 host 时跑到旧 A 门代码（拒绝话术是"未获放行"）；重启后才是新确定性拒绝（Codex 正常完成 turn 并如实报告被拒）。前置条件 5（host 重启）在权限模型验证里是**必查项**。
+
+第十一轮矩阵（原表）与三档实测的对应：原步骤 1（只读写入拒绝）✅ 三 CLI 全验；步骤 2（调档重发通过）✅ 轮次二/三验证；步骤 3（互读）✅（Codex 受发现 1 限制，完全档下通过）；步骤 4（可写档删除拒绝）✅；步骤 5（Qwen 只读直写探针）未单测——plan 档物理无写工具已在轮次一验证，探针措辞变体留待日常使用观察。
