@@ -292,7 +292,19 @@ export async function ensureCliProviderConfig(ctx, entry, route, permissionOverr
 		await fs.writeText(target, content, undefined, undefined);
 		return { supported: true, ok: true, uptodate: false, cfgPath };
 	} catch (error) {
-		return { supported: true, ok: false, error: error instanceof Error ? error.message : String(error) };
+		const message = error instanceof Error ? error.message : String(error);
+		// Sandbox denial (config dir outside the CALLING session's workspace —
+		// e.g. the controller itself runs workspace-write while the unified dir
+		// lives in the home directory). Host-level runs are unaffected; give the
+		// caller something actionable instead of the raw denial text.
+		if (/access denied|sandbox|denied under/i.test(message)) {
+			return {
+				supported: true,
+				ok: false,
+				error: `本次会话的文件沙箱不允许写统一目录（${cfgDir}）下的 ${entry.id} 配置。请在设置卡重新执行「验证」（host 层写入不受会话沙箱限制），或把统一目录改到当前工作区内后重试。原始原因：${message}`
+			};
+		}
+		return { supported: true, ok: false, error: message };
 	}
 }
 
@@ -603,17 +615,31 @@ function callIdMeaning(body) {
  * Probe the CLI's own protocol tool-continuation. Routes by entry.protocol:
  * responses -> probeToolContinuation, anthropic -> probeAnthropicContinuation,
  * openai-chat -> probeOpenaiChatContinuation. Pure/testable via injected httpPost.
+ *
+ * Adds `outcome` (probe failure taxonomy) so a caller can tell a transient
+ * supplier hiccup from a deterministic "this relay cannot do the protocol".
  */
 export async function probeProtocolContinuation({ httpPost, baseURL, apiKey, model, protocol }) {
+	let result;
 	switch (protocol) {
 		case "anthropic":
-			return probeAnthropicContinuation({ httpPost, baseURL, apiKey, model });
+			result = await probeAnthropicContinuation({ httpPost, baseURL, apiKey, model });
+			break;
 		case "openai-chat":
-			return probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model });
+			result = await probeOpenaiChatContinuation({ httpPost, baseURL, apiKey, model });
+			break;
 		case "responses":
 		default:
-			return probeToolContinuation({ httpPost, baseURL, apiKey, model });
+			result = await probeToolContinuation({ httpPost, baseURL, apiKey, model });
+			break;
 	}
+	// callIdMeaning() returns null for "tool-call absent, cause unknown" —
+	// normalize to a strict boolean so callers never see a null verdict.
+	const toolContinuation = result.toolContinuation === true;
+	if (toolContinuation) return { ...result, toolContinuation, outcome: "completed" };
+	// Prefer the status of the step that failed; fall back to the step1 status.
+	const status = result.step === 2 ? (result.step2Status ?? result.step1Status) : (result.step1Status ?? result.status);
+	return { ...result, toolContinuation, outcome: classifyProbeFailure({ status, message: result.reason }) };
 }
 
 /** A simple POST via the DSH subprocess (curl), shaped like the injected httpPost. */
@@ -645,6 +671,68 @@ export function localizeCliError(cliId, message) {
 	if (/no auth type is selected|configure an auth type|--auth-type/i.test(raw)) return `${cliById(cliId)?.name || cliId} 尚未配置认证方式。请先为该 CLI 选择并配置认证类型。`;
 	if (/unauthorized|authentication|invalid api key|api key|\b401\b/i.test(raw)) return `${cliById(cliId)?.name || cliId} 认证失败。请检查当前供应商的 API Key 或登录状态。`;
 	return `CLI 执行失败：${raw}`;
+}
+
+// ── Probe failure taxonomy (2026-09) ─────────────────────────────────────────
+// A binary pass/fail made every supplier hiccup look like a misconfiguration.
+// Six outcomes let the message match reality: only a DETERMINISTIC verdict
+// (unsupported protocol, bad credentials) may tell the user to switch relay —
+// a transient one (rate limit, 5xx, timeout, network) must say "try again",
+// because the route itself is fine.
+export const PROBE_OUTCOMES = Object.freeze([
+	"completed",
+	"http-rejected",
+	"transient",
+	"incomplete",
+	"timeout",
+	"network-error"
+]);
+
+/** Statuses that mean "the relay refuses this, permanently" — switch-relay advice. */
+const REJECTED_STATUS = new Set([400, 401, 403, 404, 405, 422]);
+
+/**
+ * Classify one probe failure into a probe outcome.
+ *
+ * @param {object} options
+ * @param {number} [options.status] - HTTP status of the last request, if any.
+ * @param {string} [options.message] - error/CLI text (already localized or raw).
+ * @returns {string} one of PROBE_OUTCOMES.
+ */
+export function classifyProbeFailure({ status, message } = {}) {
+	if (typeof status === "number" && status >= 200 && status < 300) return "completed";
+	if (typeof status === "number" && REJECTED_STATUS.has(status)) return "http-rejected";
+	// 429 (rate limit), 5xx (server-side), 3xx (unexpected redirect) are
+	// transient: the route is fine, the moment is not.
+	if (typeof status === "number" && status >= 300) return "transient";
+	const text = String(message ?? "").toLowerCase();
+	if (!text.trim()) return "incomplete";
+	if (/timed? ?out|timeout|etimedout|deadline exceeded/i.test(text)) return "timeout";
+	if (/econnrefused|econnreset|ehostunreach|enotfound|eai_again|socket hang|network|dns|tunnel|connection refused/i.test(text)) return "network-error";
+	if (/\b429\b|rate limit|too many requests|quota|服务器错误|internal server error|\b500\b|\b502\b|\b503\b|\b504\b/i.test(text)) return "transient";
+	if (/unauthorized|authentication|invalid api key|api key|\b401\b|\b403\b|insufficient balance|余额/i.test(text)) return "http-rejected";
+	return "incomplete";
+}
+
+/**
+ * Turn a probe outcome into one user-facing advice line. Transient outcomes
+ * never suggest switching relay; deterministic ones do.
+ */
+export function probeOutcomeAdvice(outcome, { cliName = "CLI", protocolLabel = "" } = {}) {
+	switch (outcome) {
+		case "http-rejected":
+			return `该供应商确定性地拒绝了此次请求（认证或协议不支持）。${protocolLabel ? `请确认它支持 ${protocolLabel}，` : ""}或更换支持该协议的代理商后重试。`;
+		case "transient":
+			return "供应商暂时不可用（限流或服务端故障），当前路由本身看起来没问题。请稍后重试，无需更换代理商。";
+		case "timeout":
+			return "请求超时。可能是供应商响应很慢或网络拥塞，请稍后重试；若持续超时再检查网络/代理商。";
+		case "network-error":
+			return "网络不通（无法连接供应商或 DNS 解析失败）。请检查网络、代理设置，或稍后重试。";
+		case "incomplete":
+			return `${cliName} 未返回预期结果，且无法从输出判定原因。请检查该 CLI 的模型/权限配置后重试。`;
+		default:
+			return "";
+	}
 }
 
 /** Extract the actual assistant reply from a CLI's stdout. */
@@ -759,10 +847,18 @@ export async function testCli(ctx, cliId, signal) {
 	}
 	if (!isOkReply(reply)) {
 		const codexError = cliId === "codex" ? extractCodexError(stdout) : "";
-		if (codexError) return { ok: false, error: localizeCliError(cliId, codexError) };
+		const detail = codexError || reply;
+		// Classify before advising: a rate-limited or unreachable supplier must
+		// not be blamed on the route ("switch relay"), while a wrong-but-complete
+		// answer really does point at capability/config.
+		const outcome = classifyProbeFailure({ message: detail });
+		const advice = probeOutcomeAdvice(outcome === "completed" ? "incomplete" : outcome, { cliName: entry.name, protocolLabel: entry.protocolLabel.split("（")[0] });
+		if (outcome === "transient" || outcome === "timeout" || outcome === "network-error") {
+			return { ok: false, error: `${entry.name} 未返回预期的 OK（${route.provider}${route.model ? ` / ${route.model}` : ""}）。${advice}`, outcome };
+		}
 		// 模型没有按预期返回 OK。对用户最实用的提示是：当前代理/中转商可能不提供
 		// 该 CLI 所需的能力（或模型配置不对），引导其更换代理商再重测。
-		return { ok: false, error: `当前代理/中转商（${route.provider}${route.model ? ` / ${route.model}` : ""}）未返回预期的 OK（实际：${reply.slice(0, 40) || "空"}）。可能不提供 ${entry.name} 所需的能力或模型配置有误，请更换代理/中转商后重试。` };
+		return { ok: false, error: `当前代理/中转商（${route.provider}${route.model ? ` / ${route.model}` : ""}）未返回预期的 OK（实际：${reply.slice(0, 40) || "空"}）。可能不提供 ${entry.name} 所需的能力或模型配置有误，请更换代理/中转商后重试。`, outcome };
 	}
 	// Protocol-level tool-continuation gate: each CLI needs its own protocol's
 	// tool continuation to actually work (Codex=responses, Claude=anthropic
@@ -780,9 +876,17 @@ export async function testCli(ctx, cliId, signal) {
 		});
 		capabilities = { toolContinuation: gate.toolContinuation, protocol: entry.protocol };
 		if (!gate.toolContinuation) {
+			// Same taxonomy as the CLI-level failure: a transient supplier state
+			// must not read as "this relay can't do the protocol".
+			const protocolName = entry.protocolLabel.split("（")[0];
+			const advice = probeOutcomeAdvice(gate.outcome, { cliName: entry.name, protocolLabel: protocolName });
+			const isTransient = gate.outcome === "transient" || gate.outcome === "timeout" || gate.outcome === "network-error";
 			return {
 				ok: false,
-				error: `当前代理/中转商（${route.provider}）不提供 ${entry.name} 所需的 ${entry.protocolLabel.split("（")[0]}工具续接能力，CLI 无法运行工具任务。请更换支持该协议的代理商（Codex 可试 modelflare）。`,
+				error: isTransient
+					? `未能完成 ${entry.name} 所需的 ${protocolName}工具续接探测。${advice}`
+					: `当前代理/中转商（${route.provider}）不提供 ${entry.name} 所需的 ${protocolName}工具续接能力，CLI 无法运行工具任务。请更换支持该协议的代理商（Codex 可试 modelflare）。`,
+				outcome: gate.outcome,
 				capabilities
 			};
 		}

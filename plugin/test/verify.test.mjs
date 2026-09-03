@@ -26,7 +26,10 @@ import {
 	isOkReply,
 	permissionOf,
 	ensureCliProviderConfig,
-	qwenSettingsCurrent
+	qwenSettingsCurrent,
+	classifyProbeFailure,
+	probeOutcomeAdvice,
+	PROBE_OUTCOMES
 } from "../lib/verify.js";
 
 function sampleCtx({ value, providerCfg, credKey } = {}) {
@@ -446,6 +449,72 @@ test("probeOpenaiChatContinuation passes on tool_calls + tool message", async ()
 	const r = await probeOpenaiChatContinuation({ httpPost, baseURL: "https://x/v1", apiKey: "k", model: "m" });
 	assert.equal(r.toolContinuation, true);
 	assert.equal(calls, 2);
+});
+
+// ── Probe failure taxonomy (2026-09) ──────────────────────────────────────────
+// A binary pass/fail made every supplier hiccup look like a misconfiguration.
+// These tests pin the six outcomes and the rule that MATTERS: only a
+// deterministic verdict may advise switching relay.
+
+test("classifyProbeFailure maps HTTP status to deterministic vs transient", () => {
+	// 2xx = the probe itself succeeded (no failure to classify).
+	assert.equal(classifyProbeFailure({ status: 200 }), "completed");
+	// Deterministic rejections: the relay refuses this request for good.
+	for (const status of [400, 401, 403, 404, 405, 422]) {
+		assert.equal(classifyProbeFailure({ status }), "http-rejected", `status ${status}`);
+	}
+	// Transient: rate limit + every server-side/unexpected status.
+	for (const status of [429, 500, 502, 503, 504, 302]) {
+		assert.equal(classifyProbeFailure({ status }), "transient", `status ${status}`);
+	}
+});
+
+test("classifyProbeFailure reads error text when no status is available", () => {
+	assert.equal(classifyProbeFailure({ message: "request timed out" }), "timeout");
+	assert.equal(classifyProbeFailure({ message: "ECONNREFUSED 127.0.0.1:443" }), "network-error");
+	assert.equal(classifyProbeFailure({ message: "DNS lookup failed" }), "network-error");
+	assert.equal(classifyProbeFailure({ message: "429 rate limit exceeded" }), "transient");
+	assert.equal(classifyProbeFailure({ message: "internal server error" }), "transient");
+	assert.equal(classifyProbeFailure({ message: "invalid api key" }), "http-rejected");
+	assert.equal(classifyProbeFailure({ message: "余额不足" }), "http-rejected");
+	// Unknown text with no signal: incomplete, never a confident "rejected".
+	assert.equal(classifyProbeFailure({ message: "something odd happened" }), "incomplete");
+	assert.equal(classifyProbeFailure({}), "incomplete");
+});
+
+test("probeOutcomeAdvice never tells the user to switch relay for transient outcomes", () => {
+	const switchWording = /更换代理商|更换代理/;
+	// Transient family: retry wording only (note "无需更换" is allowed — it
+	// explicitly says NOT to switch).
+	for (const outcome of ["transient", "timeout", "network-error"]) {
+		const advice = probeOutcomeAdvice(outcome, {});
+		assert.ok(advice.length > 0, `${outcome} has advice`);
+		assert.match(advice, /重试|稍后/, `${outcome} advises retrying`);
+		assert.doesNotMatch(advice.replace(/无需更换代理商。?/g, ""), switchWording, `${outcome} must not suggest switching relay`);
+	}
+	// Deterministic family: switching is the right advice.
+	assert.match(probeOutcomeAdvice("http-rejected", { protocolLabel: "OpenAI Responses 协议" }), /更换/);
+	assert.match(probeOutcomeAdvice("incomplete", { cliName: "Codex" }), /Codex/);
+	assert.equal(probeOutcomeAdvice("completed", {}), "");
+});
+
+test("probeProtocolContinuation annotates failures with an outcome", async () => {
+	// A rate-limited supplier must NOT come back as "relay cannot do the
+	// protocol" — the taxonomy is what keeps the advice honest.
+	const limited = async () => ({ status: 429, body: {} });
+	const r = await probeProtocolContinuation({ httpPost: limited, baseURL: "https://x/v1", apiKey: "k", model: "m", protocol: "responses" });
+	assert.equal(r.toolContinuation, false);
+	assert.equal(r.outcome, "transient");
+	const rejected = async () => ({ status: 404, body: {} });
+	const r2 = await probeProtocolContinuation({ httpPost: rejected, baseURL: "https://x/v1", apiKey: "k", model: "m", protocol: "responses" });
+	assert.equal(r2.outcome, "http-rejected");
+});
+
+test("probeOutcomeAdvice covers every declared outcome", () => {
+	for (const outcome of PROBE_OUTCOMES) {
+		if (outcome === "completed") continue;
+		assert.ok(probeOutcomeAdvice(outcome, { cliName: "Codex", protocolLabel: "p" }).length > 0, `${outcome} has advice`);
+	}
 });
 
 test("probeProtocolContinuation routes by protocol", async () => {

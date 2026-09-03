@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **cli_test 失败分类六态化（2026-09）**：探测失败不再是"二选一"，而是 `completed / http-rejected / transient / incomplete / timeout / network-error` 六态（`classifyProbeFailure`）——**transient（429/5xx/超时/网络不通）绝不引导"更换供应商"**，改为"稍后重试、路由本身没问题"；只有确定性拒绝（认证/协议不支持）才建议更换（`probeOutcomeAdvice`）。`testCli` 的两个失败出口（CLI 运行失败、协议探测失败）按分类分流文案并携带 `outcome` 字段；`probeProtocolContinuation` 统一归一化 `toolContinuation` 为严格布尔并附 `outcome`。+5 测试（HTTP 状态映射/文本分类/文案分流铁律：瞬态不得建议换供应商），**254/254 全绿**。
+
+### Fixed
+
+- **测试摩擦修复（2026-09 三档矩阵轮次暴露）**：① `ensureCliProviderConfig` 的写失败现在识别**会话沙箱拒绝**（统一目录在调用方会话工作区外时）并给出可行动指引（"请在设置卡重新验证，host 层写入不受会话沙箱限制"），替代裸的 `cannot write ... under workspace-write mode`；② `cli_<cli>_direct` 工具描述补充两条实测语义——供应商瞬态失败"稍后重试即可、无需换供应商"、以及 Codex 写文件需「可调用工具」档（其写路径是 exec_command）+ 文件读写限当前工作区；③ plugin README 配置表补记三档矩阵实测语义（Codex 写依赖 exec、Claude/Qwen 可写档精确、删除依赖命令、cwd 边界）；④ 新增 `verify-matrix/run-e2e.mjs` 干净 e2e runner（分离 stderr，规避 PowerShell NativeCommandError 把 CLI stderr 噪音误报成 exit 1 的假阳性）。
+
 ### Removed
 
 - **三 CLI 明确不提供联网搜索功能（2026-09 产品决策，问题二关闭）**：联网任务一律由主控自带的搜索工具（`advanced_search` / `web_fetch` / `platform_search`）完成，CLI 只处理离线任务。依据（完整调研见根目录 `CLI-WEB-SEARCH-RESEARCH.md`）：① Codex 的 web_search 是 Responses server-side 工具，执行权在中转商——多数 chat 型中转不执行，且 `-c tools.web_search=true` 是 deprecated 别名（新语义默认 `cached` 只查索引缓存不真联网）；② Claude 的 WebSearch 同为 server-side 工具，中转转换实测损坏；③ Qwen 的 webSearch 需独立付费的 DashScope 搜索模型 + API key，用对话模型顶替的启用配置形同虚设。具体变更：`registry.js` 删除 codex exec 档的 `-c tools.web_search=true`；`verify.js` 的 `qwenSettings()` 不再渲染 webSearch 块、`qwenSettingsCurrent()` 把盘上残留块判为 stale 触发重写清除；permissions 的工具映射表**保留** WebSearch/WebFetcher → exec 分类（权限分类非功能授予——万一 CLI 侧触发仍由 exec 开关裁决，删映射会让未知工具静默放行）；README 中英文的分工原则更新为"主控联网调研，CLI 离线执行"。未来若要提供 CLI 联网检索能力，路线是纳入搜索开箱即用的 CLI（如 Gemini CLI，调研文档第三节），而非修补这三家。**249/249 全绿**。
