@@ -125,11 +125,12 @@ test("permission UI renders one mutually-exclusive tier dropdown (approval mode 
 	assert.doesNotMatch(source, /"row\.write"/, "the write checkbox label is gone");
 	assert.doesNotMatch(source, /"row\.exec"/, "the exec checkbox label is gone");
 	assert.match(source, /"row\.permission"/, "the row label is the tier itself");
-	// The three tier ids exist and each preset includes the content of the one
-	// above it: 只读 → read only; 可写 → read+write; 可调用工具 → read+write+exec.
-	assert.match(source, /\{ id: "read-only", label: "只读", profile: \{ read: true, write: false, exec: false/);
-	assert.match(source, /\{ id: "workspace-write", label: "可写", profile: \{ read: true, write: true, exec: false/);
-	assert.match(source, /\{ id: "danger-full-access", label: "可调用工具", profile: \{ read: true, write: true, exec: true/);
+	// The two tier ids exist (2026-09 simplification): 只读 / 可执行.
+	assert.match(source, /\{ id: "read-only", label: "只读", profile: \{ read: true, write: false, exec: false \}/);
+	assert.match(source, /\{ id: "danger-full-access", label: "可执行", profile: \{ read: true, write: true, exec: true \}/);
+	// The removed middle tier must not appear in the preset list.
+	assert.doesNotMatch(source, /\{ id: "workspace-write"/, "the middle tier preset is gone");
+	assert.doesNotMatch(source, /label: "可调用工具"/, "the old three-tier label is gone");
 	// The tier select writes the chosen preset's three-capability profile — the
 	// approval mode was removed (2026-09): no ask/never key, no toggle anywhere.
 	assert.match(source, /props\.onPermissionChange\(\{ read: chosen\.read, write: chosen\.write, exec: chosen\.exec \}\)/);
@@ -146,8 +147,7 @@ test("permission UI renders one mutually-exclusive tier dropdown (approval mode 
 	assert.doesNotMatch(source, /var APPROVAL_OPTIONS = /, "the approval dropdown is removed — no ask/never toggle");
 	assert.doesNotMatch(source, /dsc-perm-approval/, "no approval control element in the permission row");
 	assert.match(source, /dsc-perm-tier select\{/, "the tier dropdown shares the select styling");
-	// Tier semantics: each tier includes the one above (read ⊆ write ⊆ tools).
-	assert.match(source, /"row\.permHint"\s*:\s*"[^"]*只读包含读取[^"]*可写包含只读[^"]*可调用工具包含前两者/);
+	// Tier semantics: two tiers, honestly labelled.
 	// Permissions persist as profile objects (normalizePermissions), not tiers.
 	assert.match(source, /function normalizePermissions\(raw\)/);
 	assert.match(source, /permissions: normalizePermissions\(/);

@@ -33,7 +33,9 @@ test("argv without model omits the model flag (default permission is now read-on
 test("permission tier maps into each CLI's argv", () => {
 	const codex = cliById("codex");
 	assert.deepEqual(codex.argv("t", "", "read-only"), ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "t"]);
-	assert.deepEqual(codex.argv("t", "", "workspace-write"), ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write", "t"]);
+	// Two tiers (2026-09): the removed workspace-write string widens to the
+	// executable tier (danger-full-access) — never a middle sandbox.
+	assert.deepEqual(codex.argv("t", "", "workspace-write"), ["exec", "--json", "--skip-git-repo-check", "-s", "danger-full-access", "t"]);
 	// No web_search flag on ANY tier (2026-09 decision): the managed CLIs ship
 	// without web search. Codex's web_search is a Responses server-side tool
 	// relays never execute, and `-c tools.web_search=true` is a deprecated
@@ -42,7 +44,8 @@ test("permission tier maps into each CLI's argv", () => {
 	const claude = cliById("claude");
 	assert.deepEqual(claude.argv("t", "", "read-only").includes("--permission-mode", "plan"), true);
 	assert.ok(claude.argv("t", "", "read-only").includes("plan"));
-	assert.ok(claude.argv("t", "", "workspace-write").includes("acceptEdits"));
+	// The middle acceptEdits mode is gone with the workspace-write tier.
+	assert.ok(claude.argv("t", "", "workspace-write").includes("bypassPermissions"));
 	assert.ok(claude.argv("t", "", "danger-full-access").includes("bypassPermissions"));
 });
 
@@ -64,20 +67,19 @@ test("headless argv includes unattended flags so codex never prompts for a TTY",
 
 const CLAUDE_MODE_BY_TIER = {
 	"read-only": "plan",
-	"workspace-write": "acceptEdits",
 	"danger-full-access": "bypassPermissions"
 };
 
 const ARGV_PERMISSION_CASES = [
 	{ label: "legacy read-only", permission: "read-only", tier: "read-only" },
-	{ label: "legacy workspace-write", permission: "workspace-write", tier: "workspace-write" },
+	{ label: "legacy workspace-write widens to executable", permission: "workspace-write", tier: "danger-full-access" },
 	{ label: "legacy danger-full-access", permission: "danger-full-access", tier: "danger-full-access" },
 	{ label: "unknown string falls back to default (read-only)", permission: "bogus", tier: "read-only" },
 	{ label: "missing permission defaults to read-only", permission: undefined, tier: "read-only" },
 	{ label: "exec escalates to full access (egress intent)", permission: { read: true, write: false, exec: true, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "legacy network:true migrates to exec and escalates", permission: { read: true, write: false, exec: false, network: true, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "exec plus legacy network stays full access", permission: { read: true, write: false, exec: true, network: true, approval: "ask" }, tier: "danger-full-access" },
-	{ label: "write without exec stays workspace-write", permission: { read: true, write: true, exec: false, network: false, approval: "ask" }, tier: "workspace-write" },
+	{ label: "write without exec also selects executable (no middle tier)", permission: { read: true, write: true, exec: false, network: false, approval: "ask" }, tier: "danger-full-access" },
 	{ label: "read-only profile stays read-only", permission: { read: true, write: false, exec: false, network: false, approval: "ask" }, tier: "read-only" }
 ];
 

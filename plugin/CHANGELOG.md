@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **权限档位收敛为两档：只读 / 可执行（2026-09 简化，breaking）**：中间的「工作区可写」档移除——第十二轮三档复测证明它是语义最含糊的档（Codex 在该档实际写不了文件（写路径是 exec_command，写依赖执行）；Claude 的 acceptEdits 边界比"仅写文件"宽（发现 6：删除命令被静默自动接受执行））。两档新语义：**只读 = 只能看**；**可执行 = 能跑命令、写/删文件、装依赖**（CLI 沙箱：Codex `-s danger-full-access`、Claude `bypassPermissions`）。实现：`PERMISSION_PRESETS` 收敛为两项；`deriveSandboxMode` 简化为"任一变更能力 → 可执行档"；Claude argv 映射删 acceptEdits（plan/bypassPermissions 两态）；设置卡下拉两档。**存量兼容**：`workspace-write`/`danger-full-access` 字符串与任何含 write/exec/network 的 profile 归一化到可执行档（放宽不收紧）；纯 read profile 与未知字符串保持只读。README 档位语义同步重写。
+
 ### Removed
 
 - **Qwen Code 支持整体移除（2026-09 产品决策，breaking）**：托管 CLI 收敛为 Codex 与 Claude Code 两家。依据：① 实测可靠性不足——stream-json 无头模式不发 tool_use 事件（驱动层拦截是死代码），权限模型整体依赖 settings.json 单一 `tools.approvalMode` 键且被 CLI 启动时自行迁移重写（语义门反复判 stale），真机运行多次瞬态失败（`subprocess exited 1` 无诊断、`Error: tool call aborted` 等，复跑时好时坏）；② 其联网搜索需独立付费 DashScope 搜索模型（已在联网调研中确认放弃）；③ 维护面与其价值不成比例。移除范围：`registry.js` qwen 条目、`drivers/qwen-stream-json.js` 及其测试、`QWEN_APPROVAL_METHODS`、`qwenSettings/qwenSettingsCurrent/qwenApprovalMode`、`probeOpenaiChatContinuation` 与 `findChatToolCallId`（openai-chat 协议探测）、`cli_qwen_direct`/`cli_qwen_subagent`/`cli_qwen_followup` 等全部工具、relay provider `managed-qwen-relay`、设置卡 Qwen 项、e2e-live 的 Qwen 段；测试从 254 收敛至 **228/228 全绿**。存量用户影响：settings 里的 `models.qwen`/`permissions.qwen` 键静默闲置（无副作用），统一目录的 `config-qwen/` 残留可手动删除。

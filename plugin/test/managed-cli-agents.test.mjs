@@ -9,7 +9,7 @@ const GRANT_ALL = { read: true, write: true, exec: true };
 // The approval mode was removed (2026-09): resolvePermission answers every
 // request deterministically by checkbox. These fixtures keep specific
 // capabilities unchecked to exercise the rejection branch.
-const UNCHECKED_EXEC = { read: true, write: true, exec: false };
+const UNCHECKED_EXEC = { read: true, write: false, exec: false };
 
 function deferred() { let resolve, reject; const promise = new Promise((a,b)=>{resolve=a;reject=b}); return {promise,resolve,reject}; }
 function driverFixture() {
@@ -39,7 +39,7 @@ test("dispatch records a real remote thread and returns a stable session", async
 	assert.equal(value.session.remoteSessionId, "thread-1");
 	assert.equal(value.session.status, "ready");
 	assert.equal(value.output, "first");
-	assert.equal(f.calls[0].sandbox, "workspace-write");
+	assert.equal(f.calls[0].sandbox, "danger-full-access");
 	assert.equal(f.calls[0].model, "m");
 });
 
@@ -203,13 +203,14 @@ test("releaseChild is a no-op for an unknown child", async () => {
 test("permissionSpec derives the sandbox tier from the profile", () => {
 	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => "workspace-write" });
 	assert.deepEqual(service.permissionSpec("codex"), {
-		permissionMode: "workspace-write",
+		// Two tiers (2026-09): the removed workspace-write string normalizes
+		// to the executable tier.
+		permissionMode: "danger-full-access",
 		// The approval mode is gone: policy stays on-request so every
 		// out-of-scope request flows to the deterministic resolver.
 		approvalPolicy: "on-request",
-		sandbox: "workspace-write",
-		// Three capabilities: the workspace-write preset is write-only (no exec).
-		profile: { read: true, write: true, exec: false }
+		sandbox: "danger-full-access",
+		profile: { read: true, write: true, exec: true }
 	});
 	const denied = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: { async start() {} } }, permissionSource: () => ({ read: true, write: false, exec: false }) });
 	assert.equal(denied.permissionSpec("codex").approvalPolicy, "on-request");
@@ -238,7 +239,8 @@ test("an UNCHECKED capability is rejected deterministically without prompting", 
 			return { threadId: "thread-n", text: outcome };
 		})(), dispose: async () => {} };
 	} };
-	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ read: true, write: true, exec: false }) });
+	// Read-only tier: command needs exec, which is unchecked → rejected.
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver }, permissionSource: () => ({ read: true, write: false, exec: false }) });
 	const done = await service.dispatch({ cwd: "/repo", prompt: "task" });
 	assert.equal(done.output, "rejected");
 	assert.equal(done.session.lastPermissionDecision.outcome, "rejected");
@@ -249,13 +251,16 @@ test("an UNCHECKED capability is rejected deterministically without prompting", 
 test("permissionSpec matrix derives the sandbox tier for every input", () => {
 	const cases = [
 		{ label: "legacy read-only", input: "read-only", sandbox: "read-only" },
-		{ label: "legacy workspace-write", input: "workspace-write", sandbox: "workspace-write" },
+		// Two tiers (2026-09): the removed workspace-write string widens to
+		// the executable tier, never silently tightens.
+		{ label: "legacy workspace-write widens to executable", input: "workspace-write", sandbox: "danger-full-access" },
 		{ label: "legacy danger-full-access", input: "danger-full-access", sandbox: "danger-full-access" },
 		{ label: "unknown string defaults to read-only", input: "bogus", sandbox: "read-only" },
 		{ label: "legacy allow migrates to full grant", input: { read: true, write: true, exec: true, network: true, approval: "allow" }, sandbox: "danger-full-access" },
 		{ label: "network-only escalates via exec migration", input: { read: true, write: false, exec: false, network: true, approval: "ask" }, sandbox: "danger-full-access" },
 		{ label: "exec+network escalates", input: { read: true, write: false, exec: true, network: true, approval: "ask" }, sandbox: "danger-full-access" },
 		{ label: "exec alone escalates (egress intent)", input: { read: true, write: false, exec: true, approval: "ask" }, sandbox: "danger-full-access" },
+		{ label: "write alone also selects executable (no middle tier)", input: { read: true, write: true, exec: false }, sandbox: "danger-full-access" },
 		{ label: "stored approval keys never influence the tier", input: { read: true, write: true, exec: true, network: false, approval: "never" }, sandbox: "danger-full-access" }
 	];
 	for (const c of cases) {
@@ -272,14 +277,14 @@ test("permissionSpec matrix derives the sandbox tier for every input", () => {
 // and unchecked (rejected and recorded). This matrix guards every capability ×
 // checkbox combination.
 const RESOLVE_DECISIONS = [
-	// Checked capabilities are allowed.
+	// Checked (executable tier) capabilities are allowed.
 	{ label: "checked command", capability: "command", profile: { ...GRANT_ALL }, expected: "allowed-once" },
 	{ label: "checked file-change", capability: "file-change", profile: { ...GRANT_ALL }, expected: "allowed-once" },
 	{ label: "checked permissions", capability: "permissions", profile: { ...GRANT_ALL }, expected: "allowed-once" },
-	// Unchecked → rejected without prompting.
-	{ label: "unchecked command", capability: "command", profile: { read: true, write: true, exec: false }, expected: "rejected" },
-	{ label: "unchecked file-change", capability: "file-change", profile: { read: true, write: false, exec: true }, expected: "rejected" },
-	{ label: "unchecked permissions", capability: "permissions", profile: { read: true, write: true, exec: false }, expected: "rejected" }
+	// Read-only tier: every mutating capability is unchecked → rejected.
+	{ label: "unchecked command", capability: "command", profile: { read: true, write: false, exec: false }, expected: "rejected" },
+	{ label: "unchecked file-change", capability: "file-change", profile: { read: true, write: false, exec: false }, expected: "rejected" },
+	{ label: "unchecked permissions", capability: "permissions", profile: { read: true, write: false, exec: false }, expected: "rejected" }
 ];
 
 test("resolvePermission decision matrix decides deterministically", async () => {

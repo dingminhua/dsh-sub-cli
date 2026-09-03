@@ -8,11 +8,10 @@
 
 import { deriveSandboxMode } from "./permissions.js";
 
-/** The three permission tiers offered per CLI. Default: workspace-write. */
+/** The two permission tiers offered per CLI (2026-09 simplification). Default: read-only. */
 export const PERMISSION_TIERS = [
 	{ id: "read-only", label: "只读" },
-	{ id: "workspace-write", label: "工作区可写" },
-	{ id: "danger-full-access", label: "完全" }
+	{ id: "danger-full-access", label: "可执行" }
 ];
 
 export const DEFAULT_PERMISSION = "read-only";
@@ -64,14 +63,12 @@ export const CLI_REGISTRY = [
 		configDir: "config-claude",
 		npm: "@anthropic-ai/claude-code",
 		argv: (task, model, permission) => {
-			// Claude permission-mode maps the tier: read-only=plan (no edits),
-			// workspace-write=acceptEdits (auto-accept workspace edits),
-			// danger-full-access=bypassPermissions.
-			const mode = {
-				"read-only": "plan",
-				"workspace-write": "acceptEdits",
-				"danger-full-access": "bypassPermissions"
-			}[tierOf(permission)] || "acceptEdits";
+			// Claude permission-mode maps the two tiers: read-only=plan (no
+			// edit tools at all), executable=bypassPermissions. The middle
+			// acceptEdits tier is gone with the workspace-write tier (2026-09):
+			// its real boundary was wider than "just writes" (round-12 finding 6
+			// — file commands incl. deletion were silently auto-accepted).
+			const mode = tierOf(permission) === "read-only" ? "plan" : "bypassPermissions";
 			const args = ["-p", "--output-format", "text", "--permission-mode", mode];
 			if (model) args.push("--model", model);
 			args.push(task);

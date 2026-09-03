@@ -39,21 +39,23 @@ export const MANAGED_PERMISSION_DECISIONS = Object.freeze(["allowed-once", "reje
 // exec unchecked; Codex then lands in read-only.
 // Legacy string tiers are accepted everywhere and normalized to a profile.
 //
-// Authorization model (approval mode removed 2026-09): the checkboxes are the
-// only grant and are fixed at launch — checked capabilities are allowed
-// silently, unchecked ones are answered deterministically (the CLI receives a
-// rejection and adapts or reports the task as not completable). There is no
-// interactive ask, no runtime escalation, and no retry-with-widening; a task
-// that cannot proceed under the configured tier stops with a clear message
-// pointing at the settings card.
+// Authorization model (two tiers, 2026-09 simplification): the middle
+// "workspace-write" tier was REMOVED — it was the murkiest of the three
+// (Codex cannot write files without exec anyway since its write path is
+// exec_command; Claude's acceptEdits silently auto-accepts file commands
+// including deletion, wider than "just writes" — round-12 finding 6). What
+// remains is honest and simple:
+//   read-only  → look, never modify;
+//   executable → run commands, write/delete files, install deps.
+// The checkboxes are still the only grant and are fixed at launch — checked
+// capabilities are allowed silently, unchecked ones are answered
+// deterministically. No interactive ask, no runtime escalation.
 
 export const PERMISSION_PRESETS = Object.freeze([
-	// Default: only read is granted; write/exec are NOT granted and the CLI is
-	// launched with a fixed, narrow sandbox tier. No popup, no runtime
-	// escalation — the tier is decided at launch and cannot widen mid-turn.
 	{ id: "read-only", label: "只读", profile: Object.freeze({ read: true, write: false, exec: false }) },
-	{ id: "workspace-write", label: "工作区可写", profile: Object.freeze({ read: true, write: true, exec: false }) },
-	{ id: "danger-full-access", label: "完全", profile: Object.freeze({ read: true, write: true, exec: true }) }
+	// id stays "danger-full-access" (matches the CLI sandbox name and keeps
+	// stored-string compatibility); the label is the user-facing 可执行.
+	{ id: "danger-full-access", label: "可执行", profile: Object.freeze({ read: true, write: true, exec: true }) }
 ]);
 
 export const DEFAULT_PROFILE = Object.freeze({ read: true, write: false, exec: false });
@@ -61,46 +63,40 @@ export const DEFAULT_PROFILE = Object.freeze({ read: true, write: false, exec: f
 /**
  * Normalize a stored permission value (legacy string tier, partial object, or
  * full profile) into a complete three-capability profile. Stored `network`
- * values are dropped: exec now carries that intent (checked exec implies the
- * process may egress). Stored `approval` values ("ask"/"never", removed
- * 2026-09) are dropped silently: the strategy is always the deterministic
- * one. Legacy `approval: "allow"` migrates to checked capabilities.
+ * values are dropped: exec carries that intent. Stored `approval` values
+ * ("ask"/"never", removed 2026-09) are dropped silently. Legacy mappings:
+ * `approval:"allow"` and the removed `workspace-write` tier (and any profile
+ * with write or exec checked) normalize to the executable tier — widening,
+ * never silently tightening what the user had configured.
  */
 export function normalizePermission(raw) {
 	if (typeof raw === "string") {
-		const preset = PERMISSION_PRESETS.find((p) => p.id === raw);
-		if (preset) return { ...preset.profile };
-		// Unknown string → default tier (read-only), not a new capability.
-		return { ...DEFAULT_PROFILE };
+		if (raw === "read-only") return { read: true, write: false, exec: false };
+		// The removed mutation tiers (workspace-write / danger-full-access)
+		// normalize to executable — widening, never silently tightening.
+		if (raw === "workspace-write" || raw === "danger-full-access") return { read: true, write: true, exec: true };
+		// Unknown strings keep the read-only default.
+		return { read: true, write: false, exec: false };
 	}
 	if (raw && typeof raw === "object") {
-		// Legacy "allow": the auto-accept dial is gone, so that intent migrates
-		// to the checkboxes themselves — grant read/write/exec (the old "allow"
-		// tier's reach).
 		const legacyAllow = raw.approval === "allow";
-		const read = raw.read !== undefined ? !!raw.read : (legacyAllow ? true : DEFAULT_PROFILE.read);
-		const write = raw.write !== undefined ? !!raw.write : (legacyAllow ? true : DEFAULT_PROFILE.write);
-		// Legacy network:true meant "the process may egress" — under the
-		// three-capability model exec is the carrier of that intent (a checked
-		// exec escalates the sandbox to danger-full-access). Old profiles always
-		// stored all four booleans, so "network checked but exec unchecked" is a
-		// legacy artifact, not a live choice: promote exec rather than lose the
-		// egress the user had configured.
-		const exec = legacyAllow ? true : (raw.network === true ? true : (raw.exec !== undefined ? !!raw.exec : DEFAULT_PROFILE.exec));
-		return { read, write, exec };
+		const read = raw.read !== undefined ? !!raw.read : true;
+		// Any mutation capability the user had (write, exec, legacy network,
+		// legacy allow) grants the executable tier.
+		const mutating = legacyAllow || raw.network === true || raw.write === true || raw.exec === true;
+		if (mutating) return { read, write: true, exec: true };
+		return { read, write: false, exec: false };
 	}
 	return { ...DEFAULT_PROFILE };
 }
 
-/** Derive the closest coarse CLI sandbox tier from a profile. */
+/** Derive the CLI sandbox tier from a profile: read-only or executable. */
 export function deriveSandboxMode(profile) {
 	const p = normalizePermission(profile);
-	// exec escalates to danger-full-access: allowing command execution means
-	// allowing ordinary commands that reach the network (npm install, git
-	// pull); Codex cannot run those under workspace-write. write alone stays at
-	// workspace-write; nothing checked stays read-only.
-	if (p.exec) return "danger-full-access";
-	if (p.write) return "workspace-write";
+	// Any mutation capability → the executable tier (CLI sandbox:
+	// danger-full-access / bypassPermissions). Exec implies write: commands
+	// can create files, so there is no "exec but not write" tier.
+	if (p.exec || p.write) return "danger-full-access";
 	return "read-only";
 }
 

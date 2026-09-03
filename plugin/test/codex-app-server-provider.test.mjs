@@ -48,7 +48,9 @@ test("Codex provider maps DSH request and live route into the driver", async () 
 	assert.equal(driver.calls[0].model, "kimi-k3");
 	assert.equal(driver.calls[0].reasoningEffort, "high");
 	assert.equal(driver.calls[0].approvalPolicy, "never");
-	assert.equal(driver.calls[0].sandbox, "workspace-write");
+	// Two tiers (2026-09): the removed workspace-write string widens to the
+	// executable tier.
+	assert.equal(driver.calls[0].sandbox, "danger-full-access");
 	assert.deepEqual(await run.result, { output: [{ type: "text", text: "answer" }], stopReason: "completed" });
 	assert.equal(run.readOutput(), "halfway");
 	assert.equal(run.remoteSessionId(), "thread-1");

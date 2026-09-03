@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
       "row.model": "模型",
       "row.effort": "推理强度",
       "row.permission": "权限",
-      "row.permHint": "只读包含读取；可写包含只读；可调用工具包含前两者并允许执行命令。",
+      "row.permHint": "只读＝只能看；可执行＝能跑命令、写/删文件、装依赖。",
       "row.autoContinueMax": "最多续接次数（0=关闭）",
       "row.autoContinueHint": "回答看起来提前收尾（只描述计划未交付结果）时，自动在同一会话续接追问直到完整；设为 0 则不续接。三个 CLI 的持续会话调用均生效。",
       "row.turnTimeout": "轮次超时",
@@ -114,7 +114,7 @@ window.__ModuleLoader__.load({
       "row.model": "Model",
       "row.effort": "Reasoning effort",
       "row.permission": "Permission",
-      "row.permHint": "Read-only includes reading; Writable includes read-only; Tool access includes both and allows running commands.",
+      "row.permHint": "Read-only = look only; Executable = run commands, write/delete files, install deps.",
       "row.autoContinueMax": "Max nudges (0 = off)",
       "row.autoContinueHint": "When an answer looks like a premature stop (plans only, no deliverable), nudges the same conversation until it is complete; 0 disables nudging. Applies to session-based calls of all three CLIs.",
       "row.turnTimeout": "Turn timeout",
@@ -168,21 +168,18 @@ window.__ModuleLoader__.load({
       "guide.dispatchEx": "Have Codex run this task headlessly."
     };
 
-    // Permission tiers shown as ONE mutually-exclusive dropdown. Each tier
-    // includes the content of every tier above it (read ⊆ write ⊆ tools), so
-    // the three old checkboxes are replaced by a single tier select. Stored
+    // Permission tiers shown as ONE mutually-exclusive dropdown (2026-09
+    // simplification: the middle "writable" tier is gone — it was the murkiest
+    // of the three; see the round-12 finding in VERIFICATION-FLOW). Stored
     // values stay profile-shaped ({read,write,exec}) for the host.
     var PERMISSION_PRESETS = [
       { id: "read-only", label: "只读", profile: { read: true, write: false, exec: false } },
-      { id: "workspace-write", label: "可写", profile: { read: true, write: true, exec: false } },
-      { id: "danger-full-access", label: "可调用工具", profile: { read: true, write: true, exec: true } }
+      { id: "danger-full-access", label: "可执行", profile: { read: true, write: true, exec: true } }
     ];
-    // Profile → tier id, mirroring the host's deriveSandboxMode: exec wins,
-    // then write, otherwise read-only. Used to select the dropdown value for
-    // any stored profile (legacy string tier, preset profile, or custom mix).
+    // Profile → tier id: any mutation capability (write or exec) selects the
+    // executable tier; otherwise read-only.
     function presetIdOf(permission) {
-      if (permission && permission.exec) return "danger-full-access";
-      if (permission && permission.write) return "workspace-write";
+      if (permission && (permission.exec || permission.write)) return "danger-full-access";
       return "read-only";
     }
     // Ungranted capabilities simply stop the task and report not-completable.
@@ -192,10 +189,9 @@ window.__ModuleLoader__.load({
     var DEFAULT_PROFILE = { read: true, write: false, exec: false };
 
     // Normalize a stored permission (legacy string tier or profile object) into
-    // a complete profile for the UI. Mirrors the host's normalizePermission.
-    // Auto-continue has no toggle any more: it is always on, and "off" is
-    // expressed as a max of 0. Old stored profiles (enabled:false with some max)
-    // normalize to 0; anything without a usable max falls back to 3.
+    // a complete profile for the UI. Mirrors the host's normalizePermission:
+    // the removed workspace-write tier and any mutation capability normalize
+    // to the executable tier (widening, never silently tightening).
     function autoContinueMaxOf(raw) {
       var cfg = raw || {};
       var enabled = cfg.enabled !== undefined ? !!cfg.enabled : true;
@@ -206,21 +202,22 @@ window.__ModuleLoader__.load({
 
     function normalizePermissionClient(raw) {
       if (typeof raw === "string") {
-        var preset = null;
-        for (var pi = 0; pi < PERMISSION_PRESETS.length; pi++) if (PERMISSION_PRESETS[pi].id === raw) { preset = PERMISSION_PRESETS[pi].profile; break; }
-        if (preset) return { read: preset.read, write: preset.write, exec: preset.exec };
-        return { read: DEFAULT_PROFILE.read, write: DEFAULT_PROFILE.write, exec: DEFAULT_PROFILE.exec };
+        if (raw === "read-only") return { read: true, write: false, exec: false };
+        if (raw === "workspace-write" || raw === "danger-full-access") return { read: true, write: true, exec: true };
+        return { read: true, write: false, exec: false };
       }
       var p = raw || {};
+      // Any mutation capability → executable tier; otherwise read-only.
+      if (p.write === true || p.exec === true || p.network === true) return { read: true, write: true, exec: true };
       return {
         read: p.read !== undefined ? !!p.read : DEFAULT_PROFILE.read,
-        write: p.write !== undefined ? !!p.write : DEFAULT_PROFILE.write,
-        exec: p.exec !== undefined ? !!p.exec : DEFAULT_PROFILE.exec
+        write: false,
+        exec: false
       };
     }
 
-    // The permission surface is a single tier dropdown (只读 ⊆ 可写 ⊆ 可调用
-    // 工具); read is granted in every tier, and exec carries egress intent —
+    // The permission surface is a single tier dropdown (只读 / 可执行);
+    // read is granted in every tier, and exec carries egress intent —
     // there is no separate network toggle. Web research is never delegated to
     // a CLI (capability gate refuses it; the controller researches).
     var CLIS = [
