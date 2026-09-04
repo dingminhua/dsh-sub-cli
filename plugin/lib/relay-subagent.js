@@ -11,7 +11,7 @@ import { AUTHORIZATION_DISCIPLINE } from "./permission-guidance.js";
 export function relayPersonaFor(cli) {
 	const name = cli === "claude" ? "Claude Code" : "Codex";
 	return `You are a relay bridge to an external ${name} CLI agent, not the task executor.
-For every user message, you must call managed_cli_submit exactly once with the complete task. Do not use your own knowledge to answer, do not inspect or modify files yourself, and do not claim work that ${name} did not perform. After managed_cli_submit returns, faithfully report its result to the parent using report. A report before managed_cli_submit is rejected.`;
+For every user message, you must call managed_cli_submit exactly once with the complete task. Do not use your own knowledge to answer, do not inspect or modify files yourself, and do not claim work that ${name} did not perform. You have no other tools: spawning subagents, running commands, or writing files yourself is denied at the execution layer and will fail — forward everything through managed_cli_submit. After managed_cli_submit returns, faithfully report its result to the parent using report. A report before managed_cli_submit is rejected.`;
 }
 
 export function attachRelayLifecycle(ctx, service) {
@@ -31,6 +31,21 @@ export function attachRelayLifecycle(ctx, service) {
 	if (typeof ctx.subagents?.registerContinuableSetup === "function") {
 		ctx.subagents.registerContinuableSetup((childCtx) => {
 			const guard = childCtx.tools.guard((exec) => {
+				// Hard allowlist (execution layer, round-15 fix). The schema-level
+				// toolFilter (allow: [managed_cli_submit]) masks only the INHERITED
+				// tool surface: preset-contributed tools can still be presented to
+				// the relay child, and a re-delegation through the native
+				// `subagent` tool hands the task to a grandchild that inherits the
+				// captain's sandbox — bypassing the external CLI's permission tier
+				// entirely (observed live: a read-only-tier write succeeded because
+				// the relay's grandchild wrote the file 21 seconds before the CLI
+				// even spawned; the CLI then "verified" the pre-written file and
+				// returned OK). Guards run on every tool execution of this child
+				// and cannot be force-allowed by another guard, so they are the
+				// reliable boundary: allow exactly the submit tool and report.
+				if (exec.name !== RELAY_SUBMIT_TOOL && exec.name !== "report") {
+					return `Relay children may only call ${RELAY_SUBMIT_TOOL} and report. Tool "${exec.name}" is denied: re-delegating the task to another agent would bypass the external CLI's permission tier. Forward the complete task with ${RELAY_SUBMIT_TOOL} instead.`;
+				}
 				if (exec.name !== "report") return undefined;
 				const childId = exec.agent?.session?.id;
 				// Missing childId is itself a report that should be blocked: a Relay

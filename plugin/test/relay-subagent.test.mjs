@@ -25,6 +25,9 @@ test("relayPersonaFor generates the right persona for each CLI", () => {
 	for (const persona of [relayPersonaFor("codex"), relayPersonaFor("claude")]) {
 		assert.match(persona, /must call managed_cli_submit/);
 		assert.match(persona, /relay bridge/);
+		// round-15: the persona now states up front that re-delegation is
+		// denied at the execution layer, not merely discouraged.
+		assert.match(persona, /denied at the execution layer/);
 	}
 });
 
@@ -103,6 +106,46 @@ test("relay lifecycle installs submit-before-report guard with disposer", () => 
 	assert.equal(guard({ name: "report", agent: { session: { id: "allowed" } } }), undefined);
 	assert.equal(guard({ name: "managed_cli_submit", agent: { session: { id: "blocked" } } }), undefined);
 	startListener({ id: "allowed" });
+});
+
+test("relay guard denies every tool outside the relay allowlist (round-15 re-delegation fix)", () => {
+	let contribution;
+	const service = { beginChildEpoch() {}, childCanReport() { return true; } };
+	const ctx = {
+		on() {},
+		subagents: { registerContinuableSetup(fn) { contribution = fn; } }
+	};
+	attachRelayLifecycle(ctx, service);
+	let guard;
+	contribution({ tools: { guard(fn) { guard = fn; return () => {}; } } });
+	// The exact escape observed live in round 15 was the native `subagent`
+	// tool (its grandchild inherited the captain's sandbox and wrote the
+	// file); everything except the two allowed names must be denied.
+	for (const name of ["subagent", "subagent_fork", "write", "bash", "read", "glob", "edit", "send_message", "run_code", "skill"]) {
+		assert.match(
+			guard({ name, agent: { session: { id: "allowed" } } }),
+			/may only call managed_cli_submit and report/,
+			`tool "${name}" should be denied by the allowlist guard`
+		);
+	}
+	// The two allowed tools pass the allowlist untouched (report ordering is
+	// still enforced by the same guard's later branch, tested above).
+	assert.equal(guard({ name: "managed_cli_submit", agent: { session: { id: "allowed" } } }), undefined);
+	assert.equal(guard({ name: "report", agent: { session: { id: "allowed" } } }), undefined);
+});
+
+test("relay guard fails closed on a malformed exec without a tool name", () => {
+	let contribution;
+	const ctx = {
+		on() {},
+		subagents: { registerContinuableSetup(fn) { contribution = fn; } }
+	};
+	attachRelayLifecycle(ctx, { beginChildEpoch() {} });
+	let guard;
+	contribution({ tools: { guard(fn) { guard = fn; return () => {}; } } });
+	// An exec with no name (or a non-string name) must never slip through the
+	// allowlist: undefined !== "managed_cli_submit" && !== "report" → denied.
+	assert.match(guard({ agent: { session: { id: "allowed" } } }), /may only call/);
 });
 
 test("relay lifecycle releases the CLI subprocess when a residency epoch ends", async () => {
