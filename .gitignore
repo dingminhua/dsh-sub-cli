@@ -5,3 +5,4 @@ node_modules/
 .agent-teams/
 verification/
 DESIGN-approval-copy.md
+plugin/dsh-sub-cli-*.tgz

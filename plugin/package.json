@@ -46,11 +46,13 @@
   "files": [
     "lib",
     "icons",
+    "assets",
     "cordis.patch.yml",
     "LICENSE",
     "README.md",
     "README.en.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "screenshots.json"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs"

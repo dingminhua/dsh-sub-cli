@@ -1,7 +1,6 @@
-# dsh-sub-cli marketplace submission metadata
-catalog: dingminhua/dsh-sub-cli
-name: dsh-sub-cli
-title: 外部 Agent CLI 管理器
-description: 在 DSH 中统一管理外部 Agent CLI：统一目录、配置隔离、三层模型路由与无头派发。
+url: https://github.com/dingminhua/dsh-sub-cli/tree/main/plugin
+name: dingminhua/dsh-sub-cli#plugin
 category: cli
-repository: https://github.com/dingminhua/dsh-sub-cli
+description:
+  en: Manages external Agent CLIs in DSH with an isolated unified directory, three-layer per-CLI model routes, an unref'd-turn-deadline guard (round-15/17/18), and headless dispatch plus Relay/Subagent child sessions that survive Host restarts.
+  zh: 在 DSH 中统一管理外部 Agent CLI：独立统一目录、每 CLI 三层模型路由（Provider/模型/推理强度）、无头派发（cli_dispatch）与 Relay 子代理（两档权限，2 CLI：Codex/Claude Code），turn-deadline 守卫与持久化会话在 Host 重启后 reattach 同一 thread。
