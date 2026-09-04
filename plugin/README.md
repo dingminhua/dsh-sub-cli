@@ -1,6 +1,14 @@
 # dsh-sub-cli
 
 <p align="center">
+  <a href="README.en.md">English</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#工作原理">工作原理</a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
+  <a href="https://github.com/dingminhua/dsh-sub-cli/issues">问题反馈</a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/dsh-sub-cli"><img src="https://img.shields.io/npm/v/dsh-sub-cli?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-sub-cli"><img src="https://img.shields.io/npm/d18m/dsh-sub-cli?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
   <a href="https://github.com/dingminhua/dsh-sub-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/dingminhua/dsh-sub-cli/ci.yml?branch=main&style=flat-square&label=tests" alt="test status"></a>
@@ -121,6 +129,21 @@ cli_<cli>_subagent(description, prompt)  # codex / claude
 
 `<cli>` 取值：`codex` / `claude`。
 
+## 工作原理
+
+插件在 DSH 启动时向 Host 注册 18 个模型工具，并将每个托管 CLI 的配置目录隔离指向统一目录内的 `config-<cli>/` 子目录。
+
+**会话生命周期**（以 `cli_claude_direct` 为例）：
+
+1. **安装检测**（`cli_install`）通过 npm 把 CLI 装到统一目录的 `bin/` 下；
+2. **配置隔离**：每个 CLI 启动时，`CODEX_HOME` / `CLAUDE_CONFIG_DIR` 环境变量指向插件自己的配置目录，不碰系统里的同名配置；
+3. **首轮调用**（`cli_<cli>_direct`）：spawn CLI 进程，首次返回稳定 `sessionId`；
+4. **续接**（`cli_<cli>_followup`）：后续调用传入同一 `sessionId`，CLI 按 `--session-id` / `--resume` 重新 attach 到同一线程；
+5. **持久化**：`sessions.json` 记录每个会话的远程 thread id，Host 重启后仍可 reattach；
+6. **Relay 子代理**（`cli_<cli>_subagent`）：通过 `managed_cli_submit` 把任务转发给真实 CLI，权限由插件的两档（只读 / 可执行）统一控制。
+
+**权限两档**：`## 配置` 中的 `permissions.<cli>` 档位在进程启动时定死沙箱模式（Codex `-s`、Claude `--permission-mode`），运行中不变；未授权能力被触发时确定拒绝，不弹窗、不提权。
+
 ## 环境变量隔离
 
 | CLI | 配置目录环境变量 |
@@ -176,6 +199,13 @@ npm pack --dry-run
 ## 第三方开源依赖
 
 本项目参考的开源项目、其许可证与合规说明，完整记录见根目录的 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。引入新的外部依赖或复用其他项目代码时，请同步更新该文件并遵守对应许可证要求。
+
+## 更新日志
+
+完整版本与变更记录见 [CHANGELOG.md](CHANGELOG.md)。最近三次发布：
+
+- **0.1.0** (2026-09-05) — 首次发布：Codex + Claude Code 双 CLI 持续会话、Relay 子代理、无头派发、配置隔离、auto-continue；Qwen Code 支持移除；权限收敛为两档（只读 / 可执行）。
+- 详见 CHANGELOG.md 内「Added / Changed / Fixed / Removed」各小节。
 
 ## Licence
 

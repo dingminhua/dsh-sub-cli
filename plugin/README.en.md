@@ -1,6 +1,14 @@
 # dsh-sub-cli
 
 <p align="center">
+  <a href="README.md">中文</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/dingminhua/dsh-sub-cli/issues">Feedback</a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/dsh-sub-cli"><img src="https://img.shields.io/npm/v/dsh-sub-cli?style=flat-square&label=npm&color=cb3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-sub-cli"><img src="https://img.shields.io/npm/d18m/dsh-sub-cli?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a>
   <a href="https://github.com/dingminhua/dsh-sub-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/dingminhua/dsh-sub-cli/ci.yml?branch=main&style=flat-square&label=tests" alt="test status"></a>
@@ -121,6 +129,21 @@ Continue with `send_message`, interrupt with `interrupt_agent`. These are plugin
 
 `<cli>` is `codex` / `claude`.
 
+## How it works
+
+On startup the plugin registers 18 model tools with the DSH Host and isolates each managed CLI's config directory under the unified `config-<cli>/` subdirectory.
+
+**Session lifecycle** (example: `cli_claude_direct`):
+
+1. **Install** (`cli_install`): puts the CLI binary into `bin/` under the unified directory;
+2. **Config isolation**: at launch, `CODEX_HOME` / `CLAUDE_CONFIG_DIR` point at the plugin's own config directory, leaving the system install untouched;
+3. **First call** (`cli_<cli>_direct`): spawns the CLI process, returns a stable `sessionId`;
+4. **Resume** (`cli_<cli>_followup`): subsequent calls reuse the same `sessionId`, and the CLI reattaches to the same thread via `--session-id` / `--resume`;
+5. **Persistence**: `sessions.json` records each session's remote thread id, surviving Host restarts;
+6. **Relay subagent** (`cli_<cli>_subagent`): forwards the task to the real CLI via `managed_cli_submit`, with permissions governed by the plugin's two-tier model (read-only / executable).
+
+**Two permission tiers**: the `permissions.<cli>` tier in `## Configuration` fixes the sandbox mode at startup (Codex `-s`, Claude `--permission-mode`) and never escalates mid-run; triggering an ungranted capability deterministically rejects without prompting.
+
 ## Environment isolation
 
 | CLI | Config root variable |
@@ -160,6 +183,13 @@ Copyright in each project above belongs to its respective author. This project f
 ## Third-party open-source dependencies
 
 The open-source projects referenced here, together with their licenses and compliance notes, are recorded in full in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). When introducing new external dependencies or reusing code from other projects, update that file and honor the upstream licenses.
+
+## Changelog
+
+Full version history and change records live in [CHANGELOG.md](CHANGELOG.md). The most recent release:
+
+- **0.1.0** (2026-09-05) — first release: Codex + Claude Code continued sessions, Relay subagent, headless dispatch, config isolation, auto-continue; Qwen Code support removed; permissions collapsed to two tiers (read-only / executable).
+- See the `Added / Changed / Fixed / Removed` sections inside CHANGELOG.md.
 
 ## Licence
 
