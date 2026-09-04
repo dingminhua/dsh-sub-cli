@@ -90,6 +90,7 @@ test("relay lifecycle installs submit-before-report guard with disposer", () => 
 	let contribution, startListener;
 	const service = {
 		beginChildEpoch() {},
+		isRelayChild(id) { return id === "allowed" || id === "blocked"; },
 		childCanReport(id) { return id === "allowed"; }
 	};
 	const ctx = {
@@ -110,7 +111,7 @@ test("relay lifecycle installs submit-before-report guard with disposer", () => 
 
 test("relay guard denies every tool outside the relay allowlist (round-15 re-delegation fix)", () => {
 	let contribution;
-	const service = { beginChildEpoch() {}, childCanReport() { return true; } };
+	const service = { beginChildEpoch() {}, isRelayChild() { return true; }, childCanReport() { return true; } };
 	const ctx = {
 		on() {},
 		subagents: { registerContinuableSetup(fn) { contribution = fn; } }
@@ -140,7 +141,7 @@ test("relay guard fails closed on a malformed exec without a tool name", () => {
 		on() {},
 		subagents: { registerContinuableSetup(fn) { contribution = fn; } }
 	};
-	attachRelayLifecycle(ctx, { beginChildEpoch() {} });
+	attachRelayLifecycle(ctx, { beginChildEpoch() {}, isRelayChild() { return true; }, childCanReport() { return true; } });
 	let guard;
 	contribution({ tools: { guard(fn) { guard = fn; return () => {}; } } });
 	// An exec with no name (or a non-string name) must never slip through the
@@ -148,10 +149,44 @@ test("relay guard fails closed on a malformed exec without a tool name", () => {
 	assert.match(guard({ agent: { session: { id: "allowed" } } }), /may only call/);
 });
 
+test("relay guard falls back to a global tools.guard when registerContinuableSetup is gone (DSH 0.1.2-rc.1, round-17)", () => {
+	// The upstream 0.1.2-rc.1 subagent runtime removed
+	// registerContinuableSetup entirely (no provider hook into the child
+	// scope anymore). The guard must re-anchor on the plain-context
+	// ctx.tools.guard channel, scoped by the Relay binding predicate.
+	let globalGuard;
+	const ctx = {
+		on() {},
+		subagents: {},
+		tools: { guard(fn) { globalGuard = fn; return () => {}; } }
+	};
+	attachRelayLifecycle(ctx, { beginChildEpoch() {}, isRelayChild(id) { return id === "relay-child"; }, childCanReport() { return true; } });
+	assert.equal(typeof globalGuard, "function", "global ctx.tools.guard must receive the relay guard");
+	// A bound relay child is constrained by the allowlist...
+	assert.match(
+		globalGuard({ name: "subagent", agent: { session: { id: "relay-child" } } }),
+		/may only call managed_cli_submit and report/
+	);
+	assert.equal(globalGuard({ name: "managed_cli_submit", agent: { session: { id: "relay-child" } } }), undefined);
+	// ...while any OTHER agent in the process passes through untouched.
+	assert.equal(globalGuard({ name: "bash", agent: { session: { id: "captain-session" } } }), undefined);
+	assert.equal(globalGuard({ name: "write", agent: { session: { id: "some-other-child" } } }), undefined);
+	// Agentless calls (no agent on the exec) are never relay children.
+	assert.equal(globalGuard({ name: "bash" }), undefined);
+});
+
+test("relay lifecycle throws when no guard channel exists (fail loud, never silently unguarded)", () => {
+	const ctx = { on() {}, subagents: {}, tools: {} };
+	assert.throws(
+		() => attachRelayLifecycle(ctx, { beginChildEpoch() {} }),
+		/neither subagents.registerContinuableSetup nor tools.guard/
+	);
+});
+
 test("relay lifecycle releases the CLI subprocess when a residency epoch ends", async () => {
 	const released = [];
 	const listeners = {};
-	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {} };
+	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {}, tools: { guard() { return () => {}; } } };
 	attachRelayLifecycle(ctx, { beginChildEpoch: () => {}, releaseChild: async (id) => { released.push(id); return { released: true }; } });
 	assert.equal(typeof listeners["subagent/end"], "function");
 	listeners["subagent/end"]({ id: "child-epoch-1" });
@@ -162,7 +197,7 @@ test("relay lifecycle releases the CLI subprocess when a residency epoch ends", 
 test("relay lifecycle ignores epoch end without a child id", async () => {
 	const released = [];
 	const listeners = {};
-	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {} };
+	const ctx = { on: (event, listener) => { listeners[event] = listener; }, subagents: {}, tools: { guard() { return () => {}; } } };
 	attachRelayLifecycle(ctx, { beginChildEpoch: () => {}, releaseChild: async (id) => { released.push(id); } });
 	listeners["subagent/end"]({});
 	await new Promise((r) => setImmediate(r));

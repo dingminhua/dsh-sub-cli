@@ -470,6 +470,8 @@ export class ManagedCliAgentsService {
 	}
 
 	childCanReport(childId) { return this.requireChild(childId).epochSubmits > 0; }
+	/** Whether this child id belongs to a live Relay binding (used by the global tool guard). */
+	isRelayChild(childId) { return typeof childId === "string" && this.childBindings.has(childId); }
 	childBinding(childId) {
 		const binding = this.requireChild(childId);
 		return Object.freeze({ childId: binding.childId, cli: binding.cli, sessionId: binding.sessionId, cwd: binding.cwd, epochSubmits: binding.epochSubmits, updatedAt: binding.updatedAt });

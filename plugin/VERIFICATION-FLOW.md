@@ -593,3 +593,28 @@ host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**
 ### 结论
 
 只读档（双复跑）与可执行档（完整三阶段）在 guard 修复后的新 host 会话中全部通过；8 个 relay 会话全部零转包。发现 8 修复端到端生效且可复现。
+
+## 实测记录（第十七轮，2026-09-04，DSH 上游 0.1.2-rc.1 重大更新的影响评估 → 发现 9：guard 静默失效，已修复）
+
+背景：DSH Desktop 2.0.5（2026-09-03 20:33 安装）捆绑 `@deepseek-ai/dsh*` 全系 `0.1.2-rc.1`；插件本地开发/单测基线是 `0.1.0-rc.6`。peerDependencies 版本域 `>=0.1.2-alpha.1 <0.2.0` 涵盖 `0.1.2-rc.1`，符号级兼容性全部核对通过（`defineTool`/`installSettingsSection`/`settingsNamespace`/`TypertRemoteService`/`Remote` 均在）。
+
+### 发现 9（本轮，高危，已修复）：`registerContinuableSetup` 在 0.1.2-rc.1 被整体移除——第十五轮 guard 静默失效
+
+**证据链**：
+
+1. `registerContinuableSetup` 与其背后的 `setupRegistry` 机制在 0.1.2-rc.1 的全部 dsh-* 包里 **grep 零命中**（0.1.0-rc.6 里存在于 dsh-subagent 2455 行）。子代理运行时重写为 `materializeTracked` 内联 `setup(childCtx)` + `applyChildComposition`，**provider 不再有任何进入 child scope 的钩子**（`prepareContinuable` 只换绑 binding，`observeActivation` 只转发生命周期事件）。
+2. `attachRelayLifecycle` 的 guard 安装是条件式（`typeof ctx.subagents?.registerContinuableSetup === "function"`）——API 消失时**静默跳过，不报错**。第十五轮的执行层硬防线在 0.1.2-rc.1 宿主上是零。
+3. 上游确实修了 `tools.restrict` 的掩蔽缺口（`view()` 重写：restriction 现在过滤 global 层 + **所有祖先层**，child 自己层豁免以保住 report 机制工具）——注释原文承认了旧缺陷。**但** `subagent` 等 preset 工具注册在 child 的**自己的 agent-plane 层**（own layer），`view()` 对 own 层无条件放行——`toolFilter: {allow:[managed_cli_submit]}` 依旧拦不住它。
+4. **实测铁证**（0.1.2-rc.1 宿主、第十六轮 Run2 的 relay child 会话）：`request/header` 的 LLM 请求 tools 列表 = **`['managed_cli_submit', 'report', 'subagent']`**——`subagent` 仍然可见，与主控的 95 工具面对照。第十六轮 8 个 relay 零转包是 kimi-k3/deepseek-v4-flash 的行为收敛（persona 文案生效），**不是防护**；第十五轮被 kimi-k3 实际利用过的转包路径重新敞开。
+
+**修复（round-17 re-anchor）**：guard 安装改为三通道 fail-loud——
+
+- DSH ≤0.1.1：`registerContinuableSetup`（原路径，保留）；
+- DSH 0.1.2+：**plain-context `ctx.tools.guard()`**（新宿主语义：全局 guard 作用于进程内所有 agent，含 relay child）；
+- 两者皆无：**抛错拒绝启动**（fail loud，不再静默裸奔）。
+
+全局 guard 的作用域收敛靠 **binding 谓词**：guard 内取 `exec.agent?.session?.id`，`service.isRelayChild(childId)`（本轮新增，`childBindings.has()`）为真才施加 allowlist——binding 由 provider 的 `prepareContinuable` 写入，早于任何工具执行，冷启动即受控；主控/其他子代理/无 agent 的 exec 一律放行。guard 语义本身（每次工具执行运行、任何 guard 可拒绝、无 guard 可强制放行）经源码核对在 0.1.2-rc.1 未变。
+
+**测试**：+2（0.1.2 通道：全局 guard 收到 relay guard、bound child 受 allowlist 约束而其他 agent/agentless 放行；无通道时 fail-loud 抛错），既有 guard 测试的 service mock 补 `isRelayChild`。**231/231 全绿**。
+
+**遗留（记录在案，不属本插件）**：`subagent` 工具在 own-layer 豁免下对 relay child 可见是上游 `view()` 设计的延续（保 report 机制工具的代价）——本插件的执行层 guard 是必要自卫，值得随发现 8 一并向 DSH 上游反馈。

@@ -28,44 +28,65 @@ export function attachRelayLifecycle(ctx, service) {
 		if (!childId || typeof service.releaseChild !== "function") return;
 		void service.releaseChild(String(childId)).catch(() => {});
 	});
+	// Hard allowlist (execution layer, round-15 fix; round-17 re-anchor after
+	// the upstream 0.1.2-rc.1 subagent runtime rewrite). The schema-level
+	// toolFilter (allow: [managed_cli_submit]) masks only the INHERITED tool
+	// surface: agent-plane (preset-contributed) tools are registered in the
+	// child's OWN layer, which toolFilter restrictions never strip — `subagent`
+	// stayed visible to relay children even after upstream fixed restrictions
+	// to filter ancestor layers (verified live: a relay child's LLM request
+	// listed managed_cli_submit + report + subagent on DSH 0.1.2-rc.1). A
+	// re-delegation through the native `subagent` tool hands the task to a
+	// grandchild that inherits the captain's sandbox — bypassing the external
+	// CLI's permission tier entirely (observed live: a read-only-tier write
+	// succeeded because the relay's grandchild wrote the file 21 seconds before
+	// the CLI even spawned; the CLI then "verified" the pre-written file and
+	// returned OK). Guards run on every tool execution and cannot be
+	// force-allowed by another guard, so they are the reliable boundary:
+	// allow exactly the submit tool and report.
+	const relayGuard = (exec) => {
+		// The global channel (fallback for runtimes without
+		// registerContinuableSetup) fires for EVERY agent in the process, so
+		// scope it by Relay binding: only a bound relay child is constrained.
+		const childId = exec.agent?.session?.id;
+		if (!childId || !service.isRelayChild(String(childId))) return undefined;
+		if (exec.name !== RELAY_SUBMIT_TOOL && exec.name !== "report") {
+			return `Relay children may only call ${RELAY_SUBMIT_TOOL} and report. Tool "${exec.name}" is denied: re-delegating the task to another agent would bypass the external CLI's permission tier. Forward the complete task with ${RELAY_SUBMIT_TOOL} instead.`;
+		}
+		if (exec.name !== "report") return undefined;
+		// Missing childId is itself a report that should be blocked: a Relay
+		// turn is always attached to a child session, so an unkeyed exec
+		// means something is wrong upstream. We surface the same submit-first
+		// message rather than letting the child fall through.
+		if (!childId) return "This Relay turn has no child session id. managed_cli_submit cannot route; refusing report.";
+		try {
+			return service.childCanReport(String(childId))
+				? undefined
+				: "This Relay turn has not called managed_cli_submit. Forward the task to the external CLI before report.";
+		} catch (error) {
+			// H2 fix: an exception (e.g. CHILD_BINDING_NOT_FOUND) must NOT
+			// grant the report. Fail closed so a mis-bound child can never
+			// report without first calling managed_cli_submit.
+			return `managed_cli_submit guard failed: ${error instanceof Error ? error.message : String(error)}. Refusing report.`;
+		}
+	};
 	if (typeof ctx.subagents?.registerContinuableSetup === "function") {
+		// DSH <= 0.1.1: per-child setup channel installs the guard into each
+		// relay child's own scope. Preferred when available.
 		ctx.subagents.registerContinuableSetup((childCtx) => {
-			const guard = childCtx.tools.guard((exec) => {
-				// Hard allowlist (execution layer, round-15 fix). The schema-level
-				// toolFilter (allow: [managed_cli_submit]) masks only the INHERITED
-				// tool surface: preset-contributed tools can still be presented to
-				// the relay child, and a re-delegation through the native
-				// `subagent` tool hands the task to a grandchild that inherits the
-				// captain's sandbox — bypassing the external CLI's permission tier
-				// entirely (observed live: a read-only-tier write succeeded because
-				// the relay's grandchild wrote the file 21 seconds before the CLI
-				// even spawned; the CLI then "verified" the pre-written file and
-				// returned OK). Guards run on every tool execution of this child
-				// and cannot be force-allowed by another guard, so they are the
-				// reliable boundary: allow exactly the submit tool and report.
-				if (exec.name !== RELAY_SUBMIT_TOOL && exec.name !== "report") {
-					return `Relay children may only call ${RELAY_SUBMIT_TOOL} and report. Tool "${exec.name}" is denied: re-delegating the task to another agent would bypass the external CLI's permission tier. Forward the complete task with ${RELAY_SUBMIT_TOOL} instead.`;
-				}
-				if (exec.name !== "report") return undefined;
-				const childId = exec.agent?.session?.id;
-				// Missing childId is itself a report that should be blocked: a Relay
-				// turn is always attached to a child session, so an unkeyed exec
-				// means something is wrong upstream. We surface the same submit-first
-				// message rather than letting the child fall through.
-				if (!childId) return "This Relay turn has no child session id. managed_cli_submit cannot route; refusing report.";
-				try {
-					return service.childCanReport(String(childId))
-						? undefined
-						: "This Relay turn has not called managed_cli_submit. Forward the task to the external CLI before report.";
-				} catch (error) {
-					// H2 fix: an exception (e.g. CHILD_BINDING_NOT_FOUND) must NOT
-					// grant the report. Fail closed so a mis-bound child can never
-					// report without first calling managed_cli_submit.
-					return `managed_cli_submit guard failed: ${error instanceof Error ? error.message : String(error)}. Refusing report.`;
-				}
-			});
+			const guard = childCtx.tools.guard(relayGuard);
 			return typeof guard === "function" ? guard : () => {};
 		});
+	} else if (typeof ctx.tools?.guard === "function") {
+		// DSH 0.1.2+: registerContinuableSetup and its setupRegistry were
+		// removed (child composition is now inlined by the subagent runtime,
+		// with no provider hook into the child scope). A plain-context
+		// tools.guard() applies to every agent in this Host process, so the
+		// binding predicate inside relayGuard is what keeps it scoped to
+		// relay children. Fail loud rather than silently running unguarded.
+		ctx.tools.guard(relayGuard);
+	} else {
+		throw new Error("dsh-sub-cli relay guard unavailable: this DSH exposes neither subagents.registerContinuableSetup nor tools.guard");
 	}
 }
 
