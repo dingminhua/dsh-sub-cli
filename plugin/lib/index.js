@@ -106,12 +106,19 @@ function currentDir() {
  * directory and never touch user config. Records contain no keys. Load never
  * throws (missing file → []); save failures are silent (next state change
  * retries), mirroring the in-memory fallback when fs is absent.
+ *
+ * The fs service is resolved PER CALL, not captured at apply time: `fs` is
+ * intentionally not in `inject` (the plugin must load on fs-less deployments),
+ * so an apply-time `ctx.get("fs")` raced with service startup and — when it
+ * lost — silently disabled all persistence for the process lifetime
+ * (observed 2026-09-05 on Windows: dispatches ran, sessions.json never
+ * appeared, restored sessions stayed empty after a host restart).
  */
 function createSessionPersist(ctx, dirSource) {
-	const fs = ctx.get("fs");
 	const file = () => path.join(typeof dirSource === "function" ? dirSource() : resolveDir(currentSection()), "sessions.json");
 	return {
 		async load() {
+			const fs = ctx.get("fs");
 			if (!fs) return [];
 			try {
 				const target = await fs.resolve(file());
@@ -123,6 +130,7 @@ function createSessionPersist(ctx, dirSource) {
 			}
 		},
 		async save(sessions) {
+			const fs = ctx.get("fs");
 			if (!fs) return;
 			try {
 				const target = await fs.resolve(file());
@@ -133,6 +141,9 @@ function createSessionPersist(ctx, dirSource) {
 		}
 	};
 }
+// Exported for unit tests: the lazy fs resolution is a behavior contract
+// (apply-time capture raced service startup and silently disabled persistence).
+export { createSessionPersist as __createSessionPersistForTests };
 
 /** Run one subprocess argv and return { exitCode, stdout, stderr }. */
 async function runCommand(ctx, argv, signal) {

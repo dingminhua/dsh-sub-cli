@@ -64,6 +64,43 @@ test("dispatch records a deterministic rejection for an unchecked capability", a
 	assert.equal(done.session.status, "ready");
 });
 
+test("a failed dispatch releases the driver run and keeps the thread for reattach", async () => {
+	// Regression (2026-09-05): the catch path kept record.run alive, so an
+	// interrupted Codex app-server outlived its failed record — every relay
+	// retry then spawned a SECOND process while the first kept idling.
+	let disposed = 0;
+	let attachInput;
+	let startCalls = 0;
+	const driver = { async start(input) {
+		attachInput = input;
+		startCalls++;
+		return {
+			remoteSessionId: "thread-fail",
+			// Only the first (dispatch) call rejects; the reattach call must
+			// hand back a settled result so the test itself never leaks an
+			// unhandled rejection.
+			result: startCalls === 1
+				? Promise.reject(new Error("Codex turn interrupted"))
+				: Promise.resolve({ threadId: "thread-fail", stopReason: "attached" }),
+			async followup() { return { threadId: "thread-fail", text: "again", stopReason: "completed" }; },
+			async interrupt() { return true; },
+			async dispose() { disposed++; }
+		};
+	} };
+	const service = new ManagedCliAgentsService({ _skipAssert: true, drivers: { codex: driver } });
+	await assert.rejects(() => service.dispatch({ cwd: "/repo", prompt: "first" }), /interrupted/);
+	// The subprocess is released exactly once, and the record survives the
+	// failure with its remote thread id so the next turn can reattach.
+	assert.equal(disposed, 1);
+	const [session] = service.list();
+	assert.equal(session.status, "failed");
+	assert.equal(session.remoteSessionId, "thread-fail");
+	const again = await service.followup(session.sessionId, "second");
+	assert.equal(again.session.remoteSessionId, "thread-fail");
+	assert.equal(attachInput.attachOnly, true);
+	assert.equal(attachInput.resumeThreadId, "thread-fail");
+});
+
 test("relay child permission request is answered deterministically and recorded", async () => {
 	const childAgent = { session: { id: "child-agent" } };
 	const parentAgent = { session: { id: "parent-agent" } };

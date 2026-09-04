@@ -92,8 +92,14 @@ export class JsonRpcLineWire {
 			return;
 		}
 		if (typeof message.method === "string" && message.id !== undefined) {
-			const respond = (result) => this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`);
-			const reject = (error) => this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: asError(error).message } })}\n`);
+			// A reply that cannot be delivered means the app-server died between
+			// sending the request and our write landing. That must never surface
+			// as an unhandled rejection: the DSH host is fail-loud, so one EPIPE
+			// here takes the whole process down with every live session
+			// (observed 2026-09-05 — one dying CLI subprocess crashed the host).
+			// The transport close settles the active turn with the real error.
+			const respond = (result) => Promise.resolve(this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`)).catch(() => {});
+			const reject = (error) => Promise.resolve(this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: asError(error).message } })}\n`)).catch(() => {});
 			for (const listener of [...this.inboundListeners]) {
 				try {
 					if (listener(message.method, message.params ?? {}, { respond, reject }) === true) return;

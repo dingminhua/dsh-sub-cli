@@ -618,3 +618,34 @@ host 重启加载 `f9ca22e` 后，qwen 首跑不再报写拒绝，但暴露出**
 **测试**：+2（0.1.2 通道：全局 guard 收到 relay guard、bound child 受 allowlist 约束而其他 agent/agentless 放行；无通道时 fail-loud 抛错），既有 guard 测试的 service mock 补 `isRelayChild`。**231/231 全绿**。
 
 **遗留（记录在案，不属本插件）**：`subagent` 工具在 own-layer 豁免下对 relay child 可见是上游 `view()` 设计的延续（保 report 机制工具的代价）——本插件的执行层 guard 是必要自卫，值得随发现 8 一并向 DSH 上游反馈。
+
+## 实测记录（第十八轮，2026-09-05，Windows，供应商故障实战 + 修复后全流程）
+
+### 背景：事故与修复（发现 10/11/12）
+
+首轮发起（2026-09-05 00:00 前后）撞上 **zzztoken-ds / deepseek-v4-flash 供应商整段故障**（同主机的 zzztoken-pro 路由正常——本会话主控即跑在该路由），三阶段中断并暴露三个存量缺陷（修复与单测详见 CHANGELOG「供应商故障引发的三连缺陷」）：
+
+1. **发现 10（致命）**：Codex relay 首轮 submit 挂满 5 分钟轮次超时被中断后，relay 重试的第二次 `managed_cli_submit` 永久 pending；00:08:33 host 日志出现 `write EPIPE`（栈指向 `subprocess-transport.js` 的 stdin write）——JsonRpcLineWire 对不支持的服务端请求回写 `void reject(...)` 未接住 write rejection，DSH host fail-loud 直接 exit(1)，**一个垂死 CLI 子进程击穿整个 host**，全部活会话随进程死亡（后续 relay 重试全部落空）。host 于 00:08:36 自动重启。
+2. **发现 11**：dispatch 失败路径不释放 `record.run`——被中断的 Codex app-server 泄漏存活，与 relay 重试新 spawn 的进程并存（统一目录两个 rollout 文件为证）。
+3. **发现 12**：`createSessionPersist` 的 apply 时 `ctx.get("fs")` 一次性捕获与 fs 服务启动竞态——输了则 sessions.json 永不落盘（磁盘无此文件实证），host 重启后会话全丢。
+
+**修复**：EPIPE 回执接住 + 失败 dispatch 释放 run（保留线程可 reattach）+ fs 每次 save/load 懒解析；+3 回归测试，**234/234 全绿**。用户另将 `turnTimeoutMinutes` 调至 3 分钟。
+
+### 修复后完整三阶段（03:02–03:13，host 3:00:18 启动加载修复后）
+
+环境：同机 Windows；codex 0.152.1 / claude 2.1.258；路由 zzztoken-ds / deepseek-v4-flash（供应商已恢复，双 `cli_test` 全绿后开跑）；两 CLI 可执行档；新暗号 21B/22B（旧暗号已随事故 transcript 泄露，全轮更换）。
+
+| 阶段 | Codex | Claude |
+|---|---|---|
+| 一、写入（relay 并行） | ✅ 21B 逐字节精确（SHA256 与主控期望逐位一致、末字节 0x4F） | ✅ 22B 逐字节精确（SHA256 一致、末字节 0x54） |
+| 二、互读（direct 2×2） | ✅ 双文件复述逐字精确 | ✅ 双文件复述逐字精确 |
+| 三、交叉删除（relay 并行） | ✅ 删对方文件 + Test-Path 确认 | ✅ 删对方文件 + Test-Path 确认 |
+
+终检：`verification/` 空、无 `.bak`/`.orig`、新旧 4 暗号全工作区零命中、git 无新增测试文件外残留。
+
+### 本轮结论
+
+1. **发现 8/9 的修复在 Windows 首次真机验证通过**（此前 15/16 轮为 macOS）：全部 4 个 relay 会话工具序列干净（`managed_cli_submit` → `report`，零转包）。
+2. **发现 12 的修复实测生效**：sessions.json 首次真实落盘，host 重启后 relay 会话正确 reattach（写入与删除阶段为不同子代理，续接正常）。
+3. **供应商故障下的行为改善（对照事故轮）**：健康轮全链路干净；故障轮（事故实测）relay 重试快速失败、如实回报、host 不再崩溃、进程不泄漏——三连缺陷全部闭环。
+4. 流程纪律追加：**供应商故障是「停 + 请示」场景**（前置条件 4 的运行时形态）——事故轮 `cli_test` 被打断（`tool call aborted`）即中断验证、先修 bug，不得对故障供应商反复重试消耗轮次。

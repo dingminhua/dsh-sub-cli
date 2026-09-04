@@ -316,6 +316,14 @@ export class ManagedCliAgentsService {
 			return { session: snapshot(record), output: settled.text || "", stopReason: settled.stopReason ?? "completed" };
 		} catch (error) {
 			record.remoteSessionId = record.run?.remoteSessionId ?? record.remoteSessionId;
+			// Release the turn's subprocess so a failed dispatch does not leak a
+			// live app-server (observed 2026-09-05: the interrupted Codex
+			// app-server outlived its failed record and kept a second process
+			// company). Keep the record and remote thread id so a later
+			// followup reattaches the same thread instead of starting over.
+			const failedRun = record.run;
+			record.run = null;
+			void failedRun?.dispose?.().catch(() => {});
 			record.status = signal?.aborted ? "interrupted" : "failed";
 			record.activeTurn = false;
 			record.lastError = error instanceof Error ? error.message : String(error);

@@ -96,6 +96,32 @@ test("JsonRpcLineWire rejects unsupported inbound server requests", async () => 
 	await wire.dispose();
 });
 
+test("inbound-request replies that cannot be delivered never become unhandled rejections (EPIPE)", async () => {
+	// Regression (2026-09-05): an app-server that dies right after sending an
+	// unsupported request left the reply write rejecting with nobody listening.
+	// The DSH host is fail-loud — one such EPIPE crashed the whole process and
+	// every live session with it. Replies to a dead peer must be swallowed.
+	const unhandled = [];
+	const onUnhandled = (reason) => unhandled.push(reason);
+	process.on("unhandledRejection", onUnhandled);
+	try {
+		const transport = new FakeTransport(() => {});
+		const writeThrough = transport.write.bind(transport);
+		transport.write = (text) => {
+			writeThrough(text);
+			return Promise.reject(new Error("write EPIPE"));
+		};
+		const wire = new JsonRpcLineWire({ transport, requestTimeoutMs: 1000 });
+		transport.emit({ jsonrpc: "2.0", id: 93, method: "unknown/request", params: {} });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await wire.dispose();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		assert.equal(unhandled.length, 0);
+	} finally {
+		process.off("unhandledRejection", onUnhandled);
+	}
+});
+
 test("Codex driver bridges a permission request and resumes the same turn", async () => {
 	let approvalResponse;
 	const transport = new FakeTransport((message, target) => {

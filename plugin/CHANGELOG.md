@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **供应商故障引发的三连缺陷（第十八轮实战发现，2026-09-05，Windows）**：中转供应商（zzztoken-ds）整段故障期间，relay 子代理重试链路暴露三个存量 bug，全部修复：
+  1. **Codex app-server 回执 write 的 EPIPE 击穿整个 host（致命）**：`JsonRpcLineWire` 对不支持的服务端请求回写错误响应时，`void reject(...)` 丢弃了 write promise——CLI 子进程在请求与回写之间死亡时，回书写入死管道触发 unhandledRejection，DSH host 的 fail-loud 设计直接 `exit(1)`，**一个垂死的 CLI 子进程带走全部活会话**（实证：dsh-09-05 日志 EPIPE 后 3 秒出现新 run banner，host 自动重启，两个 relay 的重试调用永久 pending）。修复：respond/reject 回执统一 `Promise.resolve(...).catch(() => {})` 吞掉送达失败——对端已死时回书写不进去是预期情形，活动 turn 由 transport close 以真实错误 settle。
+  2. **dispatch 失败路径泄漏驱动子进程**：`managed-cli-agents.js` 的 catch 只记状态不释放 `record.run`——被轮次超时中断的 Codex app-server 继续存活（实证：事故期间统一目录出现两个 rollout 文件并存），relay 重试再 spawn 第二个进程。修复：失败时 fire-and-forget dispose 释放 run，保留 record 与 remoteSessionId，后续 followup 走 reattach 续接同一线程而非另起炉灶。
+  3. **sessions.json 持久化被 apply 时序竞态静默禁用**：`createSessionPersist` 在 apply 时一次性 `ctx.get("fs")`，而 `fs` 不在 inject（可选依赖，兼容无 fs 部署）——启动竞态输了就整个进程生命周期 load/save 双双 no-op（实证：磁盘上 sessions.json 从未生成，host 重启后 relay 会话全部丢失）。修复：fs 改为每次 save/load 时懒解析（对齐 `verify.js` 既有模式），服务迟到/缺席都能正确降级或恢复。
+  +3 回归测试（EPIPE 回执零 unhandledRejection / 失败 dispatch 释放且线程可 reattach / fs 懒解析三态），**234/234 全绿**。修复后行为：供应商故障时 relay 重试快速失败并如实回报（不再拖满超时 + 炸 host + 永久挂起）。
+
 ### Removed
 
 - **standalone e2e 脚本整体删除（2026-09-04，端到端测试方式定案）**：`plugin/e2e-live.mjs`（连同 `package.json` 的 `test:live` 入口）与根目录 `verify-matrix/`（battle-e2e.mjs / run-e2e.mjs / set-permission.mjs）全部移除。原因：直启 CLI 进程的 standalone 脚本在真实会话里会让进程卡死（实测观察），且绕过 harness 工具层——权限门控、审计留痕、会话管理均不在其覆盖内。端到端验证唯一入口改为 `plugin/VERIFICATION-FLOW.md` 三阶段流程，由主控在 DSH 会话里用插件注册的工具真实驱动（`cli_<cli>_subagent` 写入/删除、`cli_<cli>_direct` 读取核对，主控磁盘逐字节校验）。单测不受影响（`node --test test/*.test.mjs` 从未包含 e2e-live），npm pack 产物原本就不含这些文件，发布面零变化。
