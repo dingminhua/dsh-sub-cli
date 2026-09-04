@@ -1,6 +1,6 @@
 url: https://github.com/dingminhua/dsh-sub-cli/tree/main/plugin
 name: dingminhua/dsh-sub-cli#plugin
-category: cli
+category: tools
 description:
-  en: Manages external Agent CLIs in DSH with an isolated unified directory, three-layer per-CLI model routes, an unref'd-turn-deadline guard (round-15/17/18), and headless dispatch plus Relay/Subagent child sessions that survive Host restarts.
-  zh: 在 DSH 中统一管理外部 Agent CLI：独立统一目录、每 CLI 三层模型路由（Provider/模型/推理强度）、无头派发（cli_dispatch）与 Relay 子代理（两档权限，2 CLI：Codex/Claude Code），turn-deadline 守卫与持久化会话在 Host 重启后 reattach 同一 thread。
+  en: Install and call external Agent CLIs (Codex, Claude Code) from DSH without touching the system install. Each CLI gets its own Provider, model, reasoning effort and permission preset, callable directly or as a native subagent.
+  zh: 在 DSH 中安装并调用外部 Agent CLI（Codex、Claude Code），与系统原生安装完全隔离。每个 CLI 可独立预设 Provider、模型、推理强度与权限，既能像普通工具一样调用，也能像原生子代理一样被主控调度。
