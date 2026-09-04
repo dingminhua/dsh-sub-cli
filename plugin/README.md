@@ -179,4 +179,4 @@ npm pack --dry-run
 
 ## Licence
 
-[MIT](LICENSE)
+本项目采用 MIT 许可证，版权归属：Copyright (c) 2026 LaoDing。详见 [LICENSE](LICENSE)。

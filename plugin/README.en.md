@@ -163,4 +163,4 @@ The open-source projects referenced here, together with their licenses and compl
 
 ## Licence
 
-[MIT](LICENSE)
+This project is licensed under the MIT License, Copyright (c) 2026 LaoDing. See [LICENSE](LICENSE).

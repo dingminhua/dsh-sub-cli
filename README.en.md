@@ -123,4 +123,4 @@ The captain's on-disk byte check is the only verdict (CLI self-reports are not t
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License, Copyright (c) 2026 LaoDing. See [LICENSE](LICENSE).

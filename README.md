@@ -120,4 +120,4 @@ cd plugin && npm pack --dry-run
 
 ## License
 
-[MIT](LICENSE)
+本项目采用 MIT 许可证，版权归属：Copyright (c) 2026 LaoDing。详见 [LICENSE](LICENSE)。
