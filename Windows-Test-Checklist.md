@@ -2,18 +2,19 @@
 
 > 适用于 Windows 10/11，由 Windows AI 执行。macOS 的等效验证参考 `plugin/VERIFICATION-FLOW.md` 三阶段（主控用 cli_* 工具直调；2026-09-04 起 standalone e2e 脚本已删除）。
 >
-> **测试前先 `git pull`，确保测的是最新 main（≥ b2fe1c4，含权限统一 + reattach 修复）。**
+> **Qwen Code 支持已于 2026-09 移除（实测可靠性不足）；托管 CLI 为 Codex 与 Claude Code 两家，本清单已按双 CLI 收敛。**
+>
+> **测试前先 `git pull`，确保测的是最新 main（≥ a46d576，含发现 9 的 guard 重锚定）。**
 
 ---
 
 ## 前置条件
 
 1. **Node.js ≥ 20**（含 `node --test`）
-2. **已安装三个 CLI**：
+2. **已安装两个 CLI**：
    ```
    codex   → %USERPROFILE%\dsh-clis\bin\codex.cmd
    claude  → %USERPROFILE%\dsh-clis\bin\claude.cmd
-   qwen    → %USERPROFILE%\dsh-clis\bin\qwen.cmd
    ```
 3. **已配置 DSH 凭据** `%USERPROFILE%\.dsh\.credentials.yaml`
 4. **插件已启用**（`dsh-sub-cli` 目录在插件扫描路径内）
@@ -28,7 +29,7 @@ npm install
 npm test
 ```
 
-**预期：234/234 全绿**（含 `winShimArgv` 的 .cmd shim 包装测试——Windows 特有逻辑的单测覆盖）。
+**预期：231/231 全绿**（含 `winShimArgv` 的 .cmd shim 包装测试——Windows 特有逻辑的单测覆盖）。
 任何红项直接停，不用往下测。
 
 ---
@@ -42,7 +43,7 @@ npm test
 - API key 注入正确
 - 能连通上游
 
-> 凭据以 `~/.dsh/settings.yaml` 里 `dsh-sub-cli.models.<cli>` 配的 provider/model 为准（macOS 侧当前：codex=k3-baoyue/kimi-k3、claude/qwen=aixforge/deepseek-v4-flash），不要照抄本文示例的旧模型名。
+> 凭据以 `~/.dsh/settings.yaml` 里 `dsh-sub-cli.models.<cli>` 配的 provider/model 为准（macOS 侧当前：codex=k3-baoyue/kimi-k3、claude=aixforge/deepseek-v4-flash），不要照抄本文示例的旧模型名。
 
 #### 1.1 Codex
 ```powershell
@@ -66,26 +67,13 @@ $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\dsh-clis\config-claude"
 # 预期：stdout 包含 "OK"，exit code 0
 ```
 
-#### 1.3 Qwen Code
-```powershell
-$env:QWEN_HOME = "$env:USERPROFILE\dsh-clis\config-qwen"
-# API key / base URL 按 settings.yaml 里所选 provider 填
-
-# ⚠️ Qwen 的 prompt 不能作为位置参数（会报 unknown argument）：
-#   --prompt 是无值标志，启用 stdin 输入模式；文本经 stdin 写入
-"Reply with exactly: OK" | & "$env:USERPROFILE\dsh-clis\bin\qwen.cmd" -p --output-format stream-json --prompt --model <provider的模型>
-
-# 预期：stdout 为 stream-json，result 字段含 "OK"，exit code 0
-# （driver 实测契约：--prompt 无值 + stdin；macOS 六轮 E2E 均按此跑通）
-```
-
-**阶段 1 通过标准**：三个 CLI 都 exit 0 且输出含 "OK"。
+**阶段 1 通过标准**：两个 CLI 都 exit 0 且输出含 "OK"。
 
 ---
 
 ### 阶段 2：交互式会话（两轮验证）
 
-验证 CLI 能维持会话状态、followup 复用同一 session。
+验证 CLI 能维持会话状态、followup 复用同一 session（Claude 的持续会话走 stream-json + `--resume` 文件级持久化；Codex 的持续会话由 app-server 长连接承载，在阶段 3 的插件集成里验证）。
 
 #### 2.1 Claude Code 两轮会话
 
@@ -108,31 +96,7 @@ Write-Host "Round 2: $out2"
 # 预期：两轮都有成功 result，session id 相同
 ```
 
-#### 2.2 Qwen Code 两轮会话
-
-```powershell
-$env:QWEN_HOME = "$env:USERPROFILE\dsh-clis\config-qwen"
-# API key / base URL 按 settings.yaml 里所选 provider 填
-
-# 生成 session id
-$sid = [guid]::NewGuid().ToString()
-
-# 第一轮（--prompt 无值标志 + stdin 传文本）
-$out1 = "Reply with exactly: OK" | & "$env:USERPROFILE\dsh-clis\bin\qwen.cmd" -p --output-format stream-json --prompt --session-id $sid --model <provider的模型>
-Write-Host "Round 1: $out1"
-
-# 提取 Qwen 实际的 session id（用于 followup）
-$qwen_sid = ($out1 -split "`n" | ForEach-Object { $_ | ConvertFrom-Json -EA SilentlyContinue } | Where-Object { $_.session_id } | Select-Object -First 1).session_id
-Write-Host "Qwen session: $qwen_sid"
-
-# 第二轮（用 Qwen 实际的 session id + --resume，同样 --prompt + stdin）
-$out2 = "Second prompt" | & "$env:USERPROFILE\dsh-clis\bin\qwen.cmd" -p --output-format stream-json --prompt --resume $qwen_sid --model <provider的模型>
-Write-Host "Round 2: $out2"
-
-# 预期：两轮都有成功 result
-```
-
-**阶段 2 通过标准**：两个 CLI 的两轮都 exit 0，输出非空。
+**阶段 2 通过标准**：Claude Code 的两轮都 exit 0，输出非空且 session id 一致。
 
 ---
 
@@ -160,9 +124,8 @@ Write-Host "Round 2: $out2"
 ## 已知限制
 
 1. **Codex**：需要 settings.yaml 里配置的有效 provider（当前 macOS 侧为 k3-baoyue/kimi-k3；Codex 客户端要求 base_url 带 `/v1`，且供应商须支持 responses 协议含工具续接）。若 provider 不支持会报 "Upstream rejected the request"。
-2. **Qwen**：session 文件存在 `%QWEN_HOME%\.qwen\` 目录；多次 followup 时 `--resume` 使用 Qwen 返回的真实 session id，而非 driver 生成的 id。
-3. **Windows 路径**：所有路径用 `%USERPROFILE%` 或 `$env:USERPROFILE`，避免空格问题。
-4. **供应商噪声**：偶发空回复 / 复述截断取决于所配中转商，插件层有探测与有界重试兜底；e2e 判定以结构断言为准，不苛求每个字。
+2. **Windows 路径**：所有路径用 `%USERPROFILE%` 或 `$env:USERPROFILE`，避免空格问题。
+3. **供应商噪声**：偶发空回复 / 复述截断取决于所配中转商，插件层有探测与有界重试兜底；e2e 判定以结构断言为准，不苛求每个字。
 
 ---
 
@@ -174,35 +137,24 @@ Write-Host "Round 2: $out2"
 # === 参数配置（以 ~/.dsh/settings.yaml 的 dsh-sub-cli.models 为准） ===
 $CODEX_MODEL = "kimi-k3"            # codex 当前 provider 模型
 $CLAUDE_MODEL = "deepseek-v4-flash" # claude 当前 provider 模型
-$QWEN_MODEL = "deepseek-v4-flash"   # qwen 当前 provider 模型
 
 $env:AIXFORGE_API_KEY = "你实际的 API key"
 
 $codex_ok = $false
 $claude_ok = $false
-$qwen_ok = $false
 
 # === Claude Code ===
 $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\dsh-clis\config-claude"
-Write-Host "[1/3] Testing Claude Code..."
+Write-Host "[1/2] Testing Claude Code..."
 try {
     $r = & "$env:USERPROFILE\dsh-clis\bin\claude.cmd" -p --output-format text --model $CLAUDE_MODEL "Reply with exactly: OK" 2>&1
     if ($LASTEXITCODE -eq 0 -and ($r -match "OK")) { $claude_ok = $true; Write-Host "  PASS" }
     else { Write-Host "  FAIL: exit=$LASTEXITCODE output=$r" }
 } catch { Write-Host "  FAIL: $_" }
 
-# === Qwen Code ===
-$env:QWEN_HOME = "$env:USERPROFILE\dsh-clis\config-qwen"
-Write-Host "[2/3] Testing Qwen Code..."
-try {
-    $r = "Reply with exactly: OK" | & "$env:USERPROFILE\dsh-clis\bin\qwen.cmd" -p --output-format stream-json --prompt --model $QWEN_MODEL 2>&1
-    if ($LASTEXITCODE -eq 0 -and ($r -match "OK")) { $qwen_ok = $true; Write-Host "  PASS" }
-    else { Write-Host "  FAIL: exit=$LASTEXITCODE output=$r" }
-} catch { Write-Host "  FAIL: $_" }
-
 # === Codex ===
 $env:CODEX_HOME = "$env:USERPROFILE\dsh-clis\config-codex"
-Write-Host "[3/3] Testing Codex..."
+Write-Host "[2/2] Testing Codex..."
 try {
     $r = & "$env:USERPROFILE\dsh-clis\bin\codex.cmd" exec --json --skip-git-repo-check -m $CODEX_MODEL "Reply with exactly: OK" 2>&1
     if ($LASTEXITCODE -eq 0 -and ($r -match "OK")) { $codex_ok = $true; Write-Host "  PASS" }
@@ -213,7 +165,6 @@ try {
 Write-Host ""
 Write-Host "=== 结果汇总 ==="
 Write-Host "Claude Code : $(if($claude_ok){'✅ PASS'}else{'❌ FAIL'})"
-Write-Host "Qwen Code  : $(if($qwen_ok){'✅ PASS'}else{'❌ FAIL'})"
 Write-Host "Codex      : $(if($codex_ok){'✅ PASS'}else{'❌ FAIL'})"
 ```
 
@@ -225,8 +176,6 @@ Write-Host "Codex      : $(if($codex_ok){'✅ PASS'}else{'❌ FAIL'})"
 
 | 症状 | 可能原因 |
 |------|---------|
-| exit 1，stderr "No input provided via stdin" | Qwen 缺 `--prompt` flag |
-| exit 1，stderr "Unknown argument: cwd" | Qwen 被传了 `--cwd`，应移除 |
-| exit 1，stderr "Missing API key" | 环境变量未正确注入（检查 `QWEN_HOME` 等路径） |
-| exit 1，stderr "Upstream rejected the request" | Provider 不支持该模型名 |
-| 挂起不返回 | stdin 未关闭（Qwen 需要 `stdin.end()` 才能知道 prompt 写完） |
+| exit 1，stderr "Missing API key" | 环境变量未正确注入（检查 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` 指向与 config 内凭据） |
+| exit 1，stderr "Upstream rejected the request" | Provider 不支持该模型名或所需协议（Codex 须支持 responses 含工具续接） |
+| 挂起不返回 | 子进程的 stdin 未关闭；driver 层由 turn-timeout 探测兜底（静默 60 秒判卡死） |
