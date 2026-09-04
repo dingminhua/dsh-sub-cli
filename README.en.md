@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/dsh-sub-cli-usage-card.png" width="860" alt="dsh-sub-cli settings panel" />
+</p>
+
 # dsh-sub-cli
 
 <p align="center">
