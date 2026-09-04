@@ -5,17 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-09-05
+
+首次发布。提供在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的能力——把 Codex 与 Claude Code 集中到独立目录、配置隔离、三层模型路由（Provider / 模型 / 推理强度）、无头派发与 Relay/Subagent 持续会话，turn-deadline 守卫与持久化会话在 Host 重启后 reattach 同一 thread。
+
+### Added
+
+- 核心架构：宿主页 `lib/index.js`（设置持久化、18 个模型工具注册、dsh-tools 集成）；客户端 `lib/client.js`（设置卡 Provider/模型/推理强度/两档权限下拉/autoContinue/超时 + 每 CLI 生命周期按钮）。
+- 两 CLI 持续会话（Codex app-server 长连接 / Claude stream-json + `--resume` 持久化）：首轮 `cli_<cli>_direct` 返回稳定 sessionId，后续 `cli_<cli>_followup` 重新进入同一 thread；Host 重启后 sessions.json 落盘 reattach 同一 thread。
+- Relay 子代理：`cli_<cli>_subagent` 创建 DSH continuable child，任务通过 `managed_cli_submit` 转发给真实 CLI，`send_message` 续接、`interrupt_agent` 中断；执行层硬 allowlist guard（managed_cli_submit / report 之外一律拒绝），三通道 fail-loud（≤0.1.1 / 0.1.2+ / 都没有则抛错拒绝启动）。
+- 无头派发：`cli_dispatch` 用 argv 数组执行 CLI，避免 shell 字符串拼接，处理超时、输出上限、退出码与 stderr；`turnTimeoutMs` 静默探测（3/5/10 分钟档，默认 5，连续 60 秒静默判卡死）。
+- 自动续接（autoContinue）：turn 提前收尾自动追问直到拿完整结果；`max` 配置（默认 3，0 = 关闭）。
+- Windows 兼容：`winShimArgv` 把 `%USERPROFILE%` 内的 .cmd shim 包装成可 spawn 的绝对路径 argv。
+- 探测分类：HTTP 协议失败六态化（completed / http-rejected / transient / incomplete / timeout / network-error），瞬态失败明确建议"稍后重试、路由没问题"，不要"更换供应商"。
+- 设置验证提示：「请在设置卡重新验证，host 层写入不受会话沙箱限制」取代裸错。
+- 配置隔离：启动时 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` 指向统一目录内配置，不触碰系统默认路径。
+- npm pack 36 文件 / 353KB（含 screenshots.json + assets/dsh-sub-cli-usage-card.png）。
 
 ### Fixed
 
-- **供应商故障引发的三连缺陷（第十八轮实战发现，2026-09-05，Windows）**：中转供应商（zzztoken-ds）整段故障期间，relay 子代理重试链路暴露三个存量 bug，全部修复：
+- 供应商故障引发的三连缺陷（第十八轮实战发现，2026-09-05，Windows）：中转供应商（zzztoken-ds）整段故障期间，relay 子代理重试链路暴露三个存量 bug，全部修复：
   1. **Codex app-server 回执 write 的 EPIPE 击穿整个 host（致命）**：`JsonRpcLineWire` 对不支持的服务端请求回写错误响应时，`void reject(...)` 丢弃了 write promise——CLI 子进程在请求与回写之间死亡时，回书写入死管道触发 unhandledRejection，DSH host 的 fail-loud 设计直接 `exit(1)`，**一个垂死的 CLI 子进程带走全部活会话**（实证：dsh-09-05 日志 EPIPE 后 3 秒出现新 run banner，host 自动重启，两个 relay 的重试调用永久 pending）。修复：respond/reject 回执统一 `Promise.resolve(...).catch(() => {})` 吞掉送达失败——对端已死时回书写不进去是预期情形，活动 turn 由 transport close 以真实错误 settle。
   2. **dispatch 失败路径泄漏驱动子进程**：`managed-cli-agents.js` 的 catch 只记状态不释放 `record.run`——被轮次超时中断的 Codex app-server 继续存活（实证：事故期间统一目录出现两个 rollout 文件并存），relay 重试再 spawn 第二个进程。修复：失败时 fire-and-forget dispose 释放 run，保留 record 与 remoteSessionId，后续 followup 走 reattach 续接同一线程而非另起炉灶。
   3. **sessions.json 持久化被 apply 时序竞态静默禁用**：`createSessionPersist` 在 apply 时一次性 `ctx.get("fs")`，而 `fs` 不在 inject（可选依赖，兼容无 fs 部署）——启动竞态输了就整个进程生命周期 load/save 双双 no-op（实证：磁盘上 sessions.json 从未生成，host 重启后 relay 会话全部丢失）。修复：fs 改为每次 save/load 时懒解析（对齐 `verify.js` 既有模式），服务迟到/缺席都能正确降级或恢复。
   +3 回归测试（EPIPE 回执零 unhandledRejection / 失败 dispatch 释放且线程可 reattach / fs 懒解析三态），**234/234 全绿**。修复后行为：供应商故障时 relay 重试快速失败并如实回报（不再拖满超时 + 炸 host + 永久挂起）。
+- 驱动层 turn-deadline 定时器 unref 语义修正：RPC 超时、turn deadline、`watchTurnDeadline` 再探测共 5 处定时器此前全部 `unref()`——unref 的定时器不让事件循环存活，当传输层无其它句柄（FakeTransport 单测、或宿主空闲）时循环排空、探测永不触发，被 await 的 turn promise 无限悬挂（Node 22/20 的 node:test 报 `Promise resolution is still pending but the event loop has already resolved`；Node 25 因 test runner 自持句柄而幸免——本地全绿掩盖了此问题，CI 从未绿过）。修正为**保留引用**：挂起中的探测是真实待办工作，进程应等它出结论；已核对每条 settle 路径（RPC 应答/close、turn finish、watch stop）均 clearTimeout，不可能泄漏拖住宿主。本地 Node 22.23.2 对照复现：修复前 codex-app-server-driver + turn-timeout 16 个测试与 CI 同名失败，修复后 231/231 全绿。
+- DSH 上游 0.1.2-rc.1 兼容：relay guard 重新锚定（第十七轮发现 9，高危）：上游子代理运行时重写，`registerContinuableSetup` 与 `setupRegistry` 整体移除，provider 不再有进入 child scope 的钩子——第十五轮的执行层 guard 在 0.1.2-rc.1 宿主上**静默失效**（条件式安装判断为 false 直接跳过）。同时实测证实：即便上游已把 `tools.restrict` 修为过滤所有祖先层，preset 的 `subagent` 工具注册在 child 自己的 agent-plane 层、豁免于 restriction，relay child 的 LLM 请求工具面仍含 `subagent`——转包越权路径重新敞开。修复：guard 安装改为三通道 fail-loud——≤0.1.1 走原 `registerContinuableSetup`；0.1.2+ 改用 plain-context `ctx.tools.guard()`（全局 guard，作用于进程内所有 agent），作用域靠新增的 `service.isRelayChild()` binding 谓词收敛（binding 在 `prepareContinuable` 写入、早于任何工具执行，冷启动即受控；主控/其他子代理/无 agent exec 一律放行）；两通道皆无则**抛错拒绝启动**，不再静默裸奔。
+- relay 子代理转包越权封堵（第十五轮发现 8，高危）：`toolFilter: {allow:[managed_cli_submit]}` 只是模型可见 schema 的掩蔽——preset 贡献的原生 `subagent` 工具仍对 relay 子代理可见，实测（只读档写入验证）Codex relay 把写入任务转包给孙代理，孙代理继承主控 `danger-full-access` 沙箱直接写盘（文件比 CLI spawn 早 21 秒），CLI 沦为橡皮图章、权限档被整体旁路。修复：`relay-subagent.js` 的 `registerContinuableSetup` guard 升级为**执行层硬 allowlist**——`managed_cli_submit` 与 `report` 之外的一切工具调用（含 `subagent`/`write`/`bash`/`run_code`/无名 exec）一律拒绝并给出可行动指引；guard 在每次工具执行时运行且不可被其他 guard 强制放行，转包链在第一跳即被切断。persona 同步明示「re-delegation 在执行层被拒绝」。
 
 ### Removed
+
+- standalone e2e 脚本整体删除（2026-09-04，端到端测试方式定案）：`plugin/e2e-live.mjs`（连同 `package.json` 的 `test:live` 入口）与根目录 `verify-matrix/`（battle-e2e.mjs / run-e2e.mjs / set-permission.mjs）全部移除。原因：直启 CLI 进程的 standalone 脚本在真实会话里会让进程卡死（实测观察），且绕过 harness 工具层——权限门控、审计留痕、会话管理均不在其覆盖内。端到端验证唯一入口改为 `plugin/VERIFICATION-FLOW.md` 三阶段流程，由主控在 DSH 会话里用插件注册的工具真实驱动（`cli_<cli>_subagent` 写入/删除、`cli_<cli>_direct` 读取核对，主控磁盘逐字节校验）。单测不受影响（`node --test test/*.test.mjs` 从未包含 e2e-live），npm pack 产物原本就不含这些文件，发布面零变化。
+- Qwen Code 支持整体移除（2026-09 产品决策，breaking）：托管 CLI 收敛为 Codex 与 Claude Code 两家。依据：① 实测可靠性不足——stream-json 无头模式不发 tool_use 事件（驱动层拦截是死代码），权限模型整体依赖 settings.json 单一 `tools.approvalMode` 键且被 CLI 启动时自行迁移重写（语义门反复判 stale），真机运行多次瞬态失败；② 其联网搜索需独立付费 DashScope 搜索模型（已在联网调研中确认放弃）；③ 维护面与其价值不成比例。移除范围：`registry.js` qwen 条目、`drivers/qwen-stream-json.js` 及其测试、`QWEN_APPROVAL_METHODS`、`qwenSettings/qwenSettingsCurrent/qwenApprovalMode`、`probeOpenaiChatContinuation` 与 `findChatToolId`（openai-chat 协议探测）、`cli_qwen_direct`/`cli_qwen_subagent`/`cli_qwen_followup` 等全部工具、relay provider `managed-qwen-relay`、设置卡 Qwen 项、e2e-live 的 Qwen 段；测试从 254 收敛至 **228/228 全绿**。存量用户影响：settings 里的 `models.qwen`/`permissions.qwen` 键静默闲置（无副作用），统一目录的 `config-qwen/` 残留可手动删除。
+- 权限档位收敛为两档：只读 / 可执行（2026-09 简化，breaking）：中间的「工作区可写」档移除——第十二轮三档复测证明它是语义最含糊的档（Codex 在该档实际写不了文件（写路径是 exec_command，写依赖执行）；Claude 的 acceptEdits 边界比"仅写文件"宽（发现 6：删除命令被静默自动接受执行））。两档新语义：**只读 = 只能看**；**可执行 = 能跑命令、写/删文件、装依赖**（CLI 沙箱：Codex `-s danger-full-access`、Claude `bypassPermissions`）。实现：`PERMISSION_PRESETS` 收敛为两项；`deriveSandboxMode` 简化为"任一变更能力 → 可执行档"；Claude argv 映射删 acceptEdits（plan/bypassPermissions 两态）；设置卡下拉两档。**存量兼容**：`workspace-write`/`danger-full-access` 字符串与任何含 write/exec/network 的 profile 归一化到可执行档（放宽不收紧）；纯 read profile 与未知字符串保持只读。README 档位语义同步重写。
+- 测试摩擦修复（2026-09 三档矩阵轮次暴露）：① `ensureCliProviderConfig` 的写失败现在识别**会话沙箱拒绝**（统一目录在调用方会话工作区外时）并给出可行动指引（"请在设置卡重新验证，host 层写入不受会话沙箱限制"），替代裸的 `cannot write ... under workspace-write mode`；② `cli_<cli>_direct` 工具描述补充两条实测语义——供应商瞬态失败"稍后重试即可、无需换供应商"、以及 Codex 写文件需「可调用工具」档（其写路径是 exec_command）+ 文件读写限当前工作区；③ plugin README 配置表补记三档矩阵实测语义（Codex 写依赖 exec、Claude/Qwen 可写档精确、删除依赖命令、cwd 边界）；④ 新增 `verify-matrix/run-e2e.mjs` 干净 e2e runner（分离 stderr，规避 PowerShell NativeCommandError 把 CLI stderr 噪音误报成 exit 1 的假阳性；该 runner 后已随 standalone e2e 整体退役删除，见上方 Removed 条目）。
+- cli_test 失败分类六态化（2026-09）：探测失败不再是"二选一"，而是 `completed / http-rejected / transient / incomplete / timeout / network-error` 六态（`classifyProbeFailure`）——**transient（429/5xx/超时/网络不通）绝不引导"更换供应商"**，改为"稍后重试、路由本身没问题"；只有确定性拒绝（认证/协议不支持）才建议更换（`probeOutcomeAdvice`）。`testCli` 的两个失败出口（CLI 运行失败、协议探测失败）按分类分流文案并携带 `outcome` 字段；`probeProtocolContinuation` 统一归一化 `toolContinuation` 为严格布尔并附 `outcome`。+5 测试（HTTP 状态映射/文本分类/文案分流铁律：瞬态不得建议换供应商），**254/254 全绿**。
 
 - **standalone e2e 脚本整体删除（2026-09-04，端到端测试方式定案）**：`plugin/e2e-live.mjs`（连同 `package.json` 的 `test:live` 入口）与根目录 `verify-matrix/`（battle-e2e.mjs / run-e2e.mjs / set-permission.mjs）全部移除。原因：直启 CLI 进程的 standalone 脚本在真实会话里会让进程卡死（实测观察），且绕过 harness 工具层——权限门控、审计留痕、会话管理均不在其覆盖内。端到端验证唯一入口改为 `plugin/VERIFICATION-FLOW.md` 三阶段流程，由主控在 DSH 会话里用插件注册的工具真实驱动（`cli_<cli>_subagent` 写入/删除、`cli_<cli>_direct` 读取核对，主控磁盘逐字节校验）。单测不受影响（`node --test test/*.test.mjs` 从未包含 e2e-live），npm pack 产物原本就不含这些文件，发布面零变化。
 
@@ -131,25 +155,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 在真实 Host（codex-cli 0.149.1 / zzztoken-glm / deepseek-v4-pro / max / danger-full-access）下，`npm run test:live` 全绿：三 CLI 真实运行 + 纯断言（别名移除、OK 回声容忍）+ Codex 双模式会话（直连 `dispatch` 与代理 `submitFromChild` 两轮同一 session 均输出完整）。
 - 此前手工验证：直连与代理各跑一次端到端（抓取 The Verge AI RSS 前 5 条），两种方式结果一致、内容完整；`cli_test` 实测 `reply: "OK\nOK\nOK\nOK"` 仍 `ok: true`（OK 回声容忍生效）。
 
-## [0.1.0] - 2026-08-25
-
-### Added
-
-- Host package `dsh-sub-cli` with a `cli_dispatch` model tool that runs an
-  installed external Agent CLI headless (argv array, config isolation env,
-  bounded output, exit code).
-- `installSettingsSection` persistence for the unified CLI dir and a per-CLI
-  three-layer model route (`provider` → `model` → `reasoningEffort`).
-- Client settings card (`settings.plugin.item`) that reads the live model
-  catalog via `api.llm.models`, configures the unified dir with a browse action,
-  and saves the per-CLI route to the `dsh-sub-cli` settings section.
-- Pure-logic modules: `registry.js` (CLI table + argv templates), `paths.js`
-  (unified dir + config isolation), `status.js` (install/version detection),
-  `dispatch.js` (headless subprocess dispatch).
-- Unit tests for registry, paths, status, and dispatch (14 tests).
-
-### Notes / planned
-
-- Check-install, unified-dir migration, and live per-CLI status UI are planned
-  and require `@Remote` host methods (typert) to reach the Client; they are not
-  part of this first release.
+## [Unreleased]
