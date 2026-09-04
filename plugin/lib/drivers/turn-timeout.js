@@ -109,8 +109,12 @@ export function watchTurnDeadline({ probe, onStalled, signal }) {
 					onStalled(result.reason);
 					return;
 				}
+				// Ref'd on purpose: a pending re-probe is live work whose verdict
+				// (stall detection) the caller is awaiting. Unref'ing it made the
+				// loop drain whenever the transport held no other handle, so the
+				// probe never ran and the awaited turn promise hung forever.
+				// stop() clears this timer on every settle path.
 				timer = setTimeout(tick, result.extendMs ?? DEFAULT_PROBE_GRACE_MS);
-				timer.unref?.();
 			})
 			.catch((error) => {
 				if (stopped) return;
@@ -123,7 +127,7 @@ export function watchTurnDeadline({ probe, onStalled, signal }) {
 		signal.addEventListener("abort", stop, { once: true });
 	}
 	// The deadline has already passed when the caller invokes this: probe now.
+	// Ref'd for the same reason as the re-probe timer above.
 	timer = setTimeout(tick, 0);
-	timer.unref?.();
 	return stop;
 }

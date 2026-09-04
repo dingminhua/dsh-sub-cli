@@ -218,7 +218,10 @@ function runTurn({ transport, prompt, timeoutMs, onPermissionRequest, signal }) 
 				}
 			});
 		}, timeoutMs);
-		timer.unref?.();
+		// Ref'd on purpose: the deadline probe is live work whose verdict the
+		// turn promise awaits, and finish() clears it on every settle path.
+		// Unref'ing it drained the loop whenever the transport held no other
+		// handle, so the stall check never ran and turns hung forever.
 		// stream-json requires one NDJSON line per message. The wire stays
 		// open so an interrupt can be sent later if the protocol grows
 		// the support for it; today the driver relies on process kill.

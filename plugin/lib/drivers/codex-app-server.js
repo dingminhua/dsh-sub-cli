@@ -113,11 +113,13 @@ export class JsonRpcLineWire {
 		if (this.closed) return Promise.reject(new Error("Codex JSON-RPC wire is closed"));
 		const id = ++this.sequence;
 		return new Promise((resolve, reject) => {
+			// Ref'd on purpose: this timeout is live work the RPC caller awaits;
+			// the reply path and close() both clear it. Unref'ing it let the
+			// loop drain with a pending RPC, hanging the await forever.
 			const timer = setTimeout(() => {
 				if (!this.pending.delete(id)) return;
 				reject(new Error(`Codex RPC ${method} timed out after ${this.requestTimeoutMs}ms`));
 			}, this.requestTimeoutMs);
-			timer.unref?.();
 			this.pending.set(id, { resolve, reject, timer });
 			Promise.resolve(this.transport.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`)).catch((error) => {
 				if (!this.pending.delete(id)) return;
@@ -377,7 +379,11 @@ class CodexAppServerSession {
 				// initial timer but this watcher owns its own timers.
 				promise.then(stopWatch, stopWatch);
 			}, this.timeoutMs);
-			timer.unref?.();
+			// The deadline timer is REF'D on purpose: the probe it schedules is
+			// live work whose verdict the turn promise awaits, and finish()
+			// clears it on every settle path. Unref'ing it drained the loop
+			// whenever the transport held no other handle, so the stall check
+			// never ran and the turn hung forever.
 		});
 		return promise;
 	}
