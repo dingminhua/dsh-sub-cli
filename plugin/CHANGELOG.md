@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **standalone e2e 脚本整体删除（2026-09-04，端到端测试方式定案）**：`plugin/e2e-live.mjs`（连同 `package.json` 的 `test:live` 入口）与根目录 `verify-matrix/`（battle-e2e.mjs / run-e2e.mjs / set-permission.mjs）全部移除。原因：直启 CLI 进程的 standalone 脚本在真实会话里会让进程卡死（实测观察），且绕过 harness 工具层——权限门控、审计留痕、会话管理均不在其覆盖内。端到端验证唯一入口改为 `plugin/VERIFICATION-FLOW.md` 三阶段流程，由主控在 DSH 会话里用插件注册的工具真实驱动（`cli_<cli>_subagent` 写入/删除、`cli_<cli>_direct` 读取核对，主控磁盘逐字节校验）。单测不受影响（`node --test test/*.test.mjs` 从未包含 e2e-live），npm pack 产物原本就不含这些文件，发布面零变化。
+
 ### Changed
 
 - **权限档位收敛为两档：只读 / 可执行（2026-09 简化，breaking）**：中间的「工作区可写」档移除——第十二轮三档复测证明它是语义最含糊的档（Codex 在该档实际写不了文件（写路径是 exec_command，写依赖执行）；Claude 的 acceptEdits 边界比"仅写文件"宽（发现 6：删除命令被静默自动接受执行））。两档新语义：**只读 = 只能看**；**可执行 = 能跑命令、写/删文件、装依赖**（CLI 沙箱：Codex `-s danger-full-access`、Claude `bypassPermissions`）。实现：`PERMISSION_PRESETS` 收敛为两项；`deriveSandboxMode` 简化为"任一变更能力 → 可执行档"；Claude argv 映射删 acceptEdits（plan/bypassPermissions 两态）；设置卡下拉两档。**存量兼容**：`workspace-write`/`danger-full-access` 字符串与任何含 write/exec/network 的 profile 归一化到可执行档（放宽不收紧）；纯 read profile 与未知字符串保持只读。README 档位语义同步重写。
@@ -21,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **测试摩擦修复（2026-09 三档矩阵轮次暴露）**：① `ensureCliProviderConfig` 的写失败现在识别**会话沙箱拒绝**（统一目录在调用方会话工作区外时）并给出可行动指引（"请在设置卡重新验证，host 层写入不受会话沙箱限制"），替代裸的 `cannot write ... under workspace-write mode`；② `cli_<cli>_direct` 工具描述补充两条实测语义——供应商瞬态失败"稍后重试即可、无需换供应商"、以及 Codex 写文件需「可调用工具」档（其写路径是 exec_command）+ 文件读写限当前工作区；③ plugin README 配置表补记三档矩阵实测语义（Codex 写依赖 exec、Claude/Qwen 可写档精确、删除依赖命令、cwd 边界）；④ 新增 `verify-matrix/run-e2e.mjs` 干净 e2e runner（分离 stderr，规避 PowerShell NativeCommandError 把 CLI stderr 噪音误报成 exit 1 的假阳性）。
+- **relay 子代理转包越权封堵（第十五轮发现 8，高危，2026-09-04）**：`toolFilter: {allow:[managed_cli_submit]}` 只是模型可见 schema 的掩蔽——preset 贡献的原生 `subagent` 工具仍对 relay 子代理可见，实测（只读档写入验证）Codex relay 把写入任务转包给孙代理，孙代理继承主控 `danger-full-access` 沙箱直接写盘（文件比 CLI spawn 早 21 秒），CLI 沦为橡皮图章、权限档被整体旁路（Claude relay 同场景未转包、被正确拒绝——模型行为差异而非防护差异）。修复：`relay-subagent.js` 的 `registerContinuableSetup` guard 升级为**执行层硬 allowlist**——`managed_cli_submit` 与 `report` 之外的一切工具调用（含 `subagent`/`write`/`bash`/`run_code`/无名 exec）一律拒绝并给出可行动指引；guard 在每次工具执行时运行且不可被其他 guard 强制放行，转包链在第一跳即被切断。persona 同步明示「re-delegation 在执行层被拒绝」。+3 单测（allowlist 全量拒绝 / 白名单放行 / 无名 exec fail-closed），**229/229 全绿**。生效需重启 DSH Desktop（host 侧 lib 改动）。另注：`verify-matrix/run-e2e.mjs` 的既有条目见上方 Removed——该 runner 已随 standalone e2e 一并退役。
+
+- **测试摩擦修复（2026-09 三档矩阵轮次暴露）**：① `ensureCliProviderConfig` 的写失败现在识别**会话沙箱拒绝**（统一目录在调用方会话工作区外时）并给出可行动指引（"请在设置卡重新验证，host 层写入不受会话沙箱限制"），替代裸的 `cannot write ... under workspace-write mode`；② `cli_<cli>_direct` 工具描述补充两条实测语义——供应商瞬态失败"稍后重试即可、无需换供应商"、以及 Codex 写文件需「可调用工具」档（其写路径是 exec_command）+ 文件读写限当前工作区；③ plugin README 配置表补记三档矩阵实测语义（Codex 写依赖 exec、Claude/Qwen 可写档精确、删除依赖命令、cwd 边界）；④ 新增 `verify-matrix/run-e2e.mjs` 干净 e2e runner（分离 stderr，规避 PowerShell NativeCommandError 把 CLI stderr 噪音误报成 exit 1 的假阳性；该 runner 后已随 standalone e2e 整体退役删除，见上方 Removed 条目）。
 
 ### Removed
 

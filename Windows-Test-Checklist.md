@@ -1,6 +1,6 @@
-# Windows 端到端测试清单 — dsh-sub-cli 三 CLI 验证
+# Windows 端到端测试清单 — dsh-sub-cli 双 CLI 验证
 
-> 适用于 Windows 10/11，由 Windows AI 执行。macOS 的等效验证参考 `plugin/e2e-live.mjs`。
+> 适用于 Windows 10/11，由 Windows AI 执行。macOS 的等效验证参考 `plugin/VERIFICATION-FLOW.md` 三阶段（主控用 cli_* 工具直调；2026-09-04 起 standalone e2e 脚本已删除）。
 >
 > **测试前先 `git pull`，确保测的是最新 main（≥ b2fe1c4，含权限统一 + reattach 修复）。**
 
@@ -138,20 +138,17 @@ Write-Host "Round 2: $out2"
 
 ### 阶段 3：插件集成（有 DSH 环境时，强烈建议）
 
-#### 3a. 自动化 e2e（真实 driver + 真实 CLI，不走 GUI）
+#### 3a. 端到端三阶段（真实 driver + 真实 CLI；2026-09-04 起无 standalone 脚本）
 
-```powershell
-cd dsh-sub-cli\plugin
-npm run test:live    # 即 node e2e-live.mjs
-```
-
-预期（与 macOS 一致）：Codex / Claude / Qwen 三段 dispatch + followup 全绿，
-每段两轮同一 sessionId 且输出完整。这是 Windows 上验证 `winShimArgv`（.cmd shim 的
-argv 包装）与 driver spawn 行为最直接的一步。
+按 `plugin/VERIFICATION-FLOW.md` 三阶段执行（写入 → 读取核对 → 删除），由主控用
+`cli_codex_subagent` / `cli_claude_subagent`（写入/删除）与 `cli_<cli>_direct`（互读）
+真实驱动。这是 Windows 上验证 `winShimArgv`（.cmd shim 的 argv 包装）与 driver spawn
+行为最直接的一步（原 `npm run test:live` / `e2e-live.mjs` 已删除——直启 CLI 进程的
+脚本会卡死进程；`winShimArgv` 的单测在 `plugin/test/dispatch.test.mjs` 持续覆盖）。
 
 #### 3b. GUI 级验证（DSH Desktop for Windows）
 
-按 `plugin/VERIFICATION-FLOW.md` 跑三阶段（写入→读取核对→删除 × 3 CLI），外加一项：
+按 `plugin/VERIFICATION-FLOW.md` 跑三阶段（写入→读取核对→删除 × 2 CLI），外加一项：
 
 - **relay 子代理续用（reattach）**：`cli_<cli>_subagent` 起一个子代理跑完第一轮，等它
   空闲后再 `send_message` 发第二轮——两轮都应正常完成（这条链路在 1c74d0d 修复过，

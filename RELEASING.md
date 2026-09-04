@@ -5,6 +5,9 @@
 ## 发布前条件
 
 - 包名、npm 名称、GitHub 地址和许可证（MIT）已确认；
+- 根 `LICENSE` 与 `plugin/LICENSE` 均存在，且版权主体一致（**Copyright (c) 2026 LaoDing**），与 dingminhua 家族已发布插件对齐；
+- 根 `README.md` / `README.en.md`、`plugin/README.md` / `plugin/README.en.md` 四份文档双语同构，徽章栏完整（npm version / npm d18m / CI / MIT / stars / dshfind），末段含「致谢 / Acknowledgements」并指向 `THIRD_PARTY_NOTICES.md`；
+- 根 `THIRD_PARTY_NOTICES.md` 存在并按「缘起 / 清单 / 特别说明 / 使用方式 / 随包分发」五节结构书写，参考项目、许可证与"借鉴设计思路 + 独立实现"的边界都写清楚；
 - Host、Client、设置 schema、CLI 注册表和 `cli_dispatch` 工具已实现；
 - `plugin/` 不依赖旧仓库绝对路径，不含 `reference/`；
 - 全部单元测试通过；
@@ -52,9 +55,9 @@ npm 账号启用 2FA 时，按 npm 交互提示在浏览器完成确认。
 
 ## 现状说明
 
-当前已实现并实测（macOS + codex 0.149.1 / claude 2.1.247 / qwen 0.22.2，六轮端到端，见 `plugin/VERIFICATION-FLOW.md`）：
+当前已实现并实测（macOS + codex 0.149.1 / claude 2.1.247，十六轮端到端见 `plugin/VERIFICATION-FLOW.md`；Qwen Code 已于 2026-09 移除，托管 CLI 为两家）：
 
-- Host（`lib/index.js`）：设置持久化；`cli_install` / `cli_check` / `cli_test` / `cli_remove`（npm 安装到统一目录、版本探测、协议验证含工具续接、移除）；三 CLI 的 direct 持续会话（11 个 session 工具）、relay 子代理（`managed_cli_submit`）、无头 `cli_dispatch`；driver 层统一权限拦截（勾选静默放行 / 未勾选弹窗或自动拒绝）；会话持久化（`sessions.json`，Host 重启后 reattach 同一 thread）。
-- Client（`lib/client.js`）：设置卡片（Provider / 模型 / 推理强度 / 权限三档下拉 / approval / autoContinue / 轮次超时）及每 CLI 的安装 / 测试 / 更新 / 删除操作。
+- Host（`lib/index.js`）：设置持久化；`cli_install` / `cli_check` / `cli_test` / `cli_remove`（npm 安装到统一目录、版本探测、协议验证含工具续接、移除）；两个 CLI 的 direct 持续会话（10 个 session 工具）、relay 子代理（`managed_cli_submit`，执行层硬 allowlist guard）、无头 `cli_dispatch`；driver 层统一权限拦截（两档：只读 / 可执行，档位启动时定死，无弹窗、无运行中提权；授权能力静默放行、未授权能力确定拒绝并清晰报错）；会话持久化（`sessions.json`，Host 重启后 reattach 同一 thread）。
+- Client（`lib/client.js`）：设置卡片（Provider / 模型 / 推理强度 / 权限两档下拉 / autoContinue / 轮次超时）及每 CLI 的安装 / 测试 / 更新 / 删除操作。
 
-尚未完成：Windows 真机验证（`winShimArgv` 已就位，清单见 `Windows-Test-Checklist.md`）；读取权限无运行时强制点（三档 UI 下 read 恒 true，仅手改 `settings.yaml` 才会出现 `read:false`，此时读操作仍放行——README 已注明）。
+尚未完成：Windows 真机验证（`winShimArgv` 已就位，清单见 `Windows-Test-Checklist.md`）；读取权限无运行时强制点（两档下 read 恒为允许，仅手改 `settings.yaml` 才会出现 `read:false`，此时读操作仍放行——README 已注明）。
