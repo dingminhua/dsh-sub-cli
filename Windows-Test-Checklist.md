@@ -29,7 +29,7 @@ npm install
 npm test
 ```
 
-**预期：231/231 全绿**（含 `winShimArgv` 的 .cmd shim 包装测试——Windows 特有逻辑的单测覆盖）。
+**预期：234/234 全绿**（含 `winShimArgv` 的 .cmd shim 包装测试——Windows 特有逻辑的单测覆盖）。
 任何红项直接停，不用往下测。
 
 ---
