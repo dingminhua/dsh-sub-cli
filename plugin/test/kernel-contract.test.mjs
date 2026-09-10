@@ -101,20 +101,57 @@ function satisfies(version, range) {
 		);
 }
 
-// ── the four @deepseek-ai packages this plugin imports symbols from ──────────
+// ── the @deepseek-ai packages this plugin imports symbols from ───────────────
 
-test("kernel: the symbols we import still exist (dsh-tools / dsh-settings / dsh-typert-protocol)", async () => {
+test("kernel: the symbols we import still exist (dsh-tools / dsh-typert-protocol)", async () => {
 	const tools = await import("@deepseek-ai/dsh-tools");
 	assert.equal(typeof tools.defineTool, "function", "dsh-tools must still export defineTool");
-
-	const settings = await import("@deepseek-ai/dsh-settings");
-	assert.equal(typeof settings.installSettingsSection, "function", "dsh-settings must still export installSettingsSection");
-	assert.equal(typeof settings.settingsNamespace, "function", "dsh-settings must still export settingsNamespace");
 
 	const typert = await import("@deepseek-ai/dsh-typert-protocol");
 	assert.equal(typeof typert.Remote, "function", "dsh-typert-protocol must still export Remote");
 	assert.equal(typeof typert.TypertRemoteService, "function", "dsh-typert-protocol must still export TypertRemoteService");
 });
+
+// The npm registry build of @deepseek-ai/dsh-settings dropped
+// `installSettingsSection` and `settingsNamespace` from its index.js at
+// 0.1.2-rc.1 (verified on 0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.5-rc.2), while the DSH
+// Desktop-bundled build of the SAME version kept them. Importing them
+// statically therefore crashed a bare-DSH install at module-evaluation time
+// and 0.1.1 shipped that way. The plugin now goes through the SERVICE method
+// `settings.installSection`, which every build provides.
+//
+// These two tests are deliberately split: the first pins the SHAPE we depend
+// on, the second fails if anyone re-introduces the version-fragile import.
+
+test("kernel: the settings SERVICE still exposes installSection (the portable seam)", async () => {
+	const settings = await import("@deepseek-ai/dsh-settings");
+	const Provider = settings.SettingsProvider ?? settings.default;
+	assert.equal(typeof Provider, "function", "dsh-settings must export a SettingsProvider class");
+	assert.equal(
+		typeof Provider.prototype.installSection,
+		"function",
+		"SettingsProvider.prototype.installSection is the seam the plugin depends on; " +
+			"it exists in BOTH the npm and the bundled kernel builds, unlike the installSettingsSection helper"
+	);
+});
+
+test("kernel: the plugin must NOT statically import the version-fragile settings helpers", async () => {
+	const { readFileSync } = await import("node:fs");
+	const path = await import("node:path");
+	const index = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "lib", "index.js");
+	const source = readFileSync(index, "utf8");
+
+	// Match an actual `import ... from "@deepseek-ai/dsh-settings"` statement.
+	const importLines = source.split("\n").filter((line) => /^\s*import\b/.test(line) && /@deepseek-ai\/dsh-settings/.test(line));
+	assert.deepEqual(
+		importLines,
+		[],
+		`lib/index.js must not statically import @deepseek-ai/dsh-settings (its npm build lacks ` +
+			`installSettingsSection/settingsNamespace since 0.1.2-rc.1, which crashed 0.1.1 at load time). ` +
+			`Go through ctx.inject(["settings"], …).settings.installSection instead. Found: ${importLines.join(" | ")}`
+	);
+});
+
 
 // ── F3: persona is a REQUEST FIELD, not a section constant ───────────────────
 
@@ -257,4 +294,28 @@ test("F1/F2: the plugin never depends on removed session-persistence surface", a
 			assert.ok(!pattern.test(source), `${file} must not use removed session-persistence surface (${pattern})`);
 		}
 	}
+});
+
+test("kernel: the INSTALLED dsh-settings satisfies the declared dev range (no stale node_modules)", async () => {
+	// Root cause of the 0.1.1 false green: package.json declared a range but
+	// node_modules still held an old pinned build, so every "the symbol exists"
+	// assertion ran against a kernel nobody ships. A range that is not
+	// actually installed is not a tested range — compare the two directly.
+	const { createRequire } = await import("node:module");
+	const require = createRequire(import.meta.url);
+	const pkg = require("../package.json");
+	const declared = pkg.devDependencies?.["@deepseek-ai/dsh-settings"];
+	assert.ok(declared, "dsh-settings must be a devDependency");
+
+	let installed;
+	try {
+		installed = require("@deepseek-ai/dsh-settings/package.json").version;
+	} catch {
+		assert.fail("@deepseek-ai/dsh-settings is declared but not installed — run the install step before testing");
+	}
+	assert.ok(
+		satisfies(installed, declared),
+		`installed @deepseek-ai/dsh-settings@${installed} does not satisfy the declared range "${declared}". ` +
+			`A stale node_modules makes every kernel assertion below vacuously true — reinstall before trusting this suite.`
+	);
 });

@@ -40,7 +40,7 @@ A DeepSeek Harness (DSH) plugin for managing external Agent CLIs.
 - **Three-layer model route**: provider → model → reasoning effort, configured per CLI;
 - **Headless dispatch**: `cli_dispatch` executes the CLI with an argv array (no shell string concatenation) and handles timeouts, output caps, exit codes, and stderr;
 - **Continued sessions for two CLIs**: the first `cli_<cli>_direct` returns a stable `sessionId`; later tools enter the same thread — Codex over a long-lived app-server connection, Claude via stream-json one-process-per-turn plus `--session-id`/`--resume` file-level persistence — no relay model in between;
-- **Settings persistence**: the managed directory and model routes are written to `~/.dsh/settings.yaml` via `installSettingsSection` and survive restarts;
+- **Settings persistence**: the managed directory and model routes are written to `~/.dsh/settings.yaml` via the settings service's `installSection` and survive restarts;
 - **Session persistence**: the session registry (including remote thread ids) is written to `sessions.json` in the managed directory; after a Host restart `cli_<cli>_followup` reattaches the same thread from `sessionId` directly, no re-creation needed;
 - **Auto-continue**: when an answer looks like a premature stop (plans only, no deliverable), the service nudges the same conversation until the result is complete, so a single `cli_<cli>_direct` call returns the full report. Each CLI has a `max` setting in the card (default 3; **0 disables it** — there is no separate switch). **Generalization note**: the nudge depends on same-thread follow-up, so it applies to every continued-session call (Codex/Claude); the `INTENT_TAIL` regex recognizes both Chinese and English intent sentences.
 
@@ -171,11 +171,21 @@ The plugin touches only a handful of kernel interfaces, each checked individuall
 | Kernel interface | How the plugin uses it | Status on 0.1.5-rc.1 |
 | --- | --- | --- |
 | `defineTool` (dsh-tools) | registers every model tool | present, signature unchanged |
-| `installSettingsSection` / `settingsNamespace` (dsh-settings) | settings-card persistence | present, signature unchanged |
+| `SettingsProvider#installSection` (dsh-settings) | settings-card persistence | present in both builds |
 | `TypertRemoteService` / `Remote` (dsh-typert-protocol) | the `cli` remote service | present, signature unchanged |
 | `subagents.registerProvider` / `startContinuable` | Relay subagents | present; `request.persona` / `request.toolFilter` are still plain request fields |
 | `ctx.tools.guard` (global guard) | Relay execution-layer allowlist | present; a **plain-context guard still applies globally** |
 | `subagents.registerContinuableSetup` | legacy guard channel | **removed** — the plugin already uses a three-channel fail-loud setup and takes the 0.1.2+ global guard |
+
+### ⚠️ The same version number exports different surfaces in different builds
+
+This is a **fatal trap** this project hit — read it first.
+
+The **npm registry build** and the **DSH Desktop bundled build** of `@deepseek-ai/dsh-settings` do **not** export the same things under the same version number: the bundled build adds the `installSettingsSection` / `settingsNamespace` convenience helpers, while the npm build has lacked them since **0.1.2-rc.1** (verified missing on 0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.5-rc.2).
+
+The consequence: if a plugin **statically imports** those two symbols, it works fine on the desktop and then **crashes at module-evaluation time** when installed from npm into a bare DSH — `apply()` never runs and no tools register. 0.1.1 shipped with exactly that defect, because every verification at the time ran on the desktop kernel and conveniently hid it.
+
+**So this plugin depends only on the service method both builds share**: `ctx.inject(["settings"], …)` to obtain the service, then `settings.installSection(...)` (whose implementation is line-for-line identical in both). `test/kernel-contract.test.mjs` carries a guard forbidding the static import from returning.
 
 Two upstream changes worth knowing (this plugin is **unaffected**, but session-analysis plugins in the same family are not):
 
@@ -212,6 +222,7 @@ The open-source projects referenced here, together with their licenses and compl
 
 Full version history and change records live in [CHANGELOG.md](CHANGELOG.md). The most recent releases:
 
+- **0.1.2** (2026-09-10) — **hotfix**: 0.1.1 crashed on load in a bare DSH (the npm build of `dsh-settings` lacks `installSettingsSection`; only the desktop-bundled build has it). Now uses the service method `installSection`, which both builds share; guard tests grew to 10 and the false-green condition is fixed.
 - **0.1.1** (2026-09-10) — kernel 0.1.5-rc.1 compatibility verification: the plugin needs no adaptation (all 6 dependency surfaces still work), plus a new kernel-contract guard test and a fix for a devDependency pinned three minor versions behind.
 - **0.1.0** (2026-09-05) — first release: Codex + Claude Code continued sessions, Relay subagent, headless dispatch, config isolation, auto-continue; Qwen Code support removed; permissions collapsed to two tiers (read-only / executable).
 - See the `Added / Changed / Fixed / Removed` sections inside CHANGELOG.md.

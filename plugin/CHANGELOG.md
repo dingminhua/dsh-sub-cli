@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-10
+
+**紧急修复：0.1.1 在「裸 DSH」上加载即崩（致命）。** 从 npm 安装到没有桌面捆绑内核的环境时，插件在模块求值阶段就抛错，`apply()` 根本进不去——所有工具都不注册。桌面用户不受影响（捆绑内核恰好保留了所需符号），所以此前的桌面端到端验证全绿，掩盖了这个问题。
+
+### Fixed
+
+- **移除对 `@deepseek-ai/dsh-settings` 的静态 import（致命）**：插件原先 `import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings"`。这两个符号**只存在于 DSH Desktop 捆绑构建**里；**npm registry 上同一个版本号的构建从 0.1.2-rc.1 起就不再导出它们**（实测 0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.5-rc.2 三版均缺），但 `SettingsProvider.prototype.installSection` 方法在两边都存在且**实现逐行相同**。修复：改为经 `ctx.inject(["settings"], …)` 拿服务、直接调 `settings.installSection(...)`，命名空间常量改为本地校验（服务内部本就会重新解析并校验），并保留原有的懒启动时序（服务出现时安装段，而非 apply 时）。同一份代码现在在两种内核构建上都能工作。
+  - 实测对照（真实 npm 内核 `@deepseek-ai/dsh-settings@0.1.5-rc.1`，该版本确认缺符号）：
+    - 修复前：`❌ The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'installSettingsSection'`
+    - 修复后：`✅ 加载成功`，且桌面运行时内核上仍注册 18 工具 / 3 provider / 1 guard
+- **测试基础设施：修正「假绿」条件**。0.1.1 的内核守卫测试报了绿，但它跑在 `node_modules` 里**陈旧的 `0.1.0-rc.6`** 上——当时改了 `package.json` 的 devDependency 范围却只跑了 `pnpm install --lockfile-only`（只更新 lockfile、不重装），于是「符号存在」的断言在一个人人都不再运行的版本上通过。新增守卫：断言**实际安装**的 `dsh-settings` 版本满足声明的 dev 范围，不满足即红并提示重装。
+
+### Added
+
+- 守卫测试 `kernel-contract.test.mjs` 由 7 条增至 10 条，全部在**真实缺符号的内核版本**上通过（244/244 全绿）：
+  - `SettingsProvider.prototype.installSection` 存在（这是两种构建共有的可移植接缝）；
+  - `lib/index.js` **不得**再对 `@deepseek-ai/dsh-settings` 做静态 import（防回归，已实测非空转：注入旧式 import 后精确变红）；
+  - 实际安装版本必须满足声明的 dev 范围（防 `node_modules` 陈旧导致的假绿）。
+- README（中英双语）「内核版本兼容」章节补充该差异的说明：**同一个版本号在 npm 与桌面捆绑两种构建下导出面不同**，因此本插件只依赖两边共有的服务方法。
+
+### 说明
+
+- 本次修复的动因与发现过程见 CHANGELOG 顶部「0.1.1」段落与本条；发布后核验（干净目录从 npm 安装 → 加载 Host entry）是发现该问题的路径，已纳入常规发布后检查。
+
 ## [0.1.1] - 2026-09-10
 
 DSH 内核 0.1.2-rc.1 → 0.1.5-rc.1 跃迁的对接核验（依据家族调研对象 `research-6c81daa2`，覆盖 27 个受影响项目）。结论：**本插件不需要适配性改动**——公开依赖面只有 6 处，全部在 0.1.5-rc.1 上原样可用。本轮把"结论"变成"可机械复核的守卫"，并修掉一处真实的版本漂移。

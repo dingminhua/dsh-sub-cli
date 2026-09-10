@@ -1,6 +1,6 @@
 {
   "name": "dsh-sub-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Unified management and invocation of external Agent CLIs in DSH, fully isolated from the user's native installs; preset Provider, model, reasoning effort, and permissions per CLI, callable directly or like native subagents.",
   "keywords": [
     "deepseek-harness",

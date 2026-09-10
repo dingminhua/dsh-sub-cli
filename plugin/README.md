@@ -40,7 +40,7 @@
 - **三层模型路由**：每个 CLI 可独立选 Provider → 模型 → 推理强度；
 - **无头派发**：`cli_dispatch` 工具用 argv 数组执行 CLI，不用 shell 字符串拼接，处理超时、输出上限、退出码和 stderr；
 - **两个 CLI 持续会话**：首轮 `cli_<cli>_direct` 返回稳定 `sessionId`；后续工具直接进入同一 thread——Codex 走 app-server 长连接，Claude 走 `stream-json` 单次进程 + `--session-id`/`--resume` 文件级持久化——不经过 relay 模型；
-- **配置持久化**：统一目录与模型路由通过 `installSettingsSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。
+- **配置持久化**：统一目录与模型路由通过 settings 服务的 `installSection` 写入 `~/.dsh/settings.yaml`，重启后仍生效。
 - **会话持久化**：会话注册表（含远程 thread id）写入统一目录的 `sessions.json`，Host 重启后 `cli_<cli>_followup` 直接按 `sessionId` 恢复并 reattach 同一 thread，无需重新创建。
 - **自动补全（auto-continue）**：回答看起来提前收尾（只描述计划、未交付结果）时，自动在同一会话内续接追问直到拿到完整结果，单次 `cli_<cli>_direct` 即返回完整报告。每个 CLI 在设置卡里配置续接次数（`max`，默认 3；**设为 0 即关闭**，没有独立开关）。该机制依赖"同一 thread 的 followup"，对所有持续会话式调用生效（Codex/Claude），`INTENT_TAIL` 正则同时识别中英文意图句。
 
@@ -187,11 +187,21 @@ npm pack --dry-run
 | 内核接口 | 插件用法 | 0.1.5-rc.1 状态 |
 | --- | --- | --- |
 | `defineTool`（dsh-tools） | 注册全部模型工具 | 存在，签名未变 |
-| `installSettingsSection` / `settingsNamespace`（dsh-settings） | 设置卡持久化 | 存在，签名未变 |
+| `SettingsProvider#installSection`（dsh-settings） | 设置卡持久化 | 存在，两种构建都有 |
 | `TypertRemoteService` / `Remote`（dsh-typert-protocol） | `cli` 远程服务 | 存在，签名未变 |
 | `subagents.registerProvider` / `startContinuable` | Relay 子代理 | 存在；`request.persona` / `request.toolFilter` 仍是普通请求字段 |
 | `ctx.tools.guard`（全局 guard） | Relay 执行层 allowlist | 存在；**plain-context guard 仍全局生效** |
 | `subagents.registerContinuableSetup` | 旧版 guard 通道 | **已移除**——插件早已改为三通道 fail-loud，走 0.1.2+ 的全局 guard |
+
+### ⚠️ 同一个版本号，两种构建的导出面不同
+
+这是本项目踩过的一个**致命坑**，务必先读：
+
+`@deepseek-ai/dsh-settings` 的 **npm registry 构建**与 **DSH Desktop 捆绑构建**，在同一个版本号下**导出面并不相同**——捆绑构建多出 `installSettingsSection` / `settingsNamespace` 两个便利函数，而 npm 构建从 **0.1.2-rc.1** 起就不再有它们（0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.5-rc.2 实测均缺）。
+
+后果：如果插件对这两个符号做**静态 import**，在桌面上一切正常，**从 npm 装到裸 DSH 就在模块求值阶段直接崩**——`apply()` 都进不去，所有工具不注册。0.1.1 就带着这个缺陷发布过，因为当时的验证全在桌面内核上做，恰好掩盖了它。
+
+**因此本项目只依赖两种构建共有的服务方法**：`ctx.inject(["settings"], …)` 拿服务，再调 `settings.installSection(...)`（两边实现逐行相同）。`test/kernel-contract.test.mjs` 有守卫禁止重新引入静态 import。
 
 需要留意的两个上游变动（本插件**不受影响**，但同族的会话分析类插件会受影响）：
 
@@ -228,6 +238,7 @@ npm pack --dry-run
 
 完整版本与变更记录见 [CHANGELOG.md](CHANGELOG.md)。最近三次发布：
 
+- **0.1.2** (2026-09-10) — **紧急修复**：0.1.1 在裸 DSH 上加载即崩（`dsh-settings` 的 npm 构建缺 `installSettingsSection`，桌面捆绑构建才有）。改为走两种构建共有的服务方法 `installSection`；守卫测试增至 10 条并修掉「假绿」条件。
 - **0.1.1** (2026-09-10) — 内核 0.1.5-rc.1 对接核验：确认本插件无需适配性改动（依赖面 6 处全数可用），新增内核契约守卫测试、修掉 devDependencies 落后三个小版本的钉版漂移。
 - **0.1.0** (2026-09-05) — 首次发布：Codex + Claude Code 双 CLI 持续会话、Relay 子代理、无头派发、配置隔离、auto-continue；Qwen Code 支持移除；权限收敛为两档（只读 / 可执行）。
 - 详见 CHANGELOG.md 内「Added / Changed / Fixed / Removed」各小节。

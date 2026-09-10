@@ -10,7 +10,6 @@
 
 import path from "node:path";
 import z from "@deepseek-ai/schemastery";
-import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { CLI_REGISTRY, cliById } from "./registry.js";
@@ -34,7 +33,33 @@ import { testCli, writeVerified, clearVerified, isVerifiedCurrentAsync, cliEnv, 
 export const name = "dsh-sub-cli";
 export const inject = ["tools", "subprocess", "subagents"];
 
-const SETTINGS_NS = settingsNamespace("dsh-sub-cli");
+// Settings namespace. Validated by the settings service itself (installSection
+// re-parses and throws on a malformed namespace), so we only assert the shape
+// here rather than importing the legacy `settingsNamespace()` helper.
+const SETTINGS_NS = "dsh-sub-cli";
+
+/**
+ * Install the `dsh-sub-cli` settings section through the settings SERVICE.
+ *
+ * Why not the `installSettingsSection` convenience export: that wrapper (and
+ * `settingsNamespace`) exist only in the DSH Desktop-bundled build of
+ * `@deepseek-ai/dsh-settings`. The npm registry build of the SAME version
+ * (0.1.2-rc.1 onward, verified on 0.1.5-rc.1 and 0.1.5-rc.2) dropped both
+ * exports from its `index.js` while keeping the identical `installSection`
+ * method on `SettingsProvider`. Because the plugin imported them as STATIC
+ * named imports, a bare-DSH install died at module-evaluation time — `apply()`
+ * never ran. Going through the service works on every build that has the
+ * method, and `ctx.inject(["settings"], …)` keeps the original lazy
+ * boot-ordering behaviour (the section installs when the service appears,
+ * not at apply time).
+ * @param ctx - the plugin's host context.
+ * @param hooks - source sink and change notification.
+ */
+function installSettingsSection(ctx, hooks) {
+	ctx.inject(["settings"], (settingsCtx) => {
+		settingsCtx.settings.installSection(ctx, SETTINGS_NS, SCHEMA, {}, hooks);
+	});
+}
 
 const MODEL_ENTRY = z.object({
 	provider: z.string().default(""),
@@ -227,7 +252,7 @@ async function preflightCli(ctx, cliId) {
 
 export async function apply(ctx) {
 	// Persist cliDir + per-CLI model route in the `dsh-sub-cli` settings section.
-	installSettingsSection(ctx, SETTINGS_NS, SCHEMA, {}, {
+	installSettingsSection(ctx, {
 		setSource: (current) => {
 			state.settingsSource = current;
 		},
