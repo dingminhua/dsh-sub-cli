@@ -176,6 +176,30 @@ npm pack --dry-run
 
 参考 `DEVELOPMENT.md` 与 `PLUGIN_REQUIREMENTS.md`。
 
+## 内核版本兼容
+
+本插件运行在 DSH 宿主里，依赖 `@deepseek-ai/dsh-tools` / `dsh-settings` / `dsh-typert-protocol` / `dsh-subagent` 等内核包。内核在快速迭代，**公共接口会改名或移除**，所以插件对内核的依赖面刻意收窄，并由测试守住。
+
+**已核验的内核线：0.1.5-rc.1**（DSH Desktop 2.0.9 内捆绑的版本，亦即当时 npm `latest`）。核验方式不是读变更日志（上游仓库没有），而是**把插件真实装载到该内核上跑一遍**：`apply()` 注册出 18 个工具 / 3 个 provider / 1 个 guard，Relay 子代理的执行层 allowlist 在真实内核语义下依然只放行 `managed_cli_submit` 与 `report`。
+
+插件实际触碰的内核接口只有几处，均已逐一核对：
+
+| 内核接口 | 插件用法 | 0.1.5-rc.1 状态 |
+| --- | --- | --- |
+| `defineTool`（dsh-tools） | 注册全部模型工具 | 存在，签名未变 |
+| `installSettingsSection` / `settingsNamespace`（dsh-settings） | 设置卡持久化 | 存在，签名未变 |
+| `TypertRemoteService` / `Remote`（dsh-typert-protocol） | `cli` 远程服务 | 存在，签名未变 |
+| `subagents.registerProvider` / `startContinuable` | Relay 子代理 | 存在；`request.persona` / `request.toolFilter` 仍是普通请求字段 |
+| `ctx.tools.guard`（全局 guard） | Relay 执行层 allowlist | 存在；**plain-context guard 仍全局生效** |
+| `subagents.registerContinuableSetup` | 旧版 guard 通道 | **已移除**——插件早已改为三通道 fail-loud，走 0.1.2+ 的全局 guard |
+
+需要留意的两个上游变动（本插件**不受影响**，但同族的会话分析类插件会受影响）：
+
+- **会话持久化改为句柄化**：`locate` / `readRaw` / `DSH_SESSION_JSONL` 已移除，会话格式升至 v3。本插件从不直接读写会话日志（它只通过 `startContinuable` 交给内核），因此不受影响；`test/kernel-contract.test.mjs` 里有一条守卫，防止后续有人把"按路径直读日志"重新引进来。
+- **Persona 段改名**：`PERSONA_SECTION` 拆成 `PERSONA_PREFIX_SECTION` / `PERSONA_SUFFIX_SECTION`。本插件传的是**请求字段** `persona: "<文本>"`，由内核自己翻译成当前段名，所以不随段名变动而失效；守卫测试断言的是这一层的"形状"而非具体段名。
+
+`test/kernel-contract.test.mjs` 就是这条线的机械守卫：它在**当前安装的内核**上直接断言上述符号、capability 标志与 persona 映射仍然成立，并校验 `peerDependencies` 覆盖当前发布线。**内核升级后如果它红了，不要放宽断言**——先读新内核的真实契约，再改插件。同时它也是 `package.json` 里"依赖不要写死补丁版本"的守卫（曾经 `dsh-settings` 被钉在 `0.1.0-rc.6`，比实际运行的内核落后三个小版本）。
+
 ## 致谢
 
 本项目的实现建立在他人已公开的工作之上。以下内容如实标注来源与许可证，我们对此保持充分尊重：
@@ -204,6 +228,7 @@ npm pack --dry-run
 
 完整版本与变更记录见 [CHANGELOG.md](CHANGELOG.md)。最近三次发布：
 
+- **0.1.1** (2026-09-10) — 内核 0.1.5-rc.1 对接核验：确认本插件无需适配性改动（依赖面 6 处全数可用），新增内核契约守卫测试、修掉 devDependencies 落后三个小版本的钉版漂移。
 - **0.1.0** (2026-09-05) — 首次发布：Codex + Claude Code 双 CLI 持续会话、Relay 子代理、无头派发、配置隔离、auto-continue；Qwen Code 支持移除；权限收敛为两档（只读 / 可执行）。
 - 详见 CHANGELOG.md 内「Added / Changed / Fixed / Removed」各小节。
 

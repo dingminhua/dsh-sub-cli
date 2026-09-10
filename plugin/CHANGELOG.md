@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-10
+
+DSH 内核 0.1.2-rc.1 → 0.1.5-rc.1 跃迁的对接核验（依据家族调研对象 `research-6c81daa2`，覆盖 27 个受影响项目）。结论：**本插件不需要适配性改动**——公开依赖面只有 6 处，全部在 0.1.5-rc.1 上原样可用。本轮把"结论"变成"可机械复核的守卫"，并修掉一处真实的版本漂移。
+
+### Analysis
+
+- **按内核真实装载核验，而非读变更日志**：上游仓库无 CHANGELOG，全部变更只能由机械差分得出。本轮把插件真实装载到 DSH Desktop 2.0.9 内捆绑的 0.1.5-rc.1 上跑 `apply()`——注册出 **18 个工具 / 3 个 provider / 1 个 guard**，且 Relay 执行层 allowlist 在真实内核语义下仍只放行 `managed_cli_submit` 与 `report`（主控与其他子代理不受影响）。这是"能用"的正面证据，替代了此前的差分推断。
+- **四条家族破坏项逐条对本插件判定**：F1 会话持久化句柄化（`locate`/`readRaw`/`DSH_SESSION_JSONL` 移除）与 F2 会话格式升 v3——**不适用**，本插件从不直接读写会话日志，只经 `startContinuable` 交给内核；F3 `PERSONA_SECTION` 改名——**不适用**，本插件传的是请求字段 `persona: "<文本>"`，段名由内核自己翻译；F4 十二包导出减少——**不适用**，本插件只从 4 个包导入 6 个符号（`defineTool` / `installSettingsSection` / `settingsNamespace` / `Remote` / `TypertRemoteService` / `schemastery`），全部原样存在。
+- **确认 `registerContinuableSetup` 已彻底移除**：0.1.5-rc.1 的 `dsh-subagent` 中该符号已不存在，插件既有的"三通道 fail-loud"（≤0.1.1 → 0.1.2+ 全局 guard → 都无则抛错）中的全局 guard 通道正是当前生效路径，与上游 `tools.guard` 的"plain-context guard 全局生效"语义一致。
+- **A5 已满足**：`peerDependencies` 的范围声明同时接纳 0.1.5-rc.1 与已进 next 通道的 0.1.5-rc.2，并拒绝 0.2.0，无需改动。
+
+### Added
+
+- **内核契约守卫 `test/kernel-contract.test.mjs`（+7 测试，全部对当前安装的内核断言）**：① 本插件导入的 6 个内核符号存在；② `persona` 仍是可往返的请求字段；③ child composition 仍把该字段映射成 `deployment:persona*` 段并透传 `toolFilter`；④ Relay provider 声明的 capability 与 `startContinuable` 的要求一致；⑤ `peerDependencies` 接纳当前发布线且拒绝 0.2.0；⑥ dev 内核依赖必须是范围而非精确钉版；⑦ 源码中不得出现已移除的会话持久化表面（防止后续有人把"按路径直读日志"重新引进来）。**已实测非空转**：把 devDependency 改回历史上的 `0.1.0-rc.6` 钉版，第 ⑥ 条如期变红。
+- README（中英双语）新增「内核版本兼容」章节：列出实际触碰的内核接口与各自在 0.1.5-rc.1 上的状态、两条"上游变了但本插件不受影响"的说明，以及"升级后守卫变红时该改插件、不该放宽断言"的处置约定。
+
+### Fixed
+
+- **devDependencies 版本漂移**：`@deepseek-ai/dsh-settings` 被精确钉在 `0.1.0-rc.6`，比实际运行的内核（0.1.5-rc.1）落后三个小版本——即"测试与 CI 断言的是最老支持版本，而不是真实目标版本"，且与自身 `peerDependencies`（`>=0.1.2-alpha.1 <0.2.0`）自相矛盾。改为范围声明 `>=0.1.2-alpha.1 <0.2.0`，lockfile 随之升到 0.1.2-rc.1。**241/241 全绿**（234 既有 + 7 新增）。
+
 ## [0.1.0] - 2026-09-05
 
 首次发布。提供在 DeepSeek Harness（DSH）中统一管理外部 Agent CLI 的能力——把 Codex 与 Claude Code 集中到独立目录、配置隔离、三层模型路由（Provider / 模型 / 推理强度）、无头派发与 Relay/Subagent 持续会话，turn-deadline 守卫与持久化会话在 Host 重启后 reattach 同一 thread。

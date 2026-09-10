@@ -160,6 +160,30 @@ npm pack --dry-run
 
 See `DEVELOPMENT.md` and `PLUGIN_REQUIREMENTS.md`.
 
+## Kernel version compatibility
+
+This plugin runs inside the DSH host and depends on kernel packages such as `@deepseek-ai/dsh-tools`, `dsh-settings`, `dsh-typert-protocol`, and `dsh-subagent`. The kernel moves fast and its **public interfaces do get renamed or removed**, so the plugin keeps a deliberately narrow dependency surface and guards it with tests.
+
+**Verified kernel line: 0.1.5-rc.1** (the version bundled in DSH Desktop 2.0.9, which was also npm `latest` at the time). It was verified not by reading a changelog (upstream ships none) but by **actually mounting the plugin onto that kernel**: `apply()` registers 18 tools / 3 providers / 1 guard, and the Relay subagent's execution-layer allowlist still admits only `managed_cli_submit` and `report` under the real kernel's semantics.
+
+The plugin touches only a handful of kernel interfaces, each checked individually:
+
+| Kernel interface | How the plugin uses it | Status on 0.1.5-rc.1 |
+| --- | --- | --- |
+| `defineTool` (dsh-tools) | registers every model tool | present, signature unchanged |
+| `installSettingsSection` / `settingsNamespace` (dsh-settings) | settings-card persistence | present, signature unchanged |
+| `TypertRemoteService` / `Remote` (dsh-typert-protocol) | the `cli` remote service | present, signature unchanged |
+| `subagents.registerProvider` / `startContinuable` | Relay subagents | present; `request.persona` / `request.toolFilter` are still plain request fields |
+| `ctx.tools.guard` (global guard) | Relay execution-layer allowlist | present; a **plain-context guard still applies globally** |
+| `subagents.registerContinuableSetup` | legacy guard channel | **removed** — the plugin already uses a three-channel fail-loud setup and takes the 0.1.2+ global guard |
+
+Two upstream changes worth knowing (this plugin is **unaffected**, but session-analysis plugins in the same family are not):
+
+- **Session persistence became handle-based**: `locate` / `readRaw` / `DSH_SESSION_JSONL` were removed and the session format moved to v3. This plugin never reads or writes session logs directly (it hands that to the kernel via `startContinuable`), so it is unaffected; `test/kernel-contract.test.mjs` keeps a guard so nobody re-introduces a direct log read later.
+- **The persona section was renamed**: `PERSONA_SECTION` split into `PERSONA_PREFIX_SECTION` / `PERSONA_SUFFIX_SECTION`. This plugin passes the **request field** `persona: "<text>"` and lets the kernel translate it into whatever the current section name is, so it does not break when the segment is renamed; the guard test asserts the shape of that translation rather than a literal section name.
+
+`test/kernel-contract.test.mjs` is the mechanical guard for that line: against the **currently installed kernel** it asserts those symbols, capability flags, and the persona mapping still hold, and checks that `peerDependencies` covers the shipped release line. **If it goes red after a kernel bump, do not relax the assertion** — read the new kernel's actual contract and adapt the plugin. It also guards the "never pin a patch version" rule in `package.json` (at one point `dsh-settings` was pinned to `0.1.0-rc.6`, three minor versions behind the kernel actually running).
+
 ## Acknowledgements
 
 This plugin builds on work others have published. Sources and licenses are credited honestly below; we hold that in genuine respect.
@@ -186,8 +210,9 @@ The open-source projects referenced here, together with their licenses and compl
 
 ## Changelog
 
-Full version history and change records live in [CHANGELOG.md](CHANGELOG.md). The most recent release:
+Full version history and change records live in [CHANGELOG.md](CHANGELOG.md). The most recent releases:
 
+- **0.1.1** (2026-09-10) — kernel 0.1.5-rc.1 compatibility verification: the plugin needs no adaptation (all 6 dependency surfaces still work), plus a new kernel-contract guard test and a fix for a devDependency pinned three minor versions behind.
 - **0.1.0** (2026-09-05) — first release: Codex + Claude Code continued sessions, Relay subagent, headless dispatch, config isolation, auto-continue; Qwen Code support removed; permissions collapsed to two tiers (read-only / executable).
 - See the `Added / Changed / Fixed / Removed` sections inside CHANGELOG.md.
 
