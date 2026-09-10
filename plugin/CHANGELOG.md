@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - 修复前：`❌ The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'installSettingsSection'`
     - 修复后：`✅ 加载成功`，且桌面运行时内核上仍注册 18 工具 / 3 provider / 1 guard
 - **测试基础设施：修正「假绿」条件**。0.1.1 的内核守卫测试报了绿，但它跑在 `node_modules` 里**陈旧的 `0.1.0-rc.6`** 上——当时改了 `package.json` 的 devDependency 范围却只跑了 `pnpm install --lockfile-only`（只更新 lockfile、不重装），于是「符号存在」的断言在一个人人都不再运行的版本上通过。新增守卫：断言**实际安装**的 `dsh-settings` 版本满足声明的 dev 范围，不满足即红并提示重装。
+- **Windows CI 红：新增守卫用了平台相关的取路径写法**。上面两条守卫用 `new URL(import.meta.url).pathname` 定位源文件；在 Windows 上 `.pathname` 返回 `/C:/…`（前导斜杠 + 盘符），经 `path.join` 后成为 `\C:\…` 这种打不开的路径，`readFileSync` 直接抛错——`windows-latest` 两条守卫因此失败（本机 macOS 全绿，掩盖了它）。改用 `fileURLToPath(import.meta.url)`，它在各平台返回正确的本地路径。**教训**：涉及路径的测试断言必须用平台无关 API，且 CI 的 Windows 矩阵是唯一能抓住这类问题的关卡——本机全绿不构成证据。
 
 ### Added
 

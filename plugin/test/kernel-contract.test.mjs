@@ -138,7 +138,11 @@ test("kernel: the settings SERVICE still exposes installSection (the portable se
 test("kernel: the plugin must NOT statically import the version-fragile settings helpers", async () => {
 	const { readFileSync } = await import("node:fs");
 	const path = await import("node:path");
-	const index = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "lib", "index.js");
+	const { fileURLToPath } = await import("node:url");
+	// fileURLToPath, not `.pathname`: on Windows the latter yields "/C:/…"
+	// (leading slash + drive letter), which path.join turns into a path that
+	// readFileSync cannot open — CI failed on windows-latest exactly that way.
+	const index = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "index.js");
 	const source = readFileSync(index, "utf8");
 
 	// Match an actual `import ... from "@deepseek-ai/dsh-settings"` statement.
@@ -272,7 +276,9 @@ test("dev kernel dependency is a range on the shipped line, never an exact old p
 test("F1/F2: the plugin never depends on removed session-persistence surface", async () => {
 	const { readFileSync, readdirSync, statSync } = await import("node:fs");
 	const path = await import("node:path");
-	const root = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "lib");
+	const { fileURLToPath } = await import("node:url");
+	// fileURLToPath, not `.pathname` (see the static-import guard above).
+	const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib");
 
 	// The kernel removed locate/readRaw/DSH_SESSION_JSONL and versioned the log
 	// format. A future contributor re-introducing a direct log read would quietly
